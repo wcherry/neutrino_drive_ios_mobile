@@ -16,6 +16,7 @@ import XCTest
 ///   - refreshTokenIfNeeded() is a no-op when the token is fresh
 ///   - refreshTokenIfNeeded() calls logout() when no refresh token is stored
 ///   - login() with unreachable server throws AuthError.networkError
+@MainActor
 final class AuthServiceTests: XCTestCase {
 
     // Keychain keys — duplicated here to avoid coupling the tests to the
