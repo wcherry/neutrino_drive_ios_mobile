@@ -1,0 +1,48 @@
+name: NeutrinoDrive
+options:
+  bundleIdPrefix: com.neutrino
+  deploymentTarget:
+    iOS: "16.0"
+  xcodeVersion: "16"
+
+targets:
+  NeutrinoDrive:
+    type: application
+    platform: iOS
+    sources:
+      - path: NeutrinoDrive
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.neutrino.drive
+        MARKETING_VERSION: "1.0.0"
+        CURRENT_PROJECT_VERSION: "1"
+        SWIFT_VERSION: "5.0"
+        IPHONEOS_DEPLOYMENT_TARGET: "16.0"
+        DEVELOPMENT_TEAM: ""
+    info:
+      path: NeutrinoDrive/Info.plist
+      properties:
+        CFBundleName: Neutrino Drive
+        CFBundleDisplayName: Neutrino Drive
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        UISupportedInterfaceOrientations~ipad:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationPortraitUpsideDown
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+
+  NeutrinoDriveTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: NeutrinoDriveTests
+    dependencies:
+      - target: NeutrinoDrive
+    settings:
+      base:
+        SWIFT_VERSION: "5.0"
+        IPHONEOS_DEPLOYMENT_TARGET: "16.0"
