@@ -1,4 +1,8 @@
 name: NeutrinoDrive
+packages:
+  swift-sodium:
+    url: https://github.com/jedisct1/swift-sodium
+    from: "0.9.1"
 options:
   bundleIdPrefix: com.neutrino
   deploymentTarget:
@@ -11,6 +15,9 @@ targets:
     platform: iOS
     sources:
       - path: NeutrinoDrive
+    dependencies:
+      - package: swift-sodium
+        product: Sodium
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.neutrino.drive
@@ -34,6 +41,7 @@ targets:
           - UIInterfaceOrientationPortraitUpsideDown
           - UIInterfaceOrientationLandscapeLeft
           - UIInterfaceOrientationLandscapeRight
+        NSCameraUsageDescription: "Neutrino Drive needs camera access to scan QR codes for key import."
         LSSupportsOpeningDocumentsInPlace: false
         CFBundleDocumentTypes:
           - CFBundleTypeName: Neutrino Drive Key File

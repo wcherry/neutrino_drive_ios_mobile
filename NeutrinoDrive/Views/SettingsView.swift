@@ -44,7 +44,7 @@ struct SettingsView: View {
                     Button {
                         showKeyImport = true
                     } label: {
-                        Label("Import Key File", systemImage: "key")
+                        Label("Import Encryption Key", systemImage: "key")
                     }
                     .sheet(isPresented: $showKeyImport) {
                         hasKeys = KeyImportService.hasStoredKeys()

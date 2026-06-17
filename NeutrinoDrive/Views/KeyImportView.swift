@@ -8,6 +8,7 @@ struct KeyImportView: View {
     @Binding var isPresented: Bool
 
     @State private var isShowingPicker = false
+    @State private var isShowingQRScanner = false
     @State private var showSuccess = false
     @State private var showError = false
     @State private var importedVersion = ""
@@ -52,6 +53,23 @@ struct KeyImportView: View {
                 .sheet(isPresented: $isShowingPicker) {
                     DocumentPicker { url in
                         importFrom(url: url)
+                    }
+                }
+
+                if FeatureFlags.qrKeyScan {
+                    Button {
+                        isShowingQRScanner = true
+                    } label: {
+                        Label("Scan QR Code", systemImage: "qrcode.viewfinder")
+                            .frame(maxWidth: .infinity)
+                            .padding()
+                            .background(Color.secondary.opacity(0.15))
+                            .foregroundStyle(.primary)
+                            .clipShape(RoundedRectangle(cornerRadius: 12))
+                    }
+                    .padding(.horizontal, 32)
+                    .sheet(isPresented: $isShowingQRScanner) {
+                        KeyQRImportView(isPresented: $isShowingQRScanner)
                     }
                 }
 
