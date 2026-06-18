@@ -7,15 +7,21 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		0D0AE2A91CF6C64E477B9666 /* QRScannerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9B9EC0F713F068F7C8A12EDD /* QRScannerView.swift */; };
 		0D8546209C37EA2B1F178E91 /* OfflineView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 90469D5CC989E615DE795823 /* OfflineView.swift */; };
 		18E8F2192FDC05BBC327CBAE /* KeyImportView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3164F8D62550277E7500FB6D /* KeyImportView.swift */; };
 		3BD6B2A2583353EF5D435FE8 /* FilesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C03256BD9495BF647E1D621E /* FilesView.swift */; };
 		47335AA514E3DF49C3867543 /* KeychainServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AD1869BDB3871713930D9FC0 /* KeychainServiceTests.swift */; };
 		48CC24AF85BA1E18FA66A8D3 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F98AAC9AEF267C276800A5AA /* SettingsView.swift */; };
+		49E951E24B9A115064231733 /* Sodium in Frameworks */ = {isa = PBXBuildFile; productRef = C2BF65B88E6E5580857855E6 /* Sodium */; };
+		5B4F29CF82E1C690CAE70CA8 /* FeatureFlags.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F8A06339C7846B57CB2C88A /* FeatureFlags.swift */; };
+		6374DA2E9C607DC50AE5B422 /* KeyQRImportView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F995FEAD8545B523E9E66C76 /* KeyQRImportView.swift */; };
 		690F26E747D4DA457D331F5F /* NeutrinoDriveApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 25F1F0EE30A126A464CB4744 /* NeutrinoDriveApp.swift */; };
 		6DD2BE430D4F4DF066AC20E2 /* AuthService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 284FD49BE7C7F07B2470DE24 /* AuthService.swift */; };
+		73C4B9E7A14BEBE5550E8CD0 /* KeyQRDecryptService.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAD2E88A47B7F76FBB347769 /* KeyQRDecryptService.swift */; };
 		740D22FDE24B0348BEFE11ED /* AuthServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2BE879B8C0E1B1F29A9FACFB /* AuthServiceTests.swift */; };
 		83030D70D1FD82CA51BFA7C6 /* LoginView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA5181A063C7F11A804B0869 /* LoginView.swift */; };
+		99EF38075C56FB5F28A0AD2A /* KeyQRDecryptServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 69BA21EB1245B8848A89C2BF /* KeyQRDecryptServiceTests.swift */; };
 		C05DBAA6ABC844B145C4CE8B /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E3985D05C9C065C11E2FAFB0 /* ContentView.swift */; };
 		C823CEBBB11E783512FE5286 /* KeyImportServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6E9DB7865AEED70BD34195A9 /* KeyImportServiceTests.swift */; };
 		E75D0175C7B415D9BB299056 /* KeychainService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7D43F66518BECD37AE74152A /* KeychainService.swift */; };
@@ -40,18 +46,34 @@
 		284FD49BE7C7F07B2470DE24 /* AuthService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthService.swift; sourceTree = "<group>"; };
 		2BE879B8C0E1B1F29A9FACFB /* AuthServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthServiceTests.swift; sourceTree = "<group>"; };
 		3164F8D62550277E7500FB6D /* KeyImportView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyImportView.swift; sourceTree = "<group>"; };
+		3F8A06339C7846B57CB2C88A /* FeatureFlags.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeatureFlags.swift; sourceTree = "<group>"; };
+		69BA21EB1245B8848A89C2BF /* KeyQRDecryptServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyQRDecryptServiceTests.swift; sourceTree = "<group>"; };
 		6DA4F68F868089DB48832A1A /* RecentsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecentsView.swift; sourceTree = "<group>"; };
 		6E9DB7865AEED70BD34195A9 /* KeyImportServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyImportServiceTests.swift; sourceTree = "<group>"; };
 		7D43F66518BECD37AE74152A /* KeychainService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainService.swift; sourceTree = "<group>"; };
 		90469D5CC989E615DE795823 /* OfflineView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OfflineView.swift; sourceTree = "<group>"; };
+		9B9EC0F713F068F7C8A12EDD /* QRScannerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QRScannerView.swift; sourceTree = "<group>"; };
 		AD1869BDB3871713930D9FC0 /* KeychainServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainServiceTests.swift; sourceTree = "<group>"; };
 		BBAF5D07C650FCC3CBE7E15F /* NeutrinoDrive.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = NeutrinoDrive.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		C03256BD9495BF647E1D621E /* FilesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FilesView.swift; sourceTree = "<group>"; };
+		DAD2E88A47B7F76FBB347769 /* KeyQRDecryptService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyQRDecryptService.swift; sourceTree = "<group>"; };
 		E1CEFB784C6C8B218A6C30BC /* KeyImportService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyImportService.swift; sourceTree = "<group>"; };
 		E3985D05C9C065C11E2FAFB0 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		F98AAC9AEF267C276800A5AA /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		F995FEAD8545B523E9E66C76 /* KeyQRImportView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyQRImportView.swift; sourceTree = "<group>"; };
 		FA5181A063C7F11A804B0869 /* LoginView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoginView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		9A547FF706D284F727113223 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				49E951E24B9A115064231733 /* Sodium in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
 		0594613B18F9B50F4B44CE19 = {
@@ -69,6 +91,7 @@
 				E3985D05C9C065C11E2FAFB0 /* ContentView.swift */,
 				11242259008914C1DEF27482 /* Info.plist */,
 				25F1F0EE30A126A464CB4744 /* NeutrinoDriveApp.swift */,
+				BF02C80BD02B64A102980F4B /* Config */,
 				9291959B3C23CC6DEEC3D8E3 /* Services */,
 				C6C6DDC41EBC14956B4FBAF6 /* Views */,
 			);
@@ -81,8 +104,17 @@
 				284FD49BE7C7F07B2470DE24 /* AuthService.swift */,
 				7D43F66518BECD37AE74152A /* KeychainService.swift */,
 				E1CEFB784C6C8B218A6C30BC /* KeyImportService.swift */,
+				DAD2E88A47B7F76FBB347769 /* KeyQRDecryptService.swift */,
 			);
 			path = Services;
+			sourceTree = "<group>";
+		};
+		BF02C80BD02B64A102980F4B /* Config */ = {
+			isa = PBXGroup;
+			children = (
+				3F8A06339C7846B57CB2C88A /* FeatureFlags.swift */,
+			);
+			path = Config;
 			sourceTree = "<group>";
 		};
 		C6C6DDC41EBC14956B4FBAF6 /* Views */ = {
@@ -90,8 +122,10 @@
 			children = (
 				C03256BD9495BF647E1D621E /* FilesView.swift */,
 				3164F8D62550277E7500FB6D /* KeyImportView.swift */,
+				F995FEAD8545B523E9E66C76 /* KeyQRImportView.swift */,
 				FA5181A063C7F11A804B0869 /* LoginView.swift */,
 				90469D5CC989E615DE795823 /* OfflineView.swift */,
+				9B9EC0F713F068F7C8A12EDD /* QRScannerView.swift */,
 				6DA4F68F868089DB48832A1A /* RecentsView.swift */,
 				F98AAC9AEF267C276800A5AA /* SettingsView.swift */,
 			);
@@ -104,6 +138,7 @@
 				2BE879B8C0E1B1F29A9FACFB /* AuthServiceTests.swift */,
 				AD1869BDB3871713930D9FC0 /* KeychainServiceTests.swift */,
 				6E9DB7865AEED70BD34195A9 /* KeyImportServiceTests.swift */,
+				69BA21EB1245B8848A89C2BF /* KeyQRDecryptServiceTests.swift */,
 			);
 			path = NeutrinoDriveTests;
 			sourceTree = "<group>";
@@ -125,6 +160,7 @@
 			buildConfigurationList = BAD03B2A575713D6C368E4C1 /* Build configuration list for PBXNativeTarget "NeutrinoDrive" */;
 			buildPhases = (
 				75562A5E1732CF80E98DD6D0 /* Sources */,
+				9A547FF706D284F727113223 /* Frameworks */,
 			);
 			buildRules = (
 			);
@@ -132,6 +168,7 @@
 			);
 			name = NeutrinoDrive;
 			packageProductDependencies = (
+				C2BF65B88E6E5580857855E6 /* Sodium */,
 			);
 			productName = NeutrinoDrive;
 			productReference = BBAF5D07C650FCC3CBE7E15F /* NeutrinoDrive.app */;
@@ -165,7 +202,7 @@
 				LastUpgradeCheck = 1600;
 				TargetAttributes = {
 					6D30D7DE8B2D3AB416758EC9 = {
-						DevelopmentTeam = "";
+						DevelopmentTeam = 46KWJJ63FU;
 					};
 				};
 			};
@@ -179,6 +216,9 @@
 			);
 			mainGroup = 0594613B18F9B50F4B44CE19;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				FD4EA385FFAD4EBA5978F108 /* XCRemoteSwiftPackageReference "swift-sodium" */,
+			);
 			preferredProjectObjectVersion = 77;
 			projectDirPath = "";
 			projectRoot = "";
@@ -196,13 +236,17 @@
 			files = (
 				6DD2BE430D4F4DF066AC20E2 /* AuthService.swift in Sources */,
 				C05DBAA6ABC844B145C4CE8B /* ContentView.swift in Sources */,
+				5B4F29CF82E1C690CAE70CA8 /* FeatureFlags.swift in Sources */,
 				3BD6B2A2583353EF5D435FE8 /* FilesView.swift in Sources */,
 				FB16FF91527531E74E5469A6 /* KeyImportService.swift in Sources */,
 				18E8F2192FDC05BBC327CBAE /* KeyImportView.swift in Sources */,
+				73C4B9E7A14BEBE5550E8CD0 /* KeyQRDecryptService.swift in Sources */,
+				6374DA2E9C607DC50AE5B422 /* KeyQRImportView.swift in Sources */,
 				E75D0175C7B415D9BB299056 /* KeychainService.swift in Sources */,
 				83030D70D1FD82CA51BFA7C6 /* LoginView.swift in Sources */,
 				690F26E747D4DA457D331F5F /* NeutrinoDriveApp.swift in Sources */,
 				0D8546209C37EA2B1F178E91 /* OfflineView.swift in Sources */,
+				0D0AE2A91CF6C64E477B9666 /* QRScannerView.swift in Sources */,
 				EAE5682B2200BC87C4559F48 /* RecentsView.swift in Sources */,
 				48CC24AF85BA1E18FA66A8D3 /* SettingsView.swift in Sources */,
 			);
@@ -214,6 +258,7 @@
 			files = (
 				740D22FDE24B0348BEFE11ED /* AuthServiceTests.swift in Sources */,
 				C823CEBBB11E783512FE5286 /* KeyImportServiceTests.swift in Sources */,
+				99EF38075C56FB5F28A0AD2A /* KeyQRDecryptServiceTests.swift in Sources */,
 				47335AA514E3DF49C3867543 /* KeychainServiceTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -298,7 +343,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = 46KWJJ63FU;
 				INFOPLIST_FILE = NeutrinoDrive/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -339,7 +384,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = 46KWJJ63FU;
 				INFOPLIST_FILE = NeutrinoDrive/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -461,6 +506,25 @@
 			defaultConfigurationName = Debug;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		FD4EA385FFAD4EBA5978F108 /* XCRemoteSwiftPackageReference "swift-sodium" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/jedisct1/swift-sodium";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 0.9.1;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		C2BF65B88E6E5580857855E6 /* Sodium */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = FD4EA385FFAD4EBA5978F108 /* XCRemoteSwiftPackageReference "swift-sodium" */;
+			productName = Sodium;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = B87DF574DEF86AC8FB068E6A /* Project object */;
 }

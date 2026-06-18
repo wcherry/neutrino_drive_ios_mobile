@@ -50,17 +50,17 @@ enum KeyImportService {
             throw KeyImportError.invalidJSON
         }
 
-        // Step 2: Cast and check required fields
+        // Step 2: Cast and check required fields (accept pk/sk or public_key/private_key)
         guard let dict = parsed as? [String: String] else {
             throw KeyImportError.missingFields
         }
         guard
-            let publicKeyString  = dict["public_key"],
-            let privateKeyString = dict["private_key"],
-            let keyVersionString = dict["key_version"]
+            let publicKeyString  = dict["public_key"] ?? dict["pk"],
+            let privateKeyString = dict["private_key"] ?? dict["sk"]
         else {
             throw KeyImportError.missingFields
         }
+        let keyVersionString = dict["key_version"] ?? dict["v"] ?? "1"
 
         // Step 3: Reject PEM-encoded keys
         if publicKeyString.hasPrefix("-----BEGIN") || privateKeyString.hasPrefix("-----BEGIN") {
@@ -71,40 +71,10 @@ enum KeyImportService {
         let pubData  = try decodeBase64(publicKeyString)
         let privData = try decodeBase64(privateKeyString)
 
-        // Steps 5–7: Parse keys, throw .invalidBase64 if data is not a valid key
-        let privateKey: P256.Signing.PrivateKey
-        do {
-            privateKey = try P256.Signing.PrivateKey(rawRepresentation: privData)
-        } catch {
-            do {
-                privateKey = try P256.Signing.PrivateKey(x963Representation: privData)
-            } catch {
-                throw KeyImportError.invalidBase64
-            }
-        }
-
-        let publicKey: P256.Signing.PublicKey
-        do {
-            publicKey = try P256.Signing.PublicKey(rawRepresentation: pubData)
-        } catch {
-            do {
-                publicKey = try P256.Signing.PublicKey(x963Representation: pubData)
-            } catch {
-                throw KeyImportError.invalidBase64
-            }
-        }
-
-        // Step 8: Validate the key pair matches
-        let validationPayload = Data("neutrino-key-validation".utf8)
-        let signature: P256.Signing.ECDSASignature
-        do {
-            signature = try privateKey.signature(for: validationPayload)
-        } catch {
-            throw KeyImportError.keyPairMismatch
-        }
-
-        let verified = publicKey.isValidSignature(signature, for: validationPayload)
-        guard verified else {
+        // Steps 5–8: Validate that the public and private keys form a matching pair.
+        // Try Curve25519 (X25519 key agreement) first — derive public key from private and compare.
+        // Fall back to Curve25519 signing (Ed25519), then P-256.
+        guard Self.validateKeyPair(pubData: pubData, privData: privData) else {
             throw KeyImportError.keyPairMismatch
         }
 
@@ -144,6 +114,29 @@ enum KeyImportService {
     }
 
     // MARK: - Private helpers
+
+    /// Returns true if pubData and privData form a valid cryptographic key pair.
+    /// Tries Curve25519 key agreement (X25519), Curve25519 signing (Ed25519), and P-256 in order.
+    private static func validateKeyPair(pubData: Data, privData: Data) -> Bool {
+        // X25519: derive public key from private and compare directly.
+        if let priv = try? Curve25519.KeyAgreement.PrivateKey(rawRepresentation: privData) {
+            return priv.publicKey.rawRepresentation == pubData
+        }
+        // Ed25519: same approach.
+        if let priv = try? Curve25519.Signing.PrivateKey(rawRepresentation: privData) {
+            return priv.publicKey.rawRepresentation == pubData
+        }
+        // P-256: sign a test payload and verify with the public key.
+        let p256priv = (try? P256.Signing.PrivateKey(rawRepresentation: privData))
+                    ?? (try? P256.Signing.PrivateKey(x963Representation: privData))
+        let p256pub  = (try? P256.Signing.PublicKey(rawRepresentation: pubData))
+                    ?? (try? P256.Signing.PublicKey(x963Representation: pubData))
+        if let priv = p256priv, let pub = p256pub,
+           let sig = try? priv.signature(for: Data("neutrino-key-validation".utf8)) {
+            return pub.isValidSignature(sig, for: Data("neutrino-key-validation".utf8))
+        }
+        return false
+    }
 
     /// Convert Base64URL to standard Base64, then decode to Data.
     /// Throws `KeyImportError.invalidBase64` if decoding fails.
