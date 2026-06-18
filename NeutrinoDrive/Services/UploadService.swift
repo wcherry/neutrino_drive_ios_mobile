@@ -1,5 +1,5 @@
 import Foundation
-import CryptoKit
+import Sodium
 import UniformTypeIdentifiers
 import os.log
 
@@ -16,13 +16,13 @@ enum UploadError: LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .noEncryptionKey:              return "No encryption key found. Please import a key before uploading."
-        case .encryptionFailed:             return "Failed to encrypt the file."
-        case .notAuthenticated:             return "You are not signed in."
-        case .networkError:                 return "A network error occurred. Please check your connection."
-        case .serverError(let code):        return "Server error (\(code))."
-        case .decodingError(let err):       return "Failed to read server response: \(err.localizedDescription)"
-        case .fileReadError(let err):       return "Failed to read file: \(err.localizedDescription)"
+        case .noEncryptionKey:          return "No encryption key found. Please import a key before uploading."
+        case .encryptionFailed:         return "Failed to encrypt the file."
+        case .notAuthenticated:         return "You are not signed in."
+        case .networkError:             return "A network error occurred. Please check your connection."
+        case .serverError(let code):    return "Server error (\(code))."
+        case .decodingError(let err):   return "Failed to read server response: \(err.localizedDescription)"
+        case .fileReadError(let err):   return "Failed to read file: \(err.localizedDescription)"
         }
     }
 }
@@ -51,10 +51,14 @@ final class UploadService: ObservableObject {
 
     // MARK: - Dependencies
 
-    /// Set at app launch so the service can optimistically update the file list after upload.
     weak var driveService: DriveService?
 
-    // MARK: - Shared Decoder
+    // MARK: - Private
+
+    private static let sodium = Sodium()
+
+    private let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "NeutrinoDrive",
+                                category: "UploadService")
 
     private static let decoder: JSONDecoder = {
         let make = { (format: String) -> DateFormatter in
@@ -65,8 +69,8 @@ final class UploadService: ObservableObject {
             return f
         }
         let formatters = [
-            make("yyyy-MM-dd'T'HH:mm:ss.SSSSSS"),   // with microseconds
-            make("yyyy-MM-dd'T'HH:mm:ss"),           // without fractional seconds
+            make("yyyy-MM-dd'T'HH:mm:ss.SSSSSS"),
+            make("yyyy-MM-dd'T'HH:mm:ss"),
         ]
         let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "NeutrinoDrive",
                             category: "UploadService")
@@ -77,7 +81,7 @@ final class UploadService: ObservableObject {
             for formatter in formatters {
                 if let date = formatter.date(from: raw) { return date }
             }
-            logger.error("date decode failed: unexpected value=\(raw, privacy: .public) at \(decoder.codingPath.map(\.stringValue).joined(separator: "."), privacy: .public)")
+            logger.error("date decode failed: \(raw, privacy: .public)")
             throw DecodingError.dataCorrupted(.init(
                 codingPath: decoder.codingPath,
                 debugDescription: "Cannot parse date: \(raw)"
@@ -86,140 +90,161 @@ final class UploadService: ObservableObject {
         return d
     }()
 
-    // MARK: - Logging
-
-    private let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "NeutrinoDrive",
-                                category: "UploadService")
-
-    // MARK: - Configuration
-
     private var baseURL: String {
         UserDefaults.standard.string(forKey: AuthService.serverHostKey) ?? AuthService.defaultHost
     }
 
     // MARK: - Upload
 
-    /// Upload a file at the given local URL into `parentFolderID` (nil = root).
-    /// Returns the server-assigned UploadResult on success.
+    /// Encrypt `fileURL` locally, upload the ciphertext, and store the sealed DEK.
+    /// Mirrors the web's `uploadEncryptedFile` flow exactly.
     func upload(fileURL: URL, parentFolderID: String?) async throws -> UploadResult {
-        logger.debug("upload: file=\(fileURL.lastPathComponent, privacy: .public) parentFolderID=\(parentFolderID ?? "root", privacy: .public)")
+        logger.debug("upload: file=\(fileURL.lastPathComponent, privacy: .public) folder=\(parentFolderID ?? "root", privacy: .public)")
 
-        // Verify encryption keys exist before doing any IO work.
         guard KeyImportService.hasStoredKeys() else {
-            logger.error("upload: no encryption key in keychain")
             throw UploadError.noEncryptionKey
+        }
+
+        guard let token = KeychainService.load(forKey: AuthService.accessTokenKey) else {
+            throw UploadError.notAuthenticated
         }
 
         isUploading = true
         progress = 0
         error = nil
+        defer { isUploading = false }
 
-        defer {
-            isUploading = false
-        }
-
-        // MARK: Step 1 — Read file data
+        // MARK: Step 1 — Read plaintext file
 
         let didStartAccessing = fileURL.startAccessingSecurityScopedResource()
-        defer {
-            if didStartAccessing { fileURL.stopAccessingSecurityScopedResource() }
-        }
+        defer { if didStartAccessing { fileURL.stopAccessingSecurityScopedResource() } }
 
         let plainData: Data
         do {
             plainData = try Data(contentsOf: fileURL)
         } catch {
-            logger.error("upload: file read failed: \(error, privacy: .public)")
             throw UploadError.fileReadError(underlying: error)
         }
 
-        let originalSize = plainData.count
-        let mimeType = UTType(filenameExtension: fileURL.pathExtension)?.preferredMIMEType
-                     ?? "application/octet-stream"
-        let fileName  = fileURL.lastPathComponent
+        let fileName = fileURL.lastPathComponent
+        let plainMimeType = UTType(filenameExtension: fileURL.pathExtension)?.preferredMIMEType
+                          ?? "application/octet-stream"
 
-        logger.debug("upload: read \(originalSize) bytes mimeType=\(mimeType, privacy: .public)")
+        logger.debug("upload: \(plainData.count) bytes mimeType=\(plainMimeType, privacy: .public)")
 
-        // MARK: Step 2 — Hybrid encryption
+        // MARK: Step 2 — Generate DEK and encrypt file (XChaCha20-Poly1305 secretstream)
+        //
+        // Output format matches the web's encryptFile():
+        //   [24-byte header][ciphertext]
 
-        let symmetricKey = SymmetricKey(size: .bits256)
-        let encryptedData: Data
-        do {
-            let sealedBox = try AES.GCM.seal(plainData, using: symmetricKey)
-            guard let combined = sealedBox.combined else {
-                throw UploadError.encryptionFailed
-            }
-            encryptedData = combined
-        } catch let uploadErr as UploadError {
-            throw uploadErr
-        } catch {
-            logger.error("upload: encryption failed: \(error, privacy: .public)")
+        let xcss = Self.sodium.secretStream.xchacha20poly1305
+        let dek: Bytes = xcss.key()
+
+        guard let filePushStream = xcss.initPush(secretKey: dek) else {
+            throw UploadError.encryptionFailed
+        }
+        let fileHeader = filePushStream.header()
+        guard let fileCiphertext = filePushStream.push(message: Array(plainData), tag: .FINAL) else {
+            throw UploadError.encryptionFailed
+        }
+        let encryptedData = Data(fileHeader + fileCiphertext)
+
+        logger.debug("upload: encrypted \(plainData.count) → \(encryptedData.count) bytes")
+
+        // MARK: Step 3 — Encrypt metadata { name, mimeType } with DEK
+        //
+        // Matches the web's encryptMetadata({ name, mimeType }, dek).
+        // Stored on the server so the plaintext MIME type can be recovered after decryption.
+
+        let metadataDict: [String: String] = ["name": fileName, "mimeType": plainMimeType]
+        guard let metadataJSON = try? JSONSerialization.data(withJSONObject: metadataDict,
+                                                             options: [.sortedKeys]) else {
+            throw UploadError.encryptionFailed
+        }
+        guard let metaPushStream = xcss.initPush(secretKey: dek) else {
+            throw UploadError.encryptionFailed
+        }
+        let metaHeader = metaPushStream.header()
+        guard let metaCiphertext = metaPushStream.push(message: Array(metadataJSON), tag: .FINAL) else {
+            throw UploadError.encryptionFailed
+        }
+        guard let encryptedMetadata = Self.sodium.utils.bin2base64(
+            metaHeader + metaCiphertext, variant: .URLSAFE_NO_PADDING
+        ) else {
             throw UploadError.encryptionFailed
         }
 
-        logger.debug("upload: encrypted \(originalSize) bytes → \(encryptedData.count) bytes")
+        // MARK: Step 4 — Seal DEK to user's Curve25519 public key (crypto_box_seal)
+        //
+        // Matches the web's encryptFileKey(dek, kp.publicKey).
 
-        // MARK: Step 3 — Build multipart request
-
-        guard let token = KeychainService.load(forKey: AuthService.accessTokenKey) else {
-            logger.error("upload: no access token in keychain — user must re-login")
-            throw UploadError.notAuthenticated
+        guard let pubKeyString = KeychainService.load(forKey: KeyImportService.publicKeyKeychainKey),
+              let pubKeyData = Data(base64URLEncoded: pubKeyString) else {
+            throw UploadError.noEncryptionKey
+        }
+        guard let sealedDEK = Self.sodium.box.seal(message: dek,
+                                                   recipientPublicKey: Array(pubKeyData)) else {
+            throw UploadError.encryptionFailed
+        }
+        guard let encryptedFileKey = Self.sodium.utils.bin2base64(sealedDEK, variant: .URLSAFE_NO_PADDING) else {
+            throw UploadError.encryptionFailed
         }
 
-        guard let url = URL(string: baseURL + "/api/v1/drive/files/upload") else {
+        // MARK: Step 5 — POST multipart (folder_id?, encrypted_metadata, file blob)
+
+        guard let uploadURL = URL(string: baseURL + "/api/v1/drive/files/upload") else {
             throw UploadError.serverError(statusCode: 0)
         }
-
         let boundary = UUID().uuidString
         let body = buildMultipartBody(
             encryptedData: encryptedData,
             fileName: fileName,
-            mimeType: mimeType,
             parentFolderID: parentFolderID,
-            originalSize: originalSize,
+            encryptedMetadata: encryptedMetadata,
             boundary: boundary
         )
 
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
-        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        var uploadRequest = URLRequest(url: uploadURL)
+        uploadRequest.httpMethod = "POST"
+        uploadRequest.setValue("multipart/form-data; boundary=\(boundary)",
+                               forHTTPHeaderField: "Content-Type")
+        uploadRequest.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
 
-        // MARK: Step 4 — Perform upload
+        logger.debug("--> POST \(uploadURL.path, privacy: .public) (\(body.count) bytes)")
 
-        logger.debug("--> POST \(url.path, privacy: .public) (\(body.count) bytes multipart)")
-
-        let data: Data
-        let response: URLResponse
+        let uploadData: Data
+        let uploadResponse: URLResponse
         do {
-            (data, response) = try await URLSession.shared.upload(for: request, from: body)
+            (uploadData, uploadResponse) = try await URLSession.shared.upload(
+                for: uploadRequest, from: body
+            )
         } catch {
-            logger.error("network error: \(url.path, privacy: .public) \(error, privacy: .public)")
+            logger.error("upload network error: \(error, privacy: .public)")
             throw UploadError.networkError(underlying: error)
         }
 
-        guard let http = response as? HTTPURLResponse else {
+        guard let http = uploadResponse as? HTTPURLResponse else {
             throw UploadError.serverError(statusCode: 0)
         }
-
-        logger.debug("<-- \(http.statusCode) \(url.path, privacy: .public)")
-
+        logger.debug("<-- \(http.statusCode) \(uploadURL.path, privacy: .public)")
         guard (200...299).contains(http.statusCode) else {
-            let body = String(data: data, encoding: .utf8) ?? "(binary)"
-            logger.error("server error \(http.statusCode) \(url.path, privacy: .public): \(body, privacy: .public)")
             throw UploadError.serverError(statusCode: http.statusCode)
         }
 
-        // MARK: Step 5 — Decode response
-
         let apiResponse: APIUploadResponse
         do {
-            apiResponse = try Self.decoder.decode(APIUploadResponse.self, from: data)
+            apiResponse = try Self.decoder.decode(APIUploadResponse.self, from: uploadData)
         } catch {
-            let body = String(data: data, encoding: .utf8) ?? "(binary)"
-            logger.error("decode error \(url.path, privacy: .public): \(error, privacy: .public) body=\(body, privacy: .public)")
             throw UploadError.decodingError(underlying: error)
         }
+
+        // MARK: Step 6 — Store sealed DEK on server
+        //
+        // Matches the web's PUT /api/v1/drive/files/{id}/key after uploadEncryptedFile.
+
+        try await storeFileKey(fileID: apiResponse.id, encryptedFileKey: encryptedFileKey, token: token)
+
+        // MARK: Step 7 — Optimistic UI update
 
         let result = UploadResult(
             id:        apiResponse.id,
@@ -229,60 +254,61 @@ final class UploadService: ObservableObject {
             mimeType:  apiResponse.mimeType,
             updatedAt: apiResponse.updatedAt
         )
-
-        logger.debug("upload succeeded: id=\(result.id, privacy: .public) name=\(result.name, privacy: .public)")
-
-        // MARK: Step 6 — Optimistic update
-
         driveService?.fileWasUploaded(result)
         progress = 1
-
+        logger.debug("upload succeeded: id=\(result.id, privacy: .public) name=\(result.name, privacy: .public)")
         return result
     }
 
     // MARK: - Private Helpers
 
+    private func storeFileKey(fileID: String, encryptedFileKey: String, token: String) async throws {
+        guard let url = URL(string: baseURL + "/api/v1/drive/files/\(fileID)/key") else { return }
+        var req = URLRequest(url: url)
+        req.httpMethod = "PUT"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        req.httpBody = try JSONEncoder().encode(["encryptedFileKey": encryptedFileKey])
+
+        logger.debug("--> PUT /api/v1/drive/files/\(fileID, privacy: .public)/key")
+
+        let (_, keyResponse): (Data, URLResponse)
+        do {
+            (_, keyResponse) = try await URLSession.shared.data(for: req)
+        } catch {
+            logger.error("storeFileKey network error: \(error, privacy: .public)")
+            throw UploadError.networkError(underlying: error)
+        }
+        if let http = keyResponse as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
+            logger.error("storeFileKey server error: \(http.statusCode)")
+            throw UploadError.serverError(statusCode: http.statusCode)
+        }
+        logger.debug("<-- key stored for \(fileID, privacy: .public)")
+    }
+
     private func buildMultipartBody(
         encryptedData: Data,
         fileName: String,
-        mimeType: String,
         parentFolderID: String?,
-        originalSize: Int,
+        encryptedMetadata: String,
         boundary: String
     ) -> Data {
         var body = Data()
-
         let dash = "--"
         let crlf = "\r\n"
 
         func append(_ string: String) {
-            if let data = string.data(using: .utf8) { body.append(data) }
+            if let d = string.data(using: .utf8) { body.append(d) }
         }
 
-        // File field (encrypted blob sent as binary)
+        // encrypted_metadata (required — contains { name, mimeType } encrypted with DEK)
         append("\(dash)\(boundary)\(crlf)")
-        append("Content-Disposition: form-data; name=\"file\"; filename=\"\(fileName)\"\(crlf)")
-        append("Content-Type: application/octet-stream\(crlf)")
+        append("Content-Disposition: form-data; name=\"encrypted_metadata\"\(crlf)")
         append(crlf)
-        body.append(encryptedData)
+        append(encryptedMetadata)
         append(crlf)
 
-        // Text fields
-        let textFields: [(name: String, value: String)] = [
-            ("name",       fileName),
-            ("mime_type",  mimeType),
-            ("size_bytes", String(originalSize)),
-        ]
-
-        for field in textFields {
-            append("\(dash)\(boundary)\(crlf)")
-            append("Content-Disposition: form-data; name=\"\(field.name)\"\(crlf)")
-            append(crlf)
-            append(field.value)
-            append(crlf)
-        }
-
-        // Optional folder_id field
+        // folder_id (optional)
         if let folderID = parentFolderID {
             append("\(dash)\(boundary)\(crlf)")
             append("Content-Disposition: form-data; name=\"folder_id\"\(crlf)")
@@ -291,14 +317,20 @@ final class UploadService: ObservableObject {
             append(crlf)
         }
 
-        // Closing boundary
-        append("\(dash)\(boundary)\(dash)\(crlf)")
+        // encrypted file blob (Content-Type octet-stream; original filename so server can mime_guess)
+        append("\(dash)\(boundary)\(crlf)")
+        append("Content-Disposition: form-data; name=\"file\"; filename=\"\(fileName)\"\(crlf)")
+        append("Content-Type: application/octet-stream\(crlf)")
+        append(crlf)
+        body.append(encryptedData)
+        append(crlf)
 
+        append("\(dash)\(boundary)\(dash)\(crlf)")
         return body
     }
 }
 
-// MARK: - API Response Model
+// MARK: - API Response
 
 private struct APIUploadResponse: Decodable {
     let id: String
@@ -307,4 +339,17 @@ private struct APIUploadResponse: Decodable {
     let sizeBytes: Int64
     let mimeType: String
     let updatedAt: Date
+}
+
+// MARK: - Data + Base64URL
+
+private extension Data {
+    init?(base64URLEncoded string: String) {
+        var s = string
+            .replacingOccurrences(of: "-", with: "+")
+            .replacingOccurrences(of: "_", with: "/")
+        let r = s.count % 4
+        if r != 0 { s += String(repeating: "=", count: 4 - r) }
+        self.init(base64Encoded: s)
+    }
 }
