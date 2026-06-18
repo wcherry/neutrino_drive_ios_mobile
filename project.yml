@@ -34,6 +34,21 @@ targets:
           - UIInterfaceOrientationPortraitUpsideDown
           - UIInterfaceOrientationLandscapeLeft
           - UIInterfaceOrientationLandscapeRight
+        LSSupportsOpeningDocumentsInPlace: false
+        CFBundleDocumentTypes:
+          - CFBundleTypeName: Neutrino Drive Key File
+            CFBundleTypeRole: Viewer
+            LSHandlerRank: Alternate
+            LSItemContentTypes:
+              - public.json
+        UTImportedTypeDeclarations:
+          - UTTypeIdentifier: com.neutrino.drive.keyfile
+            UTTypeConformsTo:
+              - public.json
+            UTTypeDescription: Neutrino Drive Key File
+            UTTypeTagSpecification:
+              public.filename-extension:
+                - json
 
   NeutrinoDriveTests:
     type: bundle.unit-test
@@ -46,3 +61,5 @@ targets:
       base:
         SWIFT_VERSION: "5.0"
         IPHONEOS_DEPLOYMENT_TARGET: "16.0"
+        GENERATE_INFOPLIST_FILE: YES
+        SWIFT_STRICT_CONCURRENCY: minimal

@@ -3,10 +3,13 @@ import SwiftUI
 struct SettingsView: View {
     @EnvironmentObject var authService: AuthService
 
+    @State private var hasKeys = KeyImportService.hasStoredKeys()
+    @State private var showKeyImport = false
+    @State private var showRemoveConfirmation = false
+
     var body: some View {
         List {
             Section {
-                // Placeholder for future settings rows
                 HStack {
                     Spacer()
                     Text("Settings")
@@ -16,6 +19,39 @@ struct SettingsView: View {
                 }
                 .listRowBackground(Color.clear)
                 .padding(.vertical, 32)
+            }
+
+            Section("Encryption Key") {
+                if hasKeys {
+                    Label("Encryption Key: Imported \u{2713}", systemImage: "key.fill")
+                        .foregroundStyle(.primary)
+
+                    Button(role: .destructive) {
+                        showRemoveConfirmation = true
+                    } label: {
+                        Text("Remove Keys")
+                    }
+                    .alert("Remove Encryption Keys?", isPresented: $showRemoveConfirmation) {
+                        Button("Remove", role: .destructive) {
+                            KeyImportService.removeKeys()
+                            hasKeys = false
+                        }
+                        Button("Cancel", role: .cancel) {}
+                    } message: {
+                        Text("This will delete your stored encryption keys. You will need to re-import them to access encrypted files.")
+                    }
+                } else {
+                    Button {
+                        showKeyImport = true
+                    } label: {
+                        Label("Import Key File", systemImage: "key")
+                    }
+                    .sheet(isPresented: $showKeyImport) {
+                        hasKeys = KeyImportService.hasStoredKeys()
+                    } content: {
+                        KeyImportView(isPresented: $showKeyImport)
+                    }
+                }
             }
 
             Section {
@@ -34,7 +70,6 @@ struct SettingsView: View {
 }
 
 #Preview {
-    // Preview requires a mock AuthService so the environment object is satisfied.
     NavigationStack {
         SettingsView()
             .environmentObject(AuthService())
