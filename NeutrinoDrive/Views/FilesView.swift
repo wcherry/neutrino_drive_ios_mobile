@@ -5,9 +5,9 @@ import SwiftUI
 /// Root view for the Files tab. Adapts its layout for iPhone (compact) and iPad.
 struct FilesView: View {
 
-    // MARK: - State
+    // MARK: - Environment / State
 
-    @StateObject private var driveService = DriveService()
+    @EnvironmentObject var driveService: DriveService
     @State private var selectedSection: DriveSection = .myDrive
 
     // MARK: - Body
@@ -37,6 +37,10 @@ struct FilesView: View {
         FileBrowserView(section: selectedSection, parentID: nil)
             .environmentObject(driveService)
             .navigationTitle("Files")
+            .navigationDestination(for: DriveItem.self) { destination in
+                FileBrowserView(section: selectedSection, parentID: destination.id)
+                    .environmentObject(driveService)
+            }
             .toolbar {
                 ToolbarItem(placement: .principal) {
                     Picker("Section", selection: $selectedSection) {
@@ -70,6 +74,10 @@ struct FilesView: View {
         } detail: {
             FileBrowserView(section: selectedSection, parentID: nil)
                 .environmentObject(driveService)
+                .navigationDestination(for: DriveItem.self) { destination in
+                    FileBrowserView(section: selectedSection, parentID: destination.id)
+                        .environmentObject(driveService)
+                }
         }
     }
 

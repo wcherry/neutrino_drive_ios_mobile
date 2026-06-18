@@ -39,7 +39,10 @@ struct FileBrowserView: View {
 
     var body: some View {
         Group {
-            if currentItems.isEmpty {
+            if driveService.isLoading && currentItems.isEmpty {
+                ProgressView()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if currentItems.isEmpty {
                 emptyStateView
             } else {
                 fileList
@@ -48,6 +51,17 @@ struct FileBrowserView: View {
         .navigationTitle(navigationTitle)
         .navigationBarTitleDisplayMode(.large)
         .toolbar { toolbarContent }
+        .task(id: "\(section.rawValue)-\(parentID ?? "root")") {
+            await driveService.loadSection(section, parentID: parentID)
+        }
+        .alert("Error", isPresented: Binding(
+            get: { driveService.error != nil },
+            set: { if !$0 { driveService.error = nil } }
+        )) {
+            Button("OK") { driveService.error = nil }
+        } message: {
+            Text(driveService.error ?? "")
+        }
         .sheet(isPresented: $showCreateFolder) {
             CreateFolderSheet(isPresented: $showCreateFolder, parentID: parentID) { folderName in
                 driveService.createFolder(name: folderName, parentID: parentID)
@@ -108,10 +122,6 @@ struct FileBrowserView: View {
         }
         .contextMenu {
             contextMenuItems(for: item)
-        }
-        .navigationDestination(for: DriveItem.self) { destination in
-            FileBrowserView(section: section, parentID: destination.id)
-                .environmentObject(driveService)
         }
     }
 
