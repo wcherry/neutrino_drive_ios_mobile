@@ -18,6 +18,7 @@ struct FileBrowserView: View {
     // MARK: - State
 
     @State private var showCreateFolder = false
+    @State private var showUpload = false
     @State private var showEmptyTrashConfirmation = false
     @State private var itemToRename: DriveItem?
     @State private var itemToMove: DriveItem?
@@ -65,6 +66,11 @@ struct FileBrowserView: View {
         .sheet(isPresented: $showCreateFolder) {
             CreateFolderSheet(isPresented: $showCreateFolder, parentID: parentID) { folderName in
                 driveService.createFolder(name: folderName, parentID: parentID)
+            }
+        }
+        .sheet(isPresented: $showUpload) {
+            UploadSheet(isPresented: $showUpload, parentFolderID: parentID) { result in
+                driveService.fileWasUploaded(result)
             }
         }
         .sheet(item: $itemToRename) { item in
@@ -211,12 +217,23 @@ struct FileBrowserView: View {
 
     @ToolbarContentBuilder
     private var toolbarContent: some ToolbarContent {
-        if section == .myDrive && parentID == nil {
-            ToolbarItem(placement: .primaryAction) {
-                Button {
-                    showCreateFolder = true
-                } label: {
-                    Label("New Folder", systemImage: "folder.badge.plus")
+        if section == .myDrive {
+            if FeatureFlags.uploadFiles {
+                ToolbarItem(placement: .primaryAction) {
+                    Button {
+                        showUpload = true
+                    } label: {
+                        Label("Upload", systemImage: "plus")
+                    }
+                }
+            }
+            if parentID == nil {
+                ToolbarItem(placement: .secondaryAction) {
+                    Button {
+                        showCreateFolder = true
+                    } label: {
+                        Label("New Folder", systemImage: "folder.badge.plus")
+                    }
                 }
             }
         }

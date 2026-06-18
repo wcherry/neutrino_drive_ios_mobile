@@ -321,6 +321,23 @@ final class DriveService: ObservableObject {
         }
     }
 
+    /// Called by UploadService after a successful upload to optimistically add the file to allItems.
+    func fileWasUploaded(_ result: UploadResult) {
+        let item = DriveItem(
+            id: result.id,
+            name: result.name,
+            type: .file,
+            parentID: result.folderId,
+            size: result.sizeBytes,
+            modifiedAt: result.updatedAt,
+            isTrashed: false,
+            isShared: false,
+            mimeType: result.mimeType
+        )
+        allItems.append(item)
+        logger.debug("fileWasUploaded: id=\(result.id, privacy: .public) name=\(result.name, privacy: .public)")
+    }
+
     // MARK: - Ancestry Check
 
     func isDescendant(potentialChildID: String, ofFolderID folderID: String) -> Bool {
