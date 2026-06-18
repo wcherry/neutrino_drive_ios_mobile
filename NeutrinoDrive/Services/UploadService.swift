@@ -199,6 +199,7 @@ final class UploadService: ObservableObject {
         let body = buildMultipartBody(
             encryptedData: encryptedData,
             fileName: fileName,
+            mimeType: plainMimeType,
             parentFolderID: parentFolderID,
             encryptedMetadata: encryptedMetadata,
             boundary: boundary
@@ -289,6 +290,7 @@ final class UploadService: ObservableObject {
     private func buildMultipartBody(
         encryptedData: Data,
         fileName: String,
+        mimeType: String,
         parentFolderID: String?,
         encryptedMetadata: String,
         boundary: String
@@ -317,10 +319,11 @@ final class UploadService: ObservableObject {
             append(crlf)
         }
 
-        // encrypted file blob (Content-Type octet-stream; original filename so server can mime_guess)
+        // encrypted file blob — Content-Type carries plaintext MIME type so the server stores
+        // it in the DB directly; the same value is also inside encrypted_metadata for E2EE clients.
         append("\(dash)\(boundary)\(crlf)")
         append("Content-Disposition: form-data; name=\"file\"; filename=\"\(fileName)\"\(crlf)")
-        append("Content-Type: application/octet-stream\(crlf)")
+        append("Content-Type: \(mimeType)\(crlf)")
         append(crlf)
         body.append(encryptedData)
         append(crlf)
