@@ -25,7 +25,7 @@ targets:
         CURRENT_PROJECT_VERSION: "1"
         SWIFT_VERSION: "5.0"
         IPHONEOS_DEPLOYMENT_TARGET: "16.0"
-        DEVELOPMENT_TEAM: ""
+        DEVELOPMENT_TEAM: "46KWJJ63FU"
     info:
       path: NeutrinoDrive/Info.plist
       properties:
@@ -42,6 +42,8 @@ targets:
           - UIInterfaceOrientationLandscapeLeft
           - UIInterfaceOrientationLandscapeRight
         NSCameraUsageDescription: "Neutrino Drive needs camera access to scan QR codes for key import."
+        NSAppTransportSecurity:
+          NSAllowsArbitraryLoads: true
         LSSupportsOpeningDocumentsInPlace: false
         CFBundleDocumentTypes:
           - CFBundleTypeName: Neutrino Drive Key File

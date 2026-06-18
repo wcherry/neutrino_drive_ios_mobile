@@ -48,13 +48,18 @@ final class AuthService: ObservableObject {
 
     // MARK: - OAuth Configuration
 
+    static let serverHostKey = "nd.server_host"
+    static let defaultHost   = "http://localhost:8080"
+
     private enum AuthConfig {
-        static let baseURL      = "http://localhost:8080"
-        static let loginURL     = baseURL + "/api/v1/auth/login"
-        static let authorizeURL = baseURL + "/api/v1/oauth/authorize"
-        static let tokenURL     = baseURL + "/api/v1/oauth/token"
-        static let clientID     = "neutrino-ios"
-        static let redirectURI  = "neutrinodrive://oauth/callback"
+        static var baseURL: String {
+            UserDefaults.standard.string(forKey: AuthService.serverHostKey) ?? AuthService.defaultHost
+        }
+        static var loginURL:     String { baseURL + "/api/v1/auth/login" }
+        static var authorizeURL: String { baseURL + "/api/v1/oauth/authorize" }
+        static var tokenURL:     String { baseURL + "/api/v1/oauth/token" }
+        static let clientID    = "neutrino-ios"
+        static let redirectURI = "neutrinodrive://oauth/callback"
     }
 
     // MARK: - Init

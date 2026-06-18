@@ -43,6 +43,7 @@ struct KeyQRImportView: View {
             if DataScannerViewController.isSupported {
                 ZStack(alignment: .bottom) {
                     QRScannerView { qrString in
+                        print("[QRImport] Scanned QR content:\n\(qrString)")
                         DispatchQueue.main.async {
                             pin = ""
                             step = .enterPin(qrString: qrString)
@@ -186,6 +187,8 @@ struct KeyQRImportView: View {
                 let keyData = try await Task.detached(priority: .userInitiated) {
                     try KeyQRDecryptService.decrypt(qrString: qrString, pin: capturedPin)
                 }.value
+
+                print("[QRImport] Decrypted payload: \(String(data: keyData, encoding: .utf8) ?? "(not valid UTF-8)")")
 
                 let bundle = try KeyImportService.importKey(from: keyData)
                 KeyImportService.storeKeys(bundle)

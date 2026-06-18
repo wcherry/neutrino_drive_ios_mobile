@@ -1,10 +1,11 @@
 import Foundation
+import CommonCrypto
 import Sodium
 
 // MARK: - KeyQRDecryptError
 
 enum KeyQRDecryptError: LocalizedError {
-    case invalidQRFormat
+    case invalidQRFormat(raw: String)
     case unsupportedVersion
     case unsupportedAlgorithm
     case base64DecodeFailure
@@ -13,7 +14,9 @@ enum KeyQRDecryptError: LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .invalidQRFormat:       return "The QR code does not contain a valid key payload."
+        case .invalidQRFormat(let raw):
+            let preview = raw.isEmpty ? "(empty)" : String(raw.prefix(120))
+            return "QR code format not recognised.\n\nScanned content:\n\(preview)"
         case .unsupportedVersion:    return "The QR code uses an unsupported version."
         case .unsupportedAlgorithm:  return "The QR code uses an unsupported encryption algorithm."
         case .base64DecodeFailure:   return "Failed to decode the key payload data."
@@ -21,20 +24,6 @@ enum KeyQRDecryptError: LocalizedError {
         case .decryptionFailure:     return "Failed to decrypt the key payload. Check your PIN and try again."
         }
     }
-}
-
-// MARK: - Private payload types
-
-private struct KeyQRPayload: Decodable {
-    let v: Int
-    let alg: String
-    let payload: String
-}
-
-private struct KeyQRInnerPayload: Decodable {
-    let salt: String
-    let nonce: String
-    let ct: String
 }
 
 // MARK: - KeyQRDecryptService
@@ -45,87 +34,116 @@ enum KeyQRDecryptService {
 
     /// Decrypt a QR code string using the provided PIN and return the plaintext key data.
     ///
-    /// Protocol:
-    ///   Outer JSON: `{ "v": 1, "alg": "argon2id+xchacha20", "payload": "<base64>" }`
-    ///   Inner JSON (base64-decoded from `payload`): `{ "salt": "<base64>", "nonce": "<base64>", "ct": "<base64>" }`
-    ///   KDF: Argon2id, outputLength=32, opsLimit=2, memLimit=67108864
-    ///   Cipher: XChaCha20-Poly1305 via libsodium secretBox
+    /// Expected QR JSON format:
+    ///   { "v": 1, "alg": "pbkdf2-sha256+xsalsa20",
+    ///     "salt": "<base64url>", "nonce": "<base64url>", "ct": "<base64url>",
+    ///     "iter": 600000 }
     ///
-    /// - Parameters:
-    ///   - qrString: The raw string value decoded from the QR code.
-    ///   - pin: The PIN used to derive the decryption key.
-    /// - Returns: Plaintext `Data` (the decrypted key JSON).
-    /// - Throws: `KeyQRDecryptError` on any failure.
+    /// KDF:    PBKDF2-SHA256, iterations from "iter" field, 32-byte output
+    /// Cipher: XSalsa20-Poly1305 (libsodium secretBox), 24-byte nonce
     static func decrypt(qrString: String, pin: String) throws -> Data {
-        // Step 1: JSON-decode outer QR string.
+        // Step 1: Parse outer QR JSON.
+        let trimmed = qrString.trimmingCharacters(in: .whitespacesAndNewlines)
         guard
-            let outerData = qrString.data(using: .utf8),
-            let outer = try? JSONDecoder().decode(KeyQRPayload.self, from: outerData)
+            let outerData = trimmed.data(using: .utf8),
+            let json = try? JSONSerialization.jsonObject(with: outerData) as? [String: Any]
         else {
-            throw KeyQRDecryptError.invalidQRFormat
+            throw KeyQRDecryptError.invalidQRFormat(raw: trimmed)
         }
 
-        // Step 2: Validate version.
-        guard outer.v == 1 else {
+        // Step 2: Validate version (accept Int or String).
+        let version: Int
+        if let v = json["v"] as? Int {
+            version = v
+        } else if let v = json["v"] as? String, let vi = Int(v) {
+            version = vi
+        } else {
             throw KeyQRDecryptError.unsupportedVersion
         }
+        guard version == 1 else { throw KeyQRDecryptError.unsupportedVersion }
 
         // Step 3: Validate algorithm.
-        guard outer.alg == "argon2id+xchacha20" else {
+        guard let alg = json["alg"] as? String else {
+            throw KeyQRDecryptError.invalidQRFormat(raw: trimmed)
+        }
+        guard alg == "pbkdf2-sha256+xsalsa20" else {
             throw KeyQRDecryptError.unsupportedAlgorithm
         }
 
-        // Step 4: Base64-decode payload bytes, interpret as UTF-8, JSON-decode inner payload.
+        // Step 4: Decode base64url fields.
         guard
-            let payloadBytes = Data(base64Encoded: outer.payload),
-            let payloadString = String(data: payloadBytes, encoding: .utf8),
-            let innerData = payloadString.data(using: .utf8),
-            let inner = try? JSONDecoder().decode(KeyQRInnerPayload.self, from: innerData)
+            let saltStr  = json["salt"]  as? String,
+            let nonceStr = json["nonce"] as? String,
+            let ctStr    = json["ct"]    as? String,
+            let saltData  = Data(base64URLEncoded: saltStr),
+            let nonceData = Data(base64URLEncoded: nonceStr),
+            let ctData    = Data(base64URLEncoded: ctStr)
         else {
             throw KeyQRDecryptError.base64DecodeFailure
         }
 
-        // Step 5: Base64-decode salt, nonce, and ciphertext.
-        guard
-            let saltData  = Data(base64Encoded: inner.salt),
-            let nonceData = Data(base64Encoded: inner.nonce),
-            let ctData    = Data(base64Encoded: inner.ct)
-        else {
-            throw KeyQRDecryptError.base64DecodeFailure
+        // Step 5: Read iteration count (fall back to 600 000 if absent).
+        let iterations = json["iter"] as? Int ?? 600_000
+
+        // Step 6: Derive 32-byte key with PBKDF2-SHA256.
+        guard let key = pbkdf2SHA256(password: pin, salt: saltData, iterations: iterations, keyLength: 32) else {
+            throw KeyQRDecryptError.kdfFailure
         }
 
-        let saltBytes:  Bytes = Array(saltData)
+        // Step 7: Decrypt with XSalsa20-Poly1305 (NaCl secretBox).
+        let keyBytes:   Bytes = Array(key)
         let nonceBytes: Bytes = Array(nonceData)
         let ctBytes:    Bytes = Array(ctData)
 
-        // Step 6: Derive a 32-byte key from the PIN using Argon2id.
-        guard let pinData = pin.data(using: .utf8) else {
-            throw KeyQRDecryptError.kdfFailure
-        }
-        let pinBytes: Bytes = Array(pinData)
-
-        guard let derivedKey = sodium.pwHash.hash(
-            outputLength: 32,
-            passwd: pinBytes,
-            salt: saltBytes,
-            opsLimit: 2,
-            memLimit: 67_108_864,
-            alg: .Argon2ID13
-        ) else {
-            throw KeyQRDecryptError.kdfFailure
-        }
-
-        // Step 7: Decrypt with XChaCha20-Poly1305.
-        // ctBytes already contains the 16-byte Poly1305 MAC tag prepended to the ciphertext.
         guard let plaintext = sodium.secretBox.open(
             authenticatedCipherText: ctBytes,
-            secretKey: derivedKey,
+            secretKey: keyBytes,
             nonce: nonceBytes
         ) else {
             throw KeyQRDecryptError.decryptionFailure
         }
 
-        // Step 8: Return plaintext as Data.
         return Data(plaintext)
+    }
+
+    // MARK: - PBKDF2-SHA256
+
+    private static func pbkdf2SHA256(password: String, salt: Data, iterations: Int, keyLength: Int) -> Data? {
+        guard let passwordData = password.data(using: .utf8) else { return nil }
+        var derivedKey = Data(repeating: 0, count: keyLength)
+
+        let status: Int32 = derivedKey.withUnsafeMutableBytes { derivedBytes in
+            salt.withUnsafeBytes { saltBytes in
+                passwordData.withUnsafeBytes { passwordBytes in
+                    CCKeyDerivationPBKDF(
+                        CCPBKDFAlgorithm(kCCPBKDF2),
+                        passwordBytes.baseAddress?.assumingMemoryBound(to: Int8.self),
+                        passwordData.count,
+                        saltBytes.baseAddress?.assumingMemoryBound(to: UInt8.self),
+                        salt.count,
+                        CCPseudoRandomAlgorithm(kCCPRFHmacAlgSHA256),
+                        UInt32(iterations),
+                        derivedBytes.baseAddress?.assumingMemoryBound(to: UInt8.self),
+                        keyLength
+                    )
+                }
+            }
+        }
+        return status == kCCSuccess ? derivedKey : nil
+    }
+}
+
+// MARK: - Data + Base64URL
+
+private extension Data {
+    init?(base64URLEncoded string: String) {
+        var base64 = string
+            .replacingOccurrences(of: "-", with: "+")
+            .replacingOccurrences(of: "_", with: "/")
+        let remainder = base64.count % 4
+        if remainder != 0 {
+            base64 += String(repeating: "=", count: 4 - remainder)
+        }
+        self.init(base64Encoded: base64)
     }
 }

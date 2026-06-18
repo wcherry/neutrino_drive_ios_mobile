@@ -3,11 +3,12 @@ import SwiftUI
 struct LoginView: View {
     @EnvironmentObject private var authService: AuthService
 
+    @State private var serverHost: String = UserDefaults.standard.string(forKey: AuthService.serverHostKey) ?? AuthService.defaultHost
     @State private var email: String = ""
     @State private var password: String = ""
     @State private var isLoading = false
 
-    private var canSubmit: Bool { !email.isEmpty && !password.isEmpty }
+    private var canSubmit: Bool { !email.isEmpty && !password.isEmpty && !serverHost.isEmpty }
 
     var body: some View {
         ScrollView {
@@ -56,8 +57,24 @@ struct LoginView: View {
 
                 Spacer().frame(height: 40)
 
-                // Credential fields
+                // Server + credential fields
                 VStack(spacing: 12) {
+                    HStack(spacing: 8) {
+                        Image(systemName: "server.rack")
+                            .foregroundStyle(Color(.secondaryLabel))
+                            .frame(width: 20)
+                        TextField("Server (e.g. http://192.168.1.x:8080)", text: $serverHost)
+                            .keyboardType(.URL)
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                    }
+                    .padding()
+                    .background(Color(.secondarySystemBackground))
+                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .onChange(of: serverHost) { newValue in
+                        UserDefaults.standard.set(newValue, forKey: AuthService.serverHostKey)
+                    }
+
                     TextField("Email", text: $email)
                         .keyboardType(.emailAddress)
                         .textInputAutocapitalization(.never)
@@ -134,7 +151,7 @@ struct LoginView: View {
                 .padding(.bottom, 48)
             }
         }
-        .ignoresSafeArea(.keyboard, edges: .bottom)
+        .scrollDismissesKeyboard(.interactively)
         .animation(.easeInOut(duration: 0.2), value: isLoading)
         .animation(.easeInOut(duration: 0.2), value: authService.loginError != nil)
         .onChange(of: authService.isAuthenticated) { _ in isLoading = false }
