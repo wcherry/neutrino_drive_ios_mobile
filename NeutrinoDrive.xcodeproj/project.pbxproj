@@ -37,6 +37,9 @@
 		E75D0175C7B415D9BB299056 /* KeychainService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7D43F66518BECD37AE74152A /* KeychainService.swift */; };
 		EAE5682B2200BC87C4559F48 /* RecentsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6DA4F68F868089DB48832A1A /* RecentsView.swift */; };
 		FB16FF91527531E74E5469A6 /* KeyImportService.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1CEFB784C6C8B218A6C30BC /* KeyImportService.swift */; };
+		A1B2C3D4E5F6A7B8C9D0E1F2 /* UploadService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F6A7B8C9D0AAAA /* UploadService.swift */; };
+		B2C3D4E5F6A7B8C9D0E1F2A3 /* UploadSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2C3D4E5F6A7B8C9D0E1BBBB /* UploadSheet.swift */; };
+		C3D4E5F6A7B8C9D0E1F2A3B4 /* UploadServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3D4E5F6A7B8C9D0E1F2CCCC /* UploadServiceTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -82,6 +85,9 @@
 		F98AAC9AEF267C276800A5AA /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		F995FEAD8545B523E9E66C76 /* KeyQRImportView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyQRImportView.swift; sourceTree = "<group>"; };
 		FA5181A063C7F11A804B0869 /* LoginView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoginView.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F6A7B8C9D0AAAA /* UploadService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UploadService.swift; sourceTree = "<group>"; };
+		B2C3D4E5F6A7B8C9D0E1BBBB /* UploadSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UploadSheet.swift; sourceTree = "<group>"; };
+		C3D4E5F6A7B8C9D0E1F2CCCC /* UploadServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UploadServiceTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -136,6 +142,7 @@
 				7D43F66518BECD37AE74152A /* KeychainService.swift */,
 				E1CEFB784C6C8B218A6C30BC /* KeyImportService.swift */,
 				DAD2E88A47B7F76FBB347769 /* KeyQRDecryptService.swift */,
+				A1B2C3D4E5F6A7B8C9D0AAAA /* UploadService.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -164,6 +171,7 @@
 				6DA4F68F868089DB48832A1A /* RecentsView.swift */,
 				70A49B80E184DD242C3F71F4 /* RenameSheet.swift */,
 				F98AAC9AEF267C276800A5AA /* SettingsView.swift */,
+				B2C3D4E5F6A7B8C9D0E1BBBB /* UploadSheet.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -177,6 +185,7 @@
 				AD1869BDB3871713930D9FC0 /* KeychainServiceTests.swift */,
 				6E9DB7865AEED70BD34195A9 /* KeyImportServiceTests.swift */,
 				69BA21EB1245B8848A89C2BF /* KeyQRDecryptServiceTests.swift */,
+				C3D4E5F6A7B8C9D0E1F2CCCC /* UploadServiceTests.swift */,
 			);
 			path = NeutrinoDriveTests;
 			sourceTree = "<group>";
@@ -295,6 +304,8 @@
 				EAE5682B2200BC87C4559F48 /* RecentsView.swift in Sources */,
 				6544A610BB9F4EEE9D896EDE /* RenameSheet.swift in Sources */,
 				48CC24AF85BA1E18FA66A8D3 /* SettingsView.swift in Sources */,
+				A1B2C3D4E5F6A7B8C9D0E1F2 /* UploadService.swift in Sources */,
+				B2C3D4E5F6A7B8C9D0E1F2A3 /* UploadSheet.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -308,6 +319,7 @@
 				C823CEBBB11E783512FE5286 /* KeyImportServiceTests.swift in Sources */,
 				99EF38075C56FB5F28A0AD2A /* KeyQRDecryptServiceTests.swift in Sources */,
 				47335AA514E3DF49C3867543 /* KeychainServiceTests.swift in Sources */,
+				C3D4E5F6A7B8C9D0E1F2A3B4 /* UploadServiceTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
