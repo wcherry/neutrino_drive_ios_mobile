@@ -40,7 +40,7 @@ struct FileRowView: View {
         case .folder:
             return Color.blue.opacity(0.15)
         case .file:
-            return Color.secondary.opacity(0.12)
+            return neutrinoAccentColor.map { $0.opacity(0.15) } ?? Color.secondary.opacity(0.12)
         }
     }
 
@@ -49,7 +49,19 @@ struct FileRowView: View {
         case .folder:
             return .blue
         case .file:
-            return .secondary
+            return neutrinoAccentColor ?? .secondary
+        }
+    }
+
+    private var neutrinoAccentColor: Color? {
+        guard item.isNeutrinoNativeFormat, let mime = item.mimeType else { return nil }
+        switch mime {
+        case DriveItem.NeutrinoMIME.doc:     return .blue
+        case DriveItem.NeutrinoMIME.sheet:   return .green
+        case DriveItem.NeutrinoMIME.slide:   return .orange
+        case DriveItem.NeutrinoMIME.diagram: return .purple
+        case DriveItem.NeutrinoMIME.drawing: return Color(red: 0.9, green: 0.25, blue: 0.45)
+        default:                             return nil
         }
     }
 

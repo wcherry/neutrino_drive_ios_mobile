@@ -1,4 +1,5 @@
 import SwiftUI
+import QuickLook
 
 // MARK: - FileBrowserView
 
@@ -22,6 +23,11 @@ struct FileBrowserView: View {
     @State private var showEmptyTrashConfirmation = false
     @State private var itemToRename: DriveItem?
     @State private var itemToMove: DriveItem?
+
+    @StateObject private var downloadService = DownloadService()
+    @State private var previewURL: URL?
+    @State private var downloadError: String?
+    @State private var nativeViewerItem: DriveItem?
 
     // MARK: - Computed
 
@@ -84,6 +90,18 @@ struct FileBrowserView: View {
             }
             .environmentObject(driveService)
         }
+        .quickLookPreview($previewURL)
+        .sheet(item: $nativeViewerItem) { item in
+            NeutrinoFileViewer(item: item)
+        }
+        .alert("Download Failed", isPresented: Binding(
+            get: { downloadError != nil },
+            set: { if !$0 { downloadError = nil } }
+        )) {
+            Button("OK") { downloadError = nil }
+        } message: {
+            Text(downloadError ?? "")
+        }
         .confirmationDialog(
             "Empty Trash?",
             isPresented: $showEmptyTrashConfirmation,
@@ -107,6 +125,30 @@ struct FileBrowserView: View {
             }
         }
         .listStyle(.insetGrouped)
+        .overlay {
+            if downloadService.isDownloading {
+                downloadingOverlay
+            }
+        }
+    }
+
+    private var downloadingOverlay: some View {
+        ZStack {
+            Color.black.opacity(0.3)
+                .ignoresSafeArea()
+            VStack(spacing: 12) {
+                ProgressView(value: downloadService.progress)
+                    .progressViewStyle(.linear)
+                    .frame(width: 180)
+                    .tint(.white)
+                Text("Downloading\u{2026}")
+                    .foregroundStyle(.white)
+                    .font(.subheadline)
+            }
+            .padding(24)
+            .background(.ultraThinMaterial)
+            .clipShape(RoundedRectangle(cornerRadius: 16))
+        }
     }
 
     @ViewBuilder
@@ -116,6 +158,21 @@ struct FileBrowserView: View {
                 NavigationLink(value: item) {
                     FileRowView(item: item)
                 }
+            } else if FeatureFlags.viewNeutrinoFiles && item.isNeutrinoNativeFormat {
+                Button {
+                    nativeViewerItem = item
+                } label: {
+                    FileRowView(item: item)
+                }
+                .buttonStyle(.plain)
+            } else if FeatureFlags.downloadFiles {
+                Button {
+                    startDownload(for: item)
+                } label: {
+                    FileRowView(item: item)
+                }
+                .buttonStyle(.plain)
+                .disabled(downloadService.isDownloading)
             } else {
                 FileRowView(item: item)
             }
@@ -181,6 +238,21 @@ struct FileBrowserView: View {
     private func contextMenuItems(for item: DriveItem) -> some View {
         switch section {
         case .myDrive:
+            if item.type == .file && FeatureFlags.viewNeutrinoFiles && item.isNeutrinoNativeFormat {
+                Button {
+                    nativeViewerItem = item
+                } label: {
+                    Label("Open", systemImage: "doc.text.magnifyingglass")
+                }
+                Divider()
+            } else if item.type == .file && FeatureFlags.downloadFiles {
+                Button {
+                    startDownload(for: item)
+                } label: {
+                    Label("Download & Open", systemImage: "arrow.down.circle")
+                }
+                Divider()
+            }
             Button {
                 itemToRename = item
             } label: {
@@ -247,6 +319,22 @@ struct FileBrowserView: View {
                         .foregroundStyle(.red)
                 }
                 .disabled(currentItems.isEmpty)
+            }
+        }
+    }
+
+    // MARK: - Download
+
+    private func startDownload(for item: DriveItem) {
+        Task {
+            do {
+                previewURL = try await downloadService.download(
+                    fileID: item.id,
+                    fileName: item.name,
+                    mimeType: item.mimeType
+                )
+            } catch {
+                downloadError = error.localizedDescription
             }
         }
     }
