@@ -402,17 +402,57 @@ cellular; grant limited access; delete the folder on the web and take a photo.
 
 ## Acceptance criteria
 
+Status as of the PR #6 merge with `main` (Epics 8/9/10). A box is ticked **only**
+when a passing automated test exercises the criterion end to end. Criteria whose
+logic is unit-tested but whose real behaviour depends on PhotoKit, a device, or
+a live server stay unticked and are marked *partial* — the remaining half is
+covered by `feature-photo-auto-sync-verification.md`, which **has not been run
+yet**.
+
 - [ ] Settings shows a "Photo Sync" section only when `FeatureFlags.photoAutoSync` is true.
+      *Not verified* — SwiftUI conditional, no view test. Correct by inspection only.
 - [ ] Enabling the toggle requests photo-library permission; denial reverts the toggle and offers a deep link to iOS Settings.
+      *Not verified* — needs a device; `PHPhotoLibrary` is not faked.
 - [ ] The destination folder defaults to `iPhone Photos` and is created on the server on first upload if absent.
-- [ ] An existing root folder named `iPhone Photos` (any casing) is adopted, not duplicated.
+      *Partial* — creation path covered by `test_ensureFolder_createsNewFolder_whenNoMatchExists`
+      against a stubbed `URLProtocol`; the default name is a constant
+      (`PhotoSyncService.defaultFolderName`) that no test asserts, and no real
+      server has been exercised.
+- [x] An existing root folder named `iPhone Photos` (any casing) is adopted, not duplicated.
+      `test_ensureFolder_adoptsExistingCaseInsensitiveMatch_insteadOfCreatingDuplicate`.
 - [ ] A photo taken while the app is foregrounded is encrypted and uploaded to the destination folder without user action.
+      *Partial* — the upload half is covered by
+      `test_drain_successfulUpload_movesEntryFromPendingToCompleted` using a fake
+      asset provider. No real camera capture has ever driven this path.
 - [ ] A photo taken while the app is killed is uploaded on next launch (catch-up scan).
-- [ ] Photos existing *before* the feature was enabled are not uploaded.
+      *Not verified* — `fetchPersistentChanges` catch-up is untested; needs a device.
+- [x] Photos existing *before* the feature was enabled are not uploaded.
+      `test_newIdentifiers_excludesAssetsBeforeAnchorDate`.
 - [ ] No photo is ever uploaded twice, across app relaunches.
+      *Partial* — dedupe against `pending`/`completed`/`failed` and queue
+      persistence are unit-tested (`test_enqueue_dedupesAgainst*`,
+      `test_store_saveThenLoad_roundTripsQueue`). The "across relaunches" claim
+      itself has not been observed on a device.
 - [ ] Wi-Fi-only ON + cellular connection ⇒ queue holds and status reads "Waiting for Wi-Fi"; it drains on Wi-Fi reconnect.
+      *Partial* — the hold and the `.waitingForWiFi` status are covered by
+      `test_drain_wifiOnlyWithCellularPath_isNoOpAndQueueUntouched`. Resumption on
+      the `NWPathMonitor` reconnect callback is untested.
 - [ ] Killing the app mid-queue preserves pending entries; they resume on relaunch.
-- [ ] Uploads that fail retry with backoff and land in a user-visible failed list after 5 attempts, with a working "Retry Failed".
+      *Partial* — persistence round-trips in tests; the kill/relaunch cycle is unverified.
+- [x] Uploads that fail retry with backoff and land in a user-visible failed list after 5 attempts, with a working "Retry Failed".
+      `test_markFailed_advancesThroughFullBackoffSchedule`,
+      `test_markFailed_fifthFailure_movesToFailed`,
+      `test_markFailed_permanent_shortCircuitsToFailedImmediately`,
+      `test_retryAllFailed_movesEntriesBackToPendingWithResetState`.
+      Note: the queue logic is proven; the Settings button that calls it is not.
 - [ ] The server receives ciphertext — the destination folder's files decrypt correctly in the web app and open in the iOS viewer.
-- [ ] Manual `UploadSheet` progress UI is unaffected while photo sync runs.
+      *Not verified* — requires a live server and the web app. This is the single
+      most important criterion and nothing automated covers it.
+- [x] Manual `UploadSheet` progress UI is unaffected while photo sync runs.
+      `test_upload_reportsProgressFalse_leavesIsUploadingAndProgressUntouched`
+      plus `test_upload_reportsProgressTrue_setsProgressToOneOnSuccess`.
 - [ ] `FeatureFlags.photoAutoSync = false` ⇒ no photo permission prompt, no observer, no background task registration.
+      *Partial* — `test_start_whenDisabled_setsStatusDisabled` and
+      `test_init_whenDisabled_statusIsDisabled` assert the status only. That
+      `start()` returns before the observer/authorization calls is argued in a
+      comment, not asserted; `registerBackgroundTask()` has no test at all.
