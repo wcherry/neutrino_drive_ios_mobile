@@ -296,4 +296,98 @@ final class DriveServiceTests: XCTestCase {
 
         XCTAssertTrue(sut.items(in: .shared, parentID: nil).contains(where: { $0.id == "s1" }))
     }
+
+    // MARK: - fileWasUploaded — unloaded-parent guard (photo-sync uploads)
+
+    /// A background photo-sync upload into a folder the user has never opened must not
+    /// insert a lone child — the file browser has no way to know it's showing a partial
+    /// listing. See PhotoSyncService / UploadService refactor plan.
+    func test_fileWasUploaded_doesNotAppend_intoUnloadedParentFolder() {
+        let sut = DriveService()   // fresh instance — loadSection was never called
+        let result = UploadResult(id: "u1", name: "photo.jpg", folderId: "never-opened-folder",
+                                  sizeBytes: 100, mimeType: "image/jpeg", updatedAt: Date())
+
+        sut.fileWasUploaded(result)
+
+        XCTAssertFalse(sut.allItems.contains(where: { $0.id == "u1" }))
+    }
+
+    func test_fileWasUploaded_appends_onceParentHasBeenLoaded() {
+        let sut = DriveService()
+        sut.debugMarkLoaded(parentID: "opened-folder")
+        let result = UploadResult(id: "u2", name: "photo.jpg", folderId: "opened-folder",
+                                  sizeBytes: 100, mimeType: "image/jpeg", updatedAt: Date())
+
+        sut.fileWasUploaded(result)
+
+        XCTAssertTrue(sut.allItems.contains(where: { $0.id == "u2" }))
+    }
+
+    func test_fileWasUploaded_appendsToRoot_whenSeededWithRootItems() {
+        // The DEBUG convenience init marks root (nil) as loaded whenever it's used, matching
+        // real app behaviour where root is fetched before any upload UI is reachable.
+        let sut = DriveService(myDrive: [])
+        let result = UploadResult(id: "u3", name: "photo.jpg", folderId: nil,
+                                  sizeBytes: 100, mimeType: "image/jpeg", updatedAt: Date())
+
+        sut.fileWasUploaded(result)
+
+        XCTAssertTrue(sut.allItems.contains(where: { $0.id == "u3" }))
+    }
+
+    // MARK: - ensureFolder
+
+    func test_ensureFolder_adoptsExistingCaseInsensitiveMatch_insteadOfCreatingDuplicate() async throws {
+        KeychainService.save("test-token", forKey: AuthService.accessTokenKey)
+        defer { KeychainService.delete(forKey: AuthService.accessTokenKey) }
+
+        var requestCount = 0
+        var lastMethod: String?
+        MockURLProtocol.requestHandler = { request in
+            requestCount += 1
+            lastMethod = request.httpMethod
+            let json = """
+            {"files": [], "folders": [{"id": "existing-id", "name": "iPhone photos", "parentId": null, "updatedAt": "2024-01-01T00:00:00"}]}
+            """.data(using: .utf8)!
+            let response = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!
+            return (response, json)
+        }
+        defer { MockURLProtocol.reset() }
+
+        let sut = DriveService(session: MockURLProtocol.makeSession())
+        let folderID = try await sut.ensureFolder(named: "iPhone Photos", parentID: nil)
+
+        XCTAssertEqual(folderID, "existing-id")
+        XCTAssertEqual(requestCount, 1, "only the lookup GET should fire — no POST (create) when a match already exists")
+        XCTAssertEqual(lastMethod, "GET")
+    }
+
+    func test_ensureFolder_createsNewFolder_whenNoMatchExists() async throws {
+        KeychainService.save("test-token", forKey: AuthService.accessTokenKey)
+        defer { KeychainService.delete(forKey: AuthService.accessTokenKey) }
+
+        var methods: [String] = []
+        MockURLProtocol.requestHandler = { request in
+            methods.append(request.httpMethod ?? "?")
+            let response = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!
+            if request.httpMethod == "GET" {
+                let json = """
+                {"files": [], "folders": []}
+                """.data(using: .utf8)!
+                return (response, json)
+            } else {
+                let json = """
+                {"id": "new-id", "name": "iPhone Photos", "parentId": null, "updatedAt": "2024-01-01T00:00:00"}
+                """.data(using: .utf8)!
+                return (response, json)
+            }
+        }
+        defer { MockURLProtocol.reset() }
+
+        let sut = DriveService(session: MockURLProtocol.makeSession())
+        let folderID = try await sut.ensureFolder(named: "iPhone Photos", parentID: nil)
+
+        XCTAssertEqual(folderID, "new-id")
+        XCTAssertEqual(methods, ["GET", "POST"])
+    }
 }

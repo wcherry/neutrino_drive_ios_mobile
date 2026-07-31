@@ -4,6 +4,7 @@ struct SettingsView: View {
     @EnvironmentObject var authService: AuthService
     @EnvironmentObject var driveService: DriveService
     @EnvironmentObject var offlineService: OfflineService
+    @EnvironmentObject var photoSyncService: PhotoSyncService
 
     @StateObject private var quotaService = QuotaService()
 
@@ -59,6 +60,22 @@ struct SettingsView: View {
                 }
             }
 
+            if FeatureFlags.photoAutoSync {
+                Section("Photo Sync") {
+                    NavigationLink {
+                        PhotoSyncSettingsView(photoSyncService: photoSyncService)
+                    } label: {
+                        HStack {
+                            Label("Back Up My Photos", systemImage: "photo.badge.arrow.down")
+                            Spacer()
+                            Text(photoSyncSummary)
+                                .foregroundStyle(.secondary)
+                                .font(.footnote)
+                        }
+                    }
+                }
+            }
+
             Section("Storage") {
                 storageContent
             }
@@ -107,6 +124,15 @@ struct SettingsView: View {
             quotaService.authService = authService
             await quotaService.refresh()
         }
+    }
+
+    // MARK: - Photo Sync
+
+    private var photoSyncSummary: String {
+        guard photoSyncService.isEnabled else { return "Off" }
+        return photoSyncService.pendingCount > 0
+            ? "On \u{00B7} \(photoSyncService.pendingCount) waiting"
+            : "On"
     }
 
     // MARK: - Storage
@@ -192,5 +218,6 @@ struct SettingsView: View {
             .environmentObject(AuthService())
             .environmentObject(DriveService())
             .environmentObject(OfflineService())
+            .environmentObject(PhotoSyncService())
     }
 }
