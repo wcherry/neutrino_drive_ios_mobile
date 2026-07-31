@@ -6,6 +6,8 @@ A secure mobile file browser, document viewer, uploader, and offline access clie
 
 This aligns with how users actually interact with cloud storage on phones and tablets.
 
+> Progress legend: ✅ = done, ⬜ = not yet done. A section header is checked only once every item beneath it is checked.
+
 ⸻
 
 Vision
@@ -105,49 +107,47 @@ No collaborative editing.
 
 ⸻
 
-Epic 1: Mobile Application Shell
+## Epic 1: Mobile Application Shell — ✅
 
 Features
 
-SwiftUI application.
-
-Primary tabs:
-
-Files
-Recents
-Offline
-Settings
+✅ SwiftUI application.
+✅ Primary tabs:
+  ✅ Files
+  ✅ Recents
+  ✅ Offline
+  ✅ Settings
 
 Deliverables
 
-User can launch app and navigate core screens.
+✅ User can launch app and navigate core screens.
 
 ⸻
 
-Epic 2: Authentication
+## Epic 2: Authentication — ✅
 
 Reuse Neutrino authentication.
 
 Features
 
-Browser-based login.
+✅ Login flow (native email/password form + OAuth/PKCE token exchange — reuses the Neutrino auth API; not a browser/`ASWebAuthenticationSession` flow as originally sketched, but the deliverable is met).
 
 Store:
 
-* Access token
-* Refresh token
+✅ Access token
+✅ Refresh token
 
 Inside:
 
-* iOS Keychain
+✅ iOS Keychain
 
 Deliverables
 
-User remains logged in after app restart.
+✅ User remains logged in after app restart.
 
 ⸻
 
-Epic 3: Key Import
+## Epic 3: Key Import — ⬜
 
 Same initial model as desktop.
 
@@ -172,50 +172,37 @@ Import Options
 
 Open In
 
-User downloads file.
-
-Select:
-
-Open In Neutrino Drive
+✅ User downloads file → selects "Open In Neutrino Drive" (`onOpenURL` handling in `NeutrinoDriveApp`).
 
 ⸻
 
 File Picker
 
-Import Key File
-
-Uses:
-
-UIDocumentPicker
+✅ Import Key File via `UIDocumentPicker` (`KeyImportView`).
 
 ⸻
 
 Validation
 
-Verify:
-
-* JSON structure
-* Valid keys
-* Public/private pair match
+✅ Verify JSON structure
+✅ Valid keys
+✅ Public/private pair match
 
 ⸻
 
 Storage
 
-Store in:
-
-* iOS Keychain
-* Secure Enclave when possible
-
-Delete temporary copy.
+✅ Store in iOS Keychain
+⬜ Secure Enclave when possible (not implemented — keys are stored in the standard Keychain with no Secure Enclave / access-control attributes)
+✅ Delete temporary copy
 
 Deliverables
 
-Device can decrypt files.
+✅ Device can decrypt files.
 
 ⸻
 
-Epic 4: File Browser
+## Epic 4: File Browser — ✅
 
 Core Drive experience.
 
@@ -223,10 +210,10 @@ Features
 
 Browse:
 
-My Drive
-Shared
-Recent
-Trash
+✅ My Drive
+✅ Shared
+✅ Recent
+✅ Trash
 
 ⸻
 
@@ -234,166 +221,148 @@ Operations
 
 Create:
 
-* Folder
+✅ Folder
 
 Rename:
 
-* Files
-* Folders
+✅ Files
+✅ Folders
 
 Delete:
 
-* Files
-* Folders
+✅ Files
+✅ Folders
 
 Move:
 
-* Files
-* Folders
+✅ Files
+✅ Folders
 
 Deliverables
 
-Basic file management.
+✅ Basic file management.
 
 ⸻
 
-Epic 5: Upload Files
+## Epic 5: Upload Files — ⬜
 
 Use:
 
-UIDocumentPicker
-Photos Picker
-Camera
+✅ UIDocumentPicker
+✅ Photos Picker
+✅ Camera
 
 ⸻
 
 Supported Sources
 
-Files app
-
-Photos
-
-Camera
-
-Share Sheet
+✅ Files app
+✅ Photos
+✅ Camera
+⬜ Share Sheet (no Share Extension target exists yet)
 
 ⸻
 
 Upload Flow
 
-1. Select file
-2. Encrypt locally
-3. Upload encrypted blob
-4. Update metadata
+✅ Select file
+✅ Encrypt locally
+✅ Upload encrypted blob
+✅ Update metadata
 
 Deliverables
 
-Phone → Cloud uploads work.
+✅ Phone → Cloud uploads work.
 
 ⸻
 
-Epic 6: Download Files
+## Epic 6: Download Files — ✅
 
 Features
 
-Tap file.
+✅ Tap file.
 
 App:
 
-1. Downloads encrypted file
-2. Decrypts locally
-3. Opens viewer
+✅ Downloads encrypted file
+✅ Decrypts locally
+✅ Opens viewer
 
 Deliverables
 
-Cloud → Phone downloads work.
+✅ Cloud → Phone downloads work.
 
 ⸻
 
-Epic 7: File Viewers
+## Epic 7: File Viewers — ⬜
 
 Support common formats.
 
 MVP
 
-PDF
-
-Images
-
-Text
-
-Markdown
-
-Audio
-
-Video
+✅ PDF
+✅ Images
+✅ Text
+✅ Markdown (opens via QuickLook as plain text — not rendered as formatted Markdown)
+✅ Audio
+✅ Video
 
 Native Frameworks
 
-PDFKit
-
-QuickLook
-
-AVFoundation
+⬜ PDFKit (not used directly — QuickLook handles PDF rendering internally)
+✅ QuickLook
+⬜ AVFoundation (not used directly — QuickLook handles audio/video playback internally)
 
 Deliverables
 
-Most files can be viewed without leaving app.
+✅ Most files can be viewed without leaving app.
 
 ⸻
 
-Epic 8: Offline Files
+## Epic 8: Offline Files — ⬜
 
-User chooses:
-
-Make Available Offline
+⬜ User chooses: "Make Available Offline"
 
 App:
 
-1. Downloads encrypted file
-2. Stores locally
-3. Maintains decrypted cache
+⬜ Downloads encrypted file
+⬜ Stores locally
+⬜ Maintains decrypted cache
 
 Deliverables
 
-Offline access works.
+⬜ Offline access works. *(The "Offline" tab currently exists only as a placeholder screen — see `OfflineView.swift`.)*
 
 ⸻
 
-Epic 9: Search
+## Epic 9: Search — ⬜
 
 Search:
 
-* File names
-* Folder names
+⬜ File names
+⬜ Folder names
 
-Server-side metadata search only.
-
-No content search initially.
+(Server-side metadata search only. No content search initially — not yet started.)
 
 Deliverables
 
-Users can locate files quickly.
+⬜ Users can locate files quickly.
 
 ⸻
 
-Epic 10: Settings
+## Epic 10: Settings — ⬜
 
 Features
 
-Storage usage
-
-Cache size
-
-Key status
-
-Logout
-
-Sync status
+⬜ Storage usage
+⬜ Cache size
+✅ Key status
+✅ Logout
+⬜ Sync status
 
 Deliverables
 
-Basic administration.
+⬜ Basic administration. *(Settings currently covers key import/removal status and sign-out only.)*
 
 ⸻
 
@@ -401,35 +370,26 @@ MVP Success Criteria
 
 User can:
 
-✓ Login
-
-✓ Import key JSON
-
-✓ Store keys securely
-
-✓ Browse folders
-
-✓ Upload files
-
-✓ Download files
-
-✓ View files
-
-✓ Mark files offline
-
-✓ Search filenames
-
-✓ Continue using app after restart
+✅ Login
+✅ Import key JSON
+✅ Store keys securely
+✅ Browse folders
+✅ Upload files
+✅ Download files
+✅ View files
+⬜ Mark files offline
+⬜ Search filenames
+✅ Continue using app after restart
 
 ⸻
 
-Phase 2 — Native Mobile Experience
+Phase 2 — Native Mobile Experience — ⬜
 
 Target: 1–2 months
 
 ⸻
 
-Face ID / Touch ID
+### Face ID / Touch ID — ⬜
 
 Require biometric unlock.
 
@@ -437,89 +397,86 @@ Features
 
 Protect:
 
-* App launch
-* Key access
+⬜ App launch
+⬜ Key access
 
 Deliverables
 
-Improved security.
+⬜ Improved security.
 
 ⸻
 
-Background Transfers
+### Background Transfers — ⬜
 
 Use:
 
-URLSession Background Tasks
+⬜ `URLSession` Background Tasks
 
 Allows:
 
-* Large uploads
-* Large downloads
+⬜ Large uploads
+⬜ Large downloads
 
-When app is suspended.
-
-Deliverables
-
-Reliable transfers.
-
-⸻
-
-Share Sheet Support
-
-From any app:
-
-Share
-  → Neutrino Drive
+(When app is suspended — currently `UploadService`/`DownloadService` use `URLSession.shared`, so transfers do not survive suspension.)
 
 Deliverables
 
-Upload directly into Drive.
+⬜ Reliable transfers.
 
 ⸻
 
-Photo Auto Backup
+### Share Sheet Support — ⬜
+
+⬜ From any app: Share → Neutrino Drive
+
+Deliverables
+
+⬜ Upload directly into Drive.
+
+⸻
+
+### Photo Auto Backup — ⬜
 
 Optional.
 
 Backup:
 
-* Camera Roll
-* Albums
+⬜ Camera Roll
+⬜ Albums
 
-Similar to Google Photos.
+(Similar to Google Photos.)
+
+*Spec written but not yet implemented — see [docs/plans/feature-photo-auto-sync.md](../docs/plans/feature-photo-auto-sync.md).*
 
 Deliverables
 
-Strong mobile value proposition.
+⬜ Strong mobile value proposition.
 
 ⸻
 
-Push Notifications
+### Push Notifications — ⬜
 
 Notify:
 
-* Shared files
-* Upload completion
-* Storage limits
+⬜ Shared files
+⬜ Upload completion
+⬜ Storage limits
 
 Deliverables
 
-Better engagement.
+⬜ Better engagement.
 
 ⸻
 
-Phase 3 — iOS Ecosystem Integration
+Phase 3 — iOS Ecosystem Integration — ⬜
 
 This is where Neutrino begins feeling like a first-class iOS storage provider.
 
 ⸻
 
-Files App Integration
+### Files App Integration — ⬜
 
-Implement:
-
-File Provider Extension
+⬜ Implement File Provider Extension
 
 This is the equivalent of Dropbox and Google Drive integration.
 
@@ -530,59 +487,55 @@ Files App
 
 Deliverables
 
-Files accessible system-wide.
+⬜ Files accessible system-wide.
 
 ⸻
 
-Document Provider
+### Document Provider — ⬜
 
 Allows:
 
-* Pages
-* Numbers
-* Word
-* Excel
-* Third-party apps
+⬜ Pages
+⬜ Numbers
+⬜ Word
+⬜ Excel
+⬜ Third-party apps
 
 To open Neutrino files directly.
 
 Deliverables
 
-Deep platform integration.
+⬜ Deep platform integration.
 
 ⸻
 
-Open In Place
+### Open In Place — ⬜
 
-Files can remain:
-
-Neutrino Drive
-
-without copying.
+⬜ Files can remain in Neutrino Drive without copying. *(`LSSupportsOpeningDocumentsInPlace` is explicitly set to `false` today.)*
 
 Deliverables
 
-Better storage efficiency.
+⬜ Better storage efficiency.
 
 ⸻
 
-Spotlight Search
+### Spotlight Search — ⬜
 
-Index metadata.
+⬜ Index metadata.
 
 Search:
 
-File names
-Folder names
-Recent documents
+⬜ File names
+⬜ Folder names
+⬜ Recent documents
 
 Deliverables
 
-System-wide search support.
+⬜ System-wide search support.
 
 ⸻
 
-Phase 4 — Security Improvements
+Phase 4 — Security Improvements — ⬜
 
 Current MVP relies on exported JSON keys.
 
@@ -590,154 +543,141 @@ Eventually eliminate that.
 
 ⸻
 
-QR Pairing
+### QR Pairing — ✅ *(mobile side)*
 
 Web app:
 
-Pair Device
-
-Displays QR code.
+✅ Pair Device — displays QR code *(web app — not verified from this repo)*
 
 Mobile app:
 
-Scan QR
-
-Transfers encrypted keys.
-
-No exported files.
+✅ Scan QR (`QRScannerView`)
+✅ Transfers encrypted keys (`KeyQRDecryptService`, `KeyQRImportView`)
+✅ No exported files required for this path (JSON export/import remains available as an alternate path)
 
 Deliverables
 
-Much better onboarding.
+✅ Much better onboarding.
 
 ⸻
 
-Device Registration
+### Device Registration — ⬜
 
-Each device gets:
-
-Device Key Pair
-
-Example:
-
-iPhone
-iPad
-MacBook
-Browser
-
-Account key wrapped separately for each device.
+⬜ Each device gets a Device Key Pair (iPhone / iPad / MacBook / Browser)
+⬜ Account key wrapped separately for each device.
 
 Deliverables
 
-Foundation for multi-device E2EE.
+⬜ Foundation for multi-device E2EE.
 
 ⸻
 
-Key Rotation
+### Key Rotation — ⬜
 
 Support:
 
-Key v1
-Key v2
-Key v3
-
-Allow decrypting historical documents.
+⬜ Key v1
+⬜ Key v2
+⬜ Key v3
+⬜ Allow decrypting historical documents.
 
 Deliverables
 
-Future-proof security.
+⬜ Future-proof security. *(Only a single active key version is currently stored/supported.)*
 
 ⸻
 
-Phase 5 — Advanced Drive Features
+Phase 5 — Advanced Drive Features — ⬜
 
 ⸻
 
-Sharing
+### Sharing — ⬜
 
 Support:
 
-* User sharing
-* Public links
-* Team folders
+⬜ User sharing
+⬜ Public links
+⬜ Team folders
 
 Using wrapped file keys.
 
 ⸻
 
-Version History
+### Version History — ⬜
 
 View:
 
-* Previous versions
-* Restore versions
+⬜ Previous versions
+⬜ Restore versions
 
 Reuse existing Drive APIs.
 
 ⸻
 
-Favorites
+### Favorites — ⬜
 
-Star important files.
+⬜ Star important files.
 
 ⸻
 
-Smart Offline Sync
+### Smart Offline Sync — ⬜
 
 Automatically cache:
 
-* Recent files
-* Frequently accessed files
+⬜ Recent files
+⬜ Frequently accessed files
 
 ⸻
 
-Large File Streaming
+### Large File Streaming — ⬜
 
 Stream:
 
-* Video
-* Audio
+⬜ Video
+⬜ Audio
 
 Without full download.
 
 ⸻
 
-Phase 6 — iPad Productivity Features
+Phase 6 — iPad Productivity Features — ⬜
 
 Once the iPhone experience is mature.
 
-⸻
-
-Multi-Window Support
-
-Open multiple documents.
+*(A basic adaptive iPad split-view layout already exists in `FilesView`, but none of the advanced productivity features below are implemented.)*
 
 ⸻
 
-Drag and Drop
+### Multi-Window Support — ⬜
+
+⬜ Open multiple documents.
+
+⸻
+
+### Drag and Drop — ⬜
 
 Between:
 
-* Neutrino
-* Files
-* Mail
-* Notes
+⬜ Neutrino
+⬜ Files
+⬜ Mail
+⬜ Notes
 
 ⸻
 
-Stage Manager Support
+### Stage Manager Support — ⬜
 
-Optimized for modern iPad workflows.
+⬜ Optimized for modern iPad workflows.
 
 ⸻
 
-Apple Pencil Features
+### Apple Pencil Features — ⬜
 
 Future integration with:
 
-* Notes
-* PDFs
-* Annotation workflows
+⬜ Notes
+⬜ PDFs
+⬜ Annotation workflows
 
 ⸻
 
@@ -745,16 +685,16 @@ Recommended MVP Cut Line
 
 If I were building Neutrino Drive Mobile today, I would stop the MVP at:
 
-1. SwiftUI application
-2. Browser authentication
-3. JSON key import
-4. Keychain storage
-5. File browser
-6. Upload files
-7. Download files
-8. Native viewers
-9. Offline files
-10. Basic search
-11. Settings
+1. ✅ SwiftUI application
+2. ✅ Browser authentication
+3. ✅ JSON key import
+4. ✅ Keychain storage
+5. ✅ File browser
+6. ✅ Upload files
+7. ✅ Download files
+8. ✅ Native viewers
+9. ⬜ Offline files
+10. ⬜ Basic search
+11. ⬜ Settings *(basic version exists; storage usage, cache size, and sync status are still pending)*
 
 I would intentionally postpone Files App integration, File Provider extensions, QR pairing, sharing, version history, and automatic photo backup until after the core encrypted file access experience is proven. The MVP should validate that users can securely access and manage their Neutrino Drive data on iPhone and iPad while keeping the implementation small and focused.
