@@ -37,6 +37,8 @@ targets:
         SWIFT_VERSION: "5.0"
         IPHONEOS_DEPLOYMENT_TARGET: "16.0"
         DEVELOPMENT_TEAM: "46KWJJ63FU"
+        CODE_SIGN_STYLE: Automatic
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
     entitlements:
       path: NeutrinoDrive/NeutrinoDrive.entitlements
       properties:
@@ -53,6 +55,11 @@ targets:
       properties:
         CFBundleName: Neutrino Drive
         CFBundleDisplayName: Neutrino Drive
+        # Without these, xcodegen writes literal "1.0"/"1" into Info.plist and the
+        # MARKETING_VERSION / CURRENT_PROJECT_VERSION build settings are ignored — the
+        # archive then ships whatever build number App Store Connect last saw.
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
         UILaunchScreen: {}
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
@@ -149,6 +156,7 @@ targets:
         SWIFT_VERSION: "5.0"
         IPHONEOS_DEPLOYMENT_TARGET: "16.0"
         DEVELOPMENT_TEAM: "46KWJJ63FU"
+        CODE_SIGN_STYLE: Automatic
     entitlements:
       path: NeutrinoDriveShare/NeutrinoDriveShare.entitlements
       properties:
@@ -161,6 +169,12 @@ targets:
       properties:
         CFBundleName: Neutrino Drive
         CFBundleDisplayName: Neutrino Drive
+        # An embedded extension whose CFBundleVersion / CFBundleShortVersionString differ
+        # from the container app's is rejected at upload ("bundle version does not match").
+        # Reading them from the build settings keeps all three bundles in lockstep, which is
+        # what lets deploy_testflight.sh bump every CURRENT_PROJECT_VERSION in project.yml.
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
         NSAppTransportSecurity:
           NSAllowsArbitraryLoads: true
         NSExtension:
@@ -238,6 +252,7 @@ targets:
         SWIFT_VERSION: "5.0"
         IPHONEOS_DEPLOYMENT_TARGET: "16.0"
         DEVELOPMENT_TEAM: "46KWJJ63FU"
+        CODE_SIGN_STYLE: Automatic
     entitlements:
       path: NeutrinoDriveFileProvider/NeutrinoDriveFileProvider.entitlements
       properties:
@@ -252,6 +267,9 @@ targets:
       properties:
         CFBundleName: Neutrino Drive
         CFBundleDisplayName: Neutrino Drive
+        # Must match the container app's — see the note on the share extension above.
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
         NSAppTransportSecurity:
           NSAllowsArbitraryLoads: true
         NSExtension:

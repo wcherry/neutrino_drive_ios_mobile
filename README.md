@@ -26,12 +26,34 @@ A secure mobile file browser for Neutrino Drive encrypted cloud storage. Built w
 
 ## Getting Started
 
-No `.xcodeproj` file is included in this repository. To open the project in Xcode:
+`project.yml` is the source of truth for the Xcode project; `NeutrinoDrive.xcodeproj` is generated from it and committed so the project opens without any setup. After changing `project.yml` — or after adding a file to a target that lists sources individually, such as either extension — regenerate it:
 
-1. Open Xcode and create a new iOS App project.
-2. Name the project `NeutrinoDrive` with bundle identifier `com.neutrino.drive`, targeting iOS 16+.
-3. Delete the auto-generated source files Xcode creates (e.g. `ContentView.swift`, `NeutrinoDriveApp.swift`).
-4. Add the files from the `NeutrinoDrive/` directory to the project via File > Add Files to "NeutrinoDrive".
+```sh
+brew install xcodegen   # once
+xcodegen generate
+open NeutrinoDrive.xcodeproj
+```
+
+The workspace builds three bundles: the `NeutrinoDrive` app, the `NeutrinoDriveShare` share extension, and the `NeutrinoDriveFileProvider` File Provider extension.
+
+## Deploying to TestFlight
+
+```sh
+cp scripts/.env.example scripts/.env   # then fill in App Store Connect credentials
+scripts/deploy_testflight.sh           # bump the build number by 1 and ship
+scripts/deploy_testflight.sh 7         # ship build 7
+scripts/deploy_testflight.sh 7 1.1.0   # build 7, marketing version 1.1.0
+```
+
+The script bumps `CURRENT_PROJECT_VERSION` in `project.yml` (the source of truth — each `Info.plist` reads it through `$(CURRENT_PROJECT_VERSION)`), regenerates the project with XcodeGen, runs the unit tests, archives, exports an App Store `.ipa`, and uploads it with `xcrun altool`. `--skip-tests` and `--no-upload` are available for iterating. Commit the `project.yml` bump afterwards so the next build number starts from the right place.
+
+Because the app embeds two extensions, all three bundles must carry the same version — App Store Connect rejects an upload whose extension versions disagree with the app's. The bump rewrites all three declarations at once, refuses to run if they had drifted apart beforehand, and re-checks every bundle's `CFBundleVersion` inside the exported `.ipa`.
+
+Credentials come from `scripts/.env` (gitignored) — either an App Store Connect API key (`ASC_KEY_ID` / `ASC_ISSUER_ID` / `ASC_KEY_PATH`) or an Apple ID with an app-specific password (`ASC_APPLE_ID` / `ASC_APP_PASSWORD`). See `scripts/.env.example`.
+
+Signing is automatic and needs an *Apple Distribution* certificate for team `46KWJJ63FU`. Xcode 26 stores automatic-signing certificates in the data-protection keychain, where `security find-identity` cannot see them, so the script verifies the exported `.ipa`'s embedded provisioning profile and bundle versions instead of preflighting the keychain — a development-signed or stale-versioned build fails locally rather than being rejected by Apple ten minutes later.
+
+The first upload additionally needs, in App Store Connect, an app record for `com.neutrino.drive`, and, in the developer portal, the App Group `group.com.neutrino.drive` and the keychain sharing group enabled on all three App IDs. Automatic signing creates the App IDs and profiles on demand; the app record itself has to be created by hand once.
 
 ## Architecture
 
