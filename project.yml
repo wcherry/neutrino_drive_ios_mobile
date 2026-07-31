@@ -18,6 +18,8 @@ targets:
     dependencies:
       - package: swift-sodium
         product: Sodium
+      - target: NeutrinoDriveShare
+        embed: true
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.neutrino.drive
@@ -26,6 +28,17 @@ targets:
         SWIFT_VERSION: "5.0"
         IPHONEOS_DEPLOYMENT_TARGET: "16.0"
         DEVELOPMENT_TEAM: "46KWJJ63FU"
+    entitlements:
+      path: NeutrinoDrive/NeutrinoDrive.entitlements
+      properties:
+        # App Group: shared UserDefaults (server host) and the entitlement probe
+        # KeychainService uses to decide whether the shared access group is usable.
+        com.apple.security.application-groups:
+          - group.com.neutrino.drive
+        # Shared Keychain access group, so the share extension can read the access
+        # token and the encryption-key material the app imported.
+        keychain-access-groups:
+          - $(AppIdentifierPrefix)com.neutrino.drive.shared
     info:
       path: NeutrinoDrive/Info.plist
       properties:
@@ -43,6 +56,7 @@ targets:
           - UIInterfaceOrientationLandscapeRight
         NSCameraUsageDescription: "Neutrino Drive needs camera access to scan QR codes for key import."
         NSPhotoLibraryUsageDescription: "Neutrino Drive needs access to your photo library to automatically back up new photos to your encrypted Drive."
+        NSFaceIDUsageDescription: "Neutrino Drive uses Face ID to unlock the app and to protect access to your encryption keys."
         UIBackgroundModes:
           - processing
         BGTaskSchedulerPermittedIdentifiers:
@@ -64,6 +78,66 @@ targets:
             UTTypeTagSpecification:
               public.filename-extension:
                 - json
+
+  # Share extension — "Share → Neutrino Drive" from any app.
+  #
+  # Code sharing strategy: individual source files are listed in BOTH this target and the
+  # app target, rather than being moved into a shared framework. The correctness property
+  # that matters here is "the extension's ciphertext is byte-for-byte what the app would
+  # produce", and compiling literally the same file guarantees that more strongly than a
+  # framework's API contract would — while avoiding a several-hundred-line `public`
+  # annotation diff across every service. See "Code-sharing strategy" in
+  # agent_docs/plans/feature-phase2-biometrics-share-background.md.
+  #
+  # The shared set is deliberately tiny and dependency-light. Notably absent: AuthService,
+  # DriveService, and everything in Views/ — which is exactly why the E2EE pipeline was
+  # extracted out of UploadService into E2EEUploader.
+  NeutrinoDriveShare:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: NeutrinoDriveShare
+      - path: NeutrinoDrive/Config/FeatureFlags.swift
+      - path: NeutrinoDrive/Config/SharedStorage.swift
+      - path: NeutrinoDrive/Services/KeychainService.swift
+      - path: NeutrinoDrive/Services/E2EEUploader.swift
+      - path: NeutrinoDrive/Services/BackgroundTransferService.swift
+      - path: NeutrinoDrive/Services/ShareUploadCoordinator.swift
+    dependencies:
+      - package: swift-sodium
+        product: Sodium
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.neutrino.drive.share
+        MARKETING_VERSION: "1.0.0"
+        CURRENT_PROJECT_VERSION: "1"
+        SWIFT_VERSION: "5.0"
+        IPHONEOS_DEPLOYMENT_TARGET: "16.0"
+        DEVELOPMENT_TEAM: "46KWJJ63FU"
+    entitlements:
+      path: NeutrinoDriveShare/NeutrinoDriveShare.entitlements
+      properties:
+        com.apple.security.application-groups:
+          - group.com.neutrino.drive
+        keychain-access-groups:
+          - $(AppIdentifierPrefix)com.neutrino.drive.shared
+    info:
+      path: NeutrinoDriveShare/Info.plist
+      properties:
+        CFBundleName: Neutrino Drive
+        CFBundleDisplayName: Neutrino Drive
+        NSAppTransportSecurity:
+          NSAllowsArbitraryLoads: true
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.share-services
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).ShareViewController
+          NSExtensionAttributes:
+            NSExtensionActivationRule:
+              NSExtensionActivationSupportsFileWithMaxCount: 10
+              NSExtensionActivationSupportsImageWithMaxCount: 10
+              NSExtensionActivationSupportsMovieWithMaxCount: 5
+              NSExtensionActivationSupportsText: true
+              NSExtensionActivationSupportsWebURLWithMaxCount: 1
 
   NeutrinoDriveTests:
     type: bundle.unit-test

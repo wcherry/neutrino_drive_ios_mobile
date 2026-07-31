@@ -5,6 +5,7 @@ struct SettingsView: View {
     @EnvironmentObject var driveService: DriveService
     @EnvironmentObject var offlineService: OfflineService
     @EnvironmentObject var photoSyncService: PhotoSyncService
+    @EnvironmentObject var biometricService: BiometricAuthService
 
     @StateObject private var quotaService = QuotaService()
 
@@ -12,6 +13,7 @@ struct SettingsView: View {
     @State private var showKeyImport = false
     @State private var showRemoveConfirmation = false
     @State private var showClearCacheConfirmation = false
+    @State private var keyAccessDenied: String?
 
     var body: some View {
         List {
@@ -39,8 +41,20 @@ struct SettingsView: View {
                     }
                     .alert("Remove Encryption Keys?", isPresented: $showRemoveConfirmation) {
                         Button("Remove", role: .destructive) {
-                            KeyImportService.removeKeys()
-                            hasKeys = false
+                            // Key access is the second target mvp.md names alongside app
+                            // launch. Removing the keys is irreversible without the original
+                            // key file, so it goes behind the biometric gate; the gate
+                            // short-circuits when the feature is off or the user unlocked
+                            // within the grace period.
+                            Task {
+                                guard await biometricService.authenticateForKeyAccess() else {
+                                    keyAccessDenied = biometricService.lastError?.message
+                                        ?? "Authentication is required to remove your keys."
+                                    return
+                                }
+                                KeyImportService.removeKeys()
+                                hasKeys = false
+                            }
                         }
                         Button("Cancel", role: .cancel) {}
                     } message: {
@@ -56,6 +70,22 @@ struct SettingsView: View {
                         hasKeys = KeyImportService.hasStoredKeys()
                     } content: {
                         KeyImportView(isPresented: $showKeyImport)
+                    }
+                }
+            }
+
+            if FeatureFlags.biometricLock {
+                Section("Security") {
+                    NavigationLink {
+                        BiometricSettingsView(biometricService: biometricService)
+                    } label: {
+                        HStack {
+                            Label("App Lock", systemImage: "lock.shield")
+                            Spacer()
+                            Text(biometricService.isEnabled ? "On" : "Off")
+                                .foregroundStyle(.secondary)
+                                .font(.footnote)
+                        }
                     }
                 }
             }
@@ -123,6 +153,14 @@ struct SettingsView: View {
         .task {
             quotaService.authService = authService
             await quotaService.refresh()
+        }
+        .alert("Authentication Required", isPresented: Binding(
+            get: { keyAccessDenied != nil },
+            set: { if !$0 { keyAccessDenied = nil } }
+        )) {
+            Button("OK") { keyAccessDenied = nil }
+        } message: {
+            Text(keyAccessDenied ?? "")
         }
     }
 
@@ -219,5 +257,6 @@ struct SettingsView: View {
             .environmentObject(DriveService())
             .environmentObject(OfflineService())
             .environmentObject(PhotoSyncService())
+            .environmentObject(BiometricAuthService())
     }
 }

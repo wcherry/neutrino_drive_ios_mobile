@@ -133,17 +133,5 @@ enum KeyQRDecryptService {
     }
 }
 
-// MARK: - Data + Base64URL
-
-private extension Data {
-    init?(base64URLEncoded string: String) {
-        var base64 = string
-            .replacingOccurrences(of: "-", with: "+")
-            .replacingOccurrences(of: "_", with: "/")
-        let remainder = base64.count % 4
-        if remainder != 0 {
-            base64 += String(repeating: "=", count: 4 - remainder)
-        }
-        self.init(base64Encoded: base64)
-    }
-}
+// `Data(base64URLEncoded:)` used to be redeclared privately in three files. It now lives once,
+// as an internal extension, in `E2EEUploader.swift` — which the share extension also compiles.

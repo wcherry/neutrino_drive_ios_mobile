@@ -33,9 +33,10 @@ enum KeyImportError: LocalizedError {
 
 enum KeyImportService {
 
-    static let publicKeyKeychainKey  = "nd.encryption.public_key"
-    static let privateKeyKeychainKey = "nd.encryption.private_key"
-    static let keyVersionKeychainKey = "nd.encryption.key_version"
+    // Aliases for the canonical definitions in `SharedStorage` — see `SharedStorage.Keys`.
+    static let publicKeyKeychainKey  = SharedStorage.Keys.publicKey
+    static let privateKeyKeychainKey = SharedStorage.Keys.privateKey
+    static let keyVersionKeychainKey = SharedStorage.Keys.keyVersion
 
     // MARK: - importKey
 
@@ -98,10 +99,9 @@ enum KeyImportService {
     // MARK: - hasStoredKeys
 
     /// Returns true when all three Keychain entries are present.
+    /// Delegates to `SharedStorage` so the app and the share extension use one implementation.
     static func hasStoredKeys() -> Bool {
-        KeychainService.load(forKey: publicKeyKeychainKey)  != nil &&
-        KeychainService.load(forKey: privateKeyKeychainKey) != nil &&
-        KeychainService.load(forKey: keyVersionKeychainKey) != nil
+        SharedStorage.hasStoredKeys()
     }
 
     // MARK: - removeKeys

@@ -45,8 +45,23 @@ final class DownloadService: ObservableObject {
     private let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "NeutrinoDrive",
                                 category: "DownloadService")
 
-    private var baseURL: String {
-        UserDefaults.standard.string(forKey: AuthService.serverHostKey) ?? AuthService.defaultHost
+    private var baseURL: String { SharedStorage.serverHost }
+
+    /// The encrypted blob is fetched through this so the transfer survives app suspension.
+    /// The small sealed-key JSON call goes through its foreground session — background
+    /// sessions do not support data tasks.
+    private let transferService: BackgroundTransferService
+
+    // MARK: - Init
+
+    /// - Parameter session: injectable so tests can stub network responses with
+    ///   `MockURLProtocol`; when omitted the shared background-session transfer service is used.
+    init(session: URLSession? = nil) {
+        if let session {
+            self.transferService = BackgroundTransferService(session: session)
+        } else {
+            self.transferService = .shared
+        }
     }
 
     // MARK: - Download
@@ -104,7 +119,7 @@ final class DownloadService: ObservableObject {
 
         progress = 0.4
 
-        // MARK: Step 3 — Download encrypted file blob
+        // MARK: Step 3 — Download encrypted file blob (background session)
 
         let encryptedData = try await fetchEncryptedFile(fileID: fileID, token: token)
         logger.debug("download: received \(encryptedData.count) bytes")
@@ -166,7 +181,7 @@ final class DownloadService: ObservableObject {
         let data: Data
         let response: URLResponse
         do {
-            (data, response) = try await URLSession.shared.data(for: req)
+            (data, response) = try await transferService.data(for: req)
         } catch {
             logger.error("fetchSealedDEK network error: \(error, privacy: .public)")
             throw DownloadError.networkError(underlying: error)
@@ -190,6 +205,10 @@ final class DownloadService: ObservableObject {
         }
     }
 
+    /// Fetches the ciphertext blob via `BackgroundTransferService.download`, so a large file
+    /// keeps transferring if iOS suspends the app mid-download. The delivered file is read into
+    /// memory for decryption and then removed — streaming decryption is a separate follow-up
+    /// (see the memory note in `feature-photo-auto-sync.md`).
     private func fetchEncryptedFile(fileID: String, token: String) async throws -> Data {
         guard let url = URL(string: baseURL + "/api/v1/drive/files/\(fileID)") else {
             throw DownloadError.serverError(statusCode: 0)
@@ -199,24 +218,36 @@ final class DownloadService: ObservableObject {
 
         logger.debug("--> GET /api/v1/drive/files/\(fileID, privacy: .public)")
 
-        let data: Data
-        let response: URLResponse
+        let fileURL: URL
+        let http: HTTPURLResponse
         do {
-            (data, response) = try await URLSession.shared.data(for: req)
+            (fileURL, http) = try await transferService.download(
+                request: req,
+                transferID: "download-\(fileID)",
+                progress: { [weak self] fraction in
+                    Task { @MainActor in
+                        // Step 3 spans the 0.4…0.7 band of the overall progress bar.
+                        self?.progress = 0.4 + (fraction * 0.3)
+                    }
+                }
+            )
         } catch {
             logger.error("fetchEncryptedFile network error: \(error, privacy: .public)")
             throw DownloadError.networkError(underlying: error)
         }
 
-        guard let http = response as? HTTPURLResponse else {
-            throw DownloadError.serverError(statusCode: 0)
-        }
-        logger.debug("<-- \(http.statusCode) /api/v1/drive/files/\(fileID, privacy: .public) (\(data.count) bytes)")
+        defer { try? FileManager.default.removeItem(at: fileURL.deletingLastPathComponent()) }
+
+        logger.debug("<-- \(http.statusCode) /api/v1/drive/files/\(fileID, privacy: .public)")
         guard (200...299).contains(http.statusCode) else {
             throw DownloadError.serverError(statusCode: http.statusCode)
         }
 
-        return data
+        do {
+            return try Data(contentsOf: fileURL)
+        } catch {
+            throw DownloadError.fileWriteError(underlying: error)
+        }
     }
 }
 
@@ -224,17 +255,4 @@ final class DownloadService: ObservableObject {
 
 private struct APIKeyResponse: Decodable {
     let encryptedFileKey: String
-}
-
-// MARK: - Data + Base64URL
-
-private extension Data {
-    init?(base64URLEncoded string: String) {
-        var s = string
-            .replacingOccurrences(of: "-", with: "+")
-            .replacingOccurrences(of: "_", with: "/")
-        let r = s.count % 4
-        if r != 0 { s += String(repeating: "=", count: 4 - r) }
-        self.init(base64Encoded: s)
-    }
 }
