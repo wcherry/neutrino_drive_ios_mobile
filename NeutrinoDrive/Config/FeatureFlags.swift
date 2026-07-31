@@ -18,4 +18,9 @@ enum FeatureFlags {
     /// When true, tapping a Doc/Sheet/Slide/Diagram/Drawing opens the
     /// in-app web viewer instead of triggering a download.
     static let viewNeutrinoFiles: Bool = true
+
+    /// Set to true to enable automatic background sync of new photos to Drive.
+    /// When false, the Photo Sync section is hidden in Settings and no PhotoKit
+    /// observer or background task is registered.
+    static let photoAutoSync: Bool = true
 }

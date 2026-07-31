@@ -2,6 +2,7 @@ import SwiftUI
 
 struct SettingsView: View {
     @EnvironmentObject var authService: AuthService
+    @EnvironmentObject var photoSyncService: PhotoSyncService
 
     @State private var hasKeys = KeyImportService.hasStoredKeys()
     @State private var showKeyImport = false
@@ -54,6 +55,22 @@ struct SettingsView: View {
                 }
             }
 
+            if FeatureFlags.photoAutoSync {
+                Section("Photo Sync") {
+                    NavigationLink {
+                        PhotoSyncSettingsView(photoSyncService: photoSyncService)
+                    } label: {
+                        HStack {
+                            Label("Back Up My Photos", systemImage: "photo.badge.arrow.down")
+                            Spacer()
+                            Text(photoSyncSummary)
+                                .foregroundStyle(.secondary)
+                                .font(.footnote)
+                        }
+                    }
+                }
+            }
+
             Section {
                 Button(role: .destructive) {
                     authService.logout()
@@ -67,11 +84,19 @@ struct SettingsView: View {
         }
         .navigationTitle("Settings")
     }
+
+    private var photoSyncSummary: String {
+        guard photoSyncService.isEnabled else { return "Off" }
+        return photoSyncService.pendingCount > 0
+            ? "On \u{00B7} \(photoSyncService.pendingCount) waiting"
+            : "On"
+    }
 }
 
 #Preview {
     NavigationStack {
         SettingsView()
             .environmentObject(AuthService())
+            .environmentObject(PhotoSyncService())
     }
 }

@@ -4,15 +4,36 @@ import SwiftUI
 struct NeutrinoDriveApp: App {
     @StateObject private var authService = AuthService()
     @StateObject private var driveService = DriveService()
+    @StateObject private var uploadService = UploadService()
+    @StateObject private var photoSyncService = PhotoSyncService()
+
+    @Environment(\.scenePhase) private var scenePhase
+
+    init() {
+        // Must be registered before the app finishes launching. No-ops when
+        // FeatureFlags.photoAutoSync is false. Accessing the StateObject's storage
+        // directly (rather than the `photoSyncService` property) is safe here — this
+        // only invokes a plain method, it doesn't participate in view invalidation.
+        _photoSyncService.wrappedValue.registerBackgroundTask()
+    }
 
     var body: some Scene {
         WindowGroup {
             RootContentView()
                 .environmentObject(authService)
                 .environmentObject(driveService)
+                .environmentObject(photoSyncService)
                 .task {
                     driveService.authService = authService
+                    uploadService.driveService = driveService
+                    photoSyncService.configure(driveService: driveService, uploadService: uploadService)
+                    photoSyncService.start()
                 }
+        }
+        .onChange(of: scenePhase) { newPhase in
+            if newPhase == .background {
+                photoSyncService.scheduleBackgroundTask()
+            }
         }
     }
 }

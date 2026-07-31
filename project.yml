@@ -42,6 +42,11 @@ targets:
           - UIInterfaceOrientationLandscapeLeft
           - UIInterfaceOrientationLandscapeRight
         NSCameraUsageDescription: "Neutrino Drive needs camera access to scan QR codes for key import."
+        NSPhotoLibraryUsageDescription: "Neutrino Drive needs access to your photo library to automatically back up new photos to your encrypted Drive."
+        UIBackgroundModes:
+          - processing
+        BGTaskSchedulerPermittedIdentifiers:
+          - com.neutrino.drive.photosync
         NSAppTransportSecurity:
           NSAllowsArbitraryLoads: true
         LSSupportsOpeningDocumentsInPlace: false

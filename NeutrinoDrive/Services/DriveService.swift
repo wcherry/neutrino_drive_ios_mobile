@@ -38,17 +38,50 @@ final class DriveService: ObservableObject {
     @Published var isLoading = false
     @Published var error: String?
 
+    /// Parent IDs (nil = root) whose contents have been fetched from the server at least
+    /// once this session. Used to guard `fileWasUploaded` against inserting a lone child
+    /// into a folder whose siblings were never loaded (see that method for details).
+    ///
+    /// Root starts pre-marked as loaded: every reachable upload entry point (the "+" button
+    /// in `FilesView`, `UploadSheet`) only appears after the Files tab has loaded root, so in
+    /// practice root is always loaded by the time a manual upload can happen. The guard's
+    /// real value is for non-root folders — e.g. photo sync's destination folder, which the
+    /// user may never have opened.
+    private var loadedParentIDs: Set<String?> = [nil]
+
+    // MARK: - Init
+
+    /// `session` is injectable so tests can stub network responses via a custom
+    /// `URLProtocol` (e.g. `MockURLProtocol`) without touching production call sites.
+    init(session: URLSession = .shared) {
+        self.session = session
+    }
+
     // MARK: - Test Seeding
 
     #if DEBUG
     /// Seed state for unit tests — bypasses the network entirely.
+    /// Every parentID represented in `myDrive` (plus root, when `myDrive` is non-empty or
+    /// explicitly requested) is marked as "loaded" so `fileWasUploaded` behaves the way it
+    /// would after the app has actually fetched that folder's contents.
     convenience init(myDrive: [DriveItem] = [], trash: [DriveItem] = [],
-                     recents: [DriveItem] = [], shared: [DriveItem] = []) {
-        self.init()
+                     recents: [DriveItem] = [], shared: [DriveItem] = [],
+                     session: URLSession = .shared) {
+        self.init(session: session)
         self.allItems   = myDrive
         self.trashItems = trash
         self.recentItems = recents
         self.sharedItems = shared
+        self.loadedParentIDs.insert(nil)
+        for item in myDrive {
+            self.loadedParentIDs.insert(item.parentID)
+        }
+    }
+
+    /// Marks `parentID` as having been loaded, for tests that need to seed loaded-folder
+    /// state without seeding actual child items (e.g. an intentionally empty folder).
+    func debugMarkLoaded(parentID: String?) {
+        loadedParentIDs.insert(parentID)
     }
     #endif
 
@@ -98,6 +131,9 @@ final class DriveService: ObservableObject {
         UserDefaults.standard.string(forKey: AuthService.serverHostKey) ?? AuthService.defaultHost
     }
 
+    /// Injectable so tests can stub network responses; defaults to `.shared` in production.
+    private let session: URLSession
+
     // MARK: - Section Query
 
     func items(in section: DriveSection, parentID: String?) -> [DriveItem] {
@@ -130,6 +166,7 @@ final class DriveService: ObservableObject {
                 allItems.removeAll { $0.parentID == parentID }
                 allItems.append(contentsOf: folders)
                 allItems.append(contentsOf: files)
+                loadedParentIDs.insert(parentID)
                 logger.debug("loadSection myDrive: loaded \(folders.count) folders, \(files.count) files")
 
             case .recents:
@@ -322,7 +359,17 @@ final class DriveService: ObservableObject {
     }
 
     /// Called by UploadService after a successful upload to optimistically add the file to allItems.
+    ///
+    /// Skips the append when `result.folderId`'s contents have never been loaded from the
+    /// server (i.e. `loadSection(.myDrive, parentID:)` has not been called for that folder
+    /// this session). Without this guard, a background photo-sync upload into a folder the
+    /// user has never opened would insert a lone child whose siblings were never fetched,
+    /// and the file browser would render that folder as if it contained only one file.
     func fileWasUploaded(_ result: UploadResult) {
+        guard loadedParentIDs.contains(result.folderId) else {
+            logger.debug("fileWasUploaded: skipping optimistic append — parent \(result.folderId ?? "root", privacy: .public) not loaded")
+            return
+        }
         let item = DriveItem(
             id: result.id,
             name: result.name,
@@ -336,6 +383,30 @@ final class DriveService: ObservableObject {
         )
         allItems.append(item)
         logger.debug("fileWasUploaded: id=\(result.id, privacy: .public) name=\(result.name, privacy: .public)")
+    }
+
+    // MARK: - Folder Resolution
+
+    /// Find-or-create a folder named `name` under `parentID` (nil = root).
+    ///
+    /// If a folder with a case-insensitive matching name already exists under `parentID`,
+    /// its ID is returned (adopted) rather than creating a duplicate — so a pre-existing
+    /// "iPhone photos" is reused instead of producing a second "iPhone Photos" folder.
+    func ensureFolder(named name: String, parentID: String?) async throws -> String {
+        let response: APIFolderContentsResponse
+        if let parentID {
+            response = try await get("/api/v1/drive/folders/\(parentID)")
+        } else {
+            response = try await get("/api/v1/drive")
+        }
+        if let match = response.folders.first(where: { $0.name.caseInsensitiveCompare(name) == .orderedSame }) {
+            logger.debug("ensureFolder: adopted existing folder id=\(match.id, privacy: .public) name=\(match.name, privacy: .public)")
+            return match.id
+        }
+        let body = APICreateFolderRequest(name: name, parentId: parentID)
+        let created: APIFolderResponse = try await post("/api/v1/drive/folders", body: body)
+        logger.debug("ensureFolder: created folder id=\(created.id, privacy: .public) name=\(name, privacy: .public)")
+        return created.id
     }
 
     // MARK: - Ancestry Check
@@ -412,7 +483,7 @@ final class DriveService: ObservableObject {
         let data: Data
         let response: URLResponse
         do {
-            (data, response) = try await URLSession.shared.data(for: req)
+            (data, response) = try await session.data(for: req)
         } catch {
             logger.error("network error: \(req.url?.path ?? "?", privacy: .public) \(error, privacy: .public)")
             throw DriveError.networkError(underlying: error)
@@ -442,7 +513,7 @@ final class DriveService: ObservableObject {
         let data: Data
         let response: URLResponse
         do {
-            (data, response) = try await URLSession.shared.data(for: req)
+            (data, response) = try await session.data(for: req)
         } catch {
             logger.error("network error: \(req.url?.path ?? "?", privacy: .public) \(error, privacy: .public)")
             throw DriveError.networkError(underlying: error)

@@ -94,27 +94,22 @@ final class UploadService: ObservableObject {
         UserDefaults.standard.string(forKey: AuthService.serverHostKey) ?? AuthService.defaultHost
     }
 
-    // MARK: - Upload
+    /// Injectable so tests can stub network responses; defaults to `.shared` in production.
+    private let session: URLSession
 
-    /// Encrypt `fileURL` locally, upload the ciphertext, and store the sealed DEK.
-    /// Mirrors the web's `uploadEncryptedFile` flow exactly.
+    // MARK: - Init
+
+    init(session: URLSession = .shared) {
+        self.session = session
+    }
+
+    // MARK: - Upload (file URL — manual UploadSheet entry point)
+
+    /// Reads `fileURL`, sniffs its MIME type, and delegates to the `Data`-based primitive.
+    /// This is a thin wrapper — behaviour (including the `isUploading`/`progress` UI state
+    /// consumed by `UploadSheet`) is unchanged from before the refactor.
     func upload(fileURL: URL, parentFolderID: String?) async throws -> UploadResult {
         logger.debug("upload: file=\(fileURL.lastPathComponent, privacy: .public) folder=\(parentFolderID ?? "root", privacy: .public)")
-
-        guard KeyImportService.hasStoredKeys() else {
-            throw UploadError.noEncryptionKey
-        }
-
-        guard let token = KeychainService.load(forKey: AuthService.accessTokenKey) else {
-            throw UploadError.notAuthenticated
-        }
-
-        isUploading = true
-        progress = 0
-        error = nil
-        defer { isUploading = false }
-
-        // MARK: Step 1 — Read plaintext file
 
         let didStartAccessing = fileURL.startAccessingSecurityScopedResource()
         defer { if didStartAccessing { fileURL.stopAccessingSecurityScopedResource() } }
@@ -129,6 +124,41 @@ final class UploadService: ObservableObject {
         let fileName = fileURL.lastPathComponent
         let plainMimeType = UTType(filenameExtension: fileURL.pathExtension)?.preferredMIMEType
                           ?? "application/octet-stream"
+
+        return try await upload(data: plainData, fileName: fileName, mimeType: plainMimeType,
+                                parentFolderID: parentFolderID, reportsProgress: true)
+    }
+
+    // MARK: - Upload (Data — shared primitive)
+
+    /// Encrypt `data` locally, upload the ciphertext, and store the sealed DEK.
+    /// Mirrors the web's `uploadEncryptedFile` flow exactly.
+    ///
+    /// - Parameter reportsProgress: when `true` (the default, used by the manual `UploadSheet`
+    ///   flow), this call publishes `isUploading`/`progress` for that sheet's UI. Background
+    ///   photo-sync uploads pass `false` so they don't hijack that sheet's state; callers that
+    ///   want their own progress UI should observe their own state instead.
+    func upload(data: Data, fileName: String, mimeType: String, parentFolderID: String?,
+               reportsProgress: Bool = true) async throws -> UploadResult {
+        logger.debug("upload(data:): \(data.count) bytes name=\(fileName, privacy: .public) folder=\(parentFolderID ?? "root", privacy: .public)")
+
+        guard KeyImportService.hasStoredKeys() else {
+            throw UploadError.noEncryptionKey
+        }
+
+        guard let token = KeychainService.load(forKey: AuthService.accessTokenKey) else {
+            throw UploadError.notAuthenticated
+        }
+
+        if reportsProgress {
+            isUploading = true
+            progress = 0
+            error = nil
+        }
+        defer { if reportsProgress { isUploading = false } }
+
+        let plainData = data
+        let plainMimeType = mimeType
 
         logger.debug("upload: \(plainData.count) bytes mimeType=\(plainMimeType, privacy: .public)")
 
@@ -216,7 +246,7 @@ final class UploadService: ObservableObject {
         let uploadData: Data
         let uploadResponse: URLResponse
         do {
-            (uploadData, uploadResponse) = try await URLSession.shared.upload(
+            (uploadData, uploadResponse) = try await session.upload(
                 for: uploadRequest, from: body
             )
         } catch {
@@ -256,7 +286,7 @@ final class UploadService: ObservableObject {
             updatedAt: apiResponse.updatedAt
         )
         driveService?.fileWasUploaded(result)
-        progress = 1
+        if reportsProgress { progress = 1 }
         logger.debug("upload succeeded: id=\(result.id, privacy: .public) name=\(result.name, privacy: .public)")
         return result
     }
@@ -275,7 +305,7 @@ final class UploadService: ObservableObject {
 
         let (_, keyResponse): (Data, URLResponse)
         do {
-            (_, keyResponse) = try await URLSession.shared.data(for: req)
+            (_, keyResponse) = try await session.data(for: req)
         } catch {
             logger.error("storeFileKey network error: \(error, privacy: .public)")
             throw UploadError.networkError(underlying: error)
