@@ -20,6 +20,8 @@ targets:
         product: Sodium
       - target: NeutrinoDriveShare
         embed: true
+      - target: NeutrinoDriveFileProvider
+        embed: true
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.neutrino.drive
@@ -63,7 +65,15 @@ targets:
           - com.neutrino.drive.photosync
         NSAppTransportSecurity:
           NSAllowsArbitraryLoads: true
-        LSSupportsOpeningDocumentsInPlace: false
+        # Phase 3 "Open In Place". Flipped false → true.
+        #
+        # At `false` iOS copies every incoming document into <Documents>/Inbox and hands over
+        # the copy. At `true` the URL handed to `onOpenURL` can be the user's *actual* file in
+        # iCloud Drive or another provider — which is why `IncomingDocument` had to exist before
+        # this line could change: the old key-import path deleted the incoming file
+        # unconditionally, and at `true` that would delete a user's own document.
+        # See "Open In Place" in agent_docs/plans/feature-phase3-ios-ecosystem-integration.md.
+        LSSupportsOpeningDocumentsInPlace: true
         CFBundleDocumentTypes:
           - CFBundleTypeName: Neutrino Drive Key File
             CFBundleTypeRole: Viewer
@@ -142,6 +152,87 @@ targets:
               NSExtensionActivationSupportsMovieWithMaxCount: 5
               NSExtensionActivationSupportsText: true
               NSExtensionActivationSupportsWebURLWithMaxCount: 1
+
+  # File Provider extension — "Neutrino Drive" as a location in the iOS Files app, and as a
+  # source in every document picker (Pages, Numbers, Word, Excel, third-party apps).
+  #
+  # Same code-sharing strategy as NeutrinoDriveShare above: individual source files listed in
+  # both targets, so the extension compiles *the same file* the app compiles. The property that
+  # matters here is "the extension decrypts exactly the way the app decrypts", which file
+  # identity guarantees more strongly than a framework's API contract would.
+  #
+  # This is why E2EEDownloader and DriveAPIClient exist: DownloadService is @MainActor +
+  # ObservableObject and DriveService drags in AuthService and five published collections —
+  # neither belongs in a memory-constrained extension, and neither can be imported without
+  # pulling most of the app in behind it.
+  #
+  # Note this target has NO separate Document Provider counterpart, deliberately. The legacy
+  # UIDocumentPickerExtensionViewController was deprecated in iOS 11; since then the document
+  # picker is backed by the File Provider extension, so registering this domain is what puts
+  # Neutrino Drive in Pages' and Word's file browsers. Building a deprecated target purely to
+  # tick the mvp.md "Document Provider" box would add a maintenance liability and no capability.
+  # See "Document Provider: why there is no second target" in
+  # agent_docs/plans/feature-phase3-ios-ecosystem-integration.md.
+  NeutrinoDriveFileProvider:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: NeutrinoDriveFileProvider
+      - path: NeutrinoDrive/Config/FeatureFlags.swift
+      - path: NeutrinoDrive/Config/SharedStorage.swift
+      - path: NeutrinoDrive/Services/KeychainService.swift
+      - path: NeutrinoDrive/Services/SealedKeyCrypto.swift
+      # The decrypt half. Extracted out of DownloadService in Phase 3 for exactly this reason —
+      # a reimplementation would not fail any build and would hand the Files app plausible
+      # garbage.
+      - path: NeutrinoDrive/Services/E2EEDownloader.swift
+      # The encrypt half, so a document saved into Neutrino Drive from Pages is sealed with the
+      # user's DEK exactly as an in-app upload is.
+      - path: NeutrinoDrive/Services/E2EEUploader.swift
+      - path: NeutrinoDrive/Services/BackgroundTransferService.swift
+      - path: NeutrinoDrive/Services/DriveAPIClient.swift
+      # Identifier mapping and item construction. Compiled into the app target as well (they
+      # live under NeutrinoDrive/, which the app target globs) *specifically so they can be
+      # unit-tested* — a File Provider extension cannot be driven from a test host.
+      - path: NeutrinoDrive/FileProvider/FileProviderIdentifier.swift
+      - path: NeutrinoDrive/FileProvider/FileProviderItem.swift
+    dependencies:
+      - package: swift-sodium
+        product: Sodium
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.neutrino.drive.fileprovider
+        MARKETING_VERSION: "1.0.0"
+        CURRENT_PROJECT_VERSION: "1"
+        SWIFT_VERSION: "5.0"
+        IPHONEOS_DEPLOYMENT_TARGET: "16.0"
+        DEVELOPMENT_TEAM: "46KWJJ63FU"
+    entitlements:
+      path: NeutrinoDriveFileProvider/NeutrinoDriveFileProvider.entitlements
+      properties:
+        com.apple.security.application-groups:
+          - group.com.neutrino.drive
+        # The extension must read the access token and the encryption key material the app
+        # imported — without this it can enumerate nothing and decrypt nothing.
+        keychain-access-groups:
+          - $(AppIdentifierPrefix)com.neutrino.drive.shared
+    info:
+      path: NeutrinoDriveFileProvider/Info.plist
+      properties:
+        CFBundleName: Neutrino Drive
+        CFBundleDisplayName: Neutrino Drive
+        NSAppTransportSecurity:
+          NSAllowsArbitraryLoads: true
+        NSExtension:
+          # fileprovider-nonui is the modern, UI-less extension point. The old
+          # com.apple.fileprovider-ui point belongs to the deprecated Document Provider.
+          NSExtensionPointIdentifier: com.apple.fileprovider-nonui
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).FileProviderExtension
+          NSExtensionFileProviderDocumentGroup: group.com.neutrino.drive
+          # Lets "Save to → Neutrino Drive → some folder" resolve to a folder rather than only
+          # to the top level. This is the declaration that makes the document-picker half of
+          # Phase 3 work.
+          NSExtensionFileProviderSupportsPickingFolders: true
 
   NeutrinoDriveTests:
     type: bundle.unit-test

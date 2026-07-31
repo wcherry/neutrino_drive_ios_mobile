@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		024934D9C46EEEEF7C4B44EF /* KeychainService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7D43F66518BECD37AE74152A /* KeychainService.swift */; };
+		032E54B75378D36DE4FD2AF7 /* FileProviderItemTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F2D224B13367A618632AE95D /* FileProviderItemTests.swift */; };
 		05BB68A98F5538EC38E8C3DA /* VersionHistoryService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3204F85B044BBD53BB886983 /* VersionHistoryService.swift */; };
 		073E8D2DE0797446D3138732 /* NeutrinoFileViewer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 590E72C929910D24827A0391 /* NeutrinoFileViewer.swift */; };
 		07F648E2CD3255BFBB976CE2 /* PhotoSyncServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6A582F8B0E924BC7F78C9733 /* PhotoSyncServiceTests.swift */; };
@@ -15,28 +16,41 @@
 		091C7DB3F9F6513A761DEF25 /* SearchService.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC32FE0D6BB9D7C94882BB8F /* SearchService.swift */; };
 		0AE91FA43DA3EE24FE3B1B99 /* BiometricAuthService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1AED111A1DFA3864B2AE787 /* BiometricAuthService.swift */; };
 		0D0AE2A91CF6C64E477B9666 /* QRScannerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9B9EC0F713F068F7C8A12EDD /* QRScannerView.swift */; };
+		0D3DD345903F13E19E3D60B2 /* SpotlightIndexService.swift in Sources */ = {isa = PBXBuildFile; fileRef = D70235A500829AC210ADCE9B /* SpotlightIndexService.swift */; };
 		0D8546209C37EA2B1F178E91 /* OfflineView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 90469D5CC989E615DE795823 /* OfflineView.swift */; };
+		1071F42D6FA2834E35885CD5 /* FeatureFlags.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F8A06339C7846B57CB2C88A /* FeatureFlags.swift */; };
+		10B3596C28DB422FFDD996D5 /* FileProviderEnumerator.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE28D0357B10693AF318169C /* FileProviderEnumerator.swift */; };
+		18D1C5D4AEEBA2B6C4AB8320 /* DriveAPIClientTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE4872FD7CF65B71CE8EF958 /* DriveAPIClientTests.swift */; };
 		18E8F2192FDC05BBC327CBAE /* KeyImportView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3164F8D62550277E7500FB6D /* KeyImportView.swift */; };
 		1F786DEF7714CD8067ADC7F8 /* PhotoSyncQueue.swift in Sources */ = {isa = PBXBuildFile; fileRef = C77587DE1135BBDE2F75E650 /* PhotoSyncQueue.swift */; };
 		20F7A9EAC6847F2638576420 /* E2EEUploaderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 476D22CD2F0DB6C8DBE3AD10 /* E2EEUploaderTests.swift */; };
 		20FCC32606F17E69E397EF25 /* BackgroundTransferService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9839D82A96C528D359452A8C /* BackgroundTransferService.swift */; };
 		225CA1446F97EE07D72D350C /* BackgroundTransferService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9839D82A96C528D359452A8C /* BackgroundTransferService.swift */; };
 		25F64EB08808A6C78ECD470B /* SharingServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 327677CD98415FF37039A2D0 /* SharingServiceTests.swift */; };
+		2760B714C86F3E85CE68E591 /* SpotlightSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A4DDB65D5B66B8BFEA0C7A0E /* SpotlightSettingsView.swift */; };
 		28FBB92B6226CFD82A3B4D89 /* BiometricAuthServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0ED22D285A40B505185DC5F3 /* BiometricAuthServiceTests.swift */; };
 		2AD383230B2EFD9ACF52D84F /* UploadSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = BE36F23B5D81EEC1E84E1A77 /* UploadSheet.swift */; };
 		31F95E62549DB45B742EE08F /* FeatureFlags.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F8A06339C7846B57CB2C88A /* FeatureFlags.swift */; };
 		334F7DB18D5983A546F1239B /* PhotoSyncSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4B514FE69A64EC64CE2EE893 /* PhotoSyncSettingsView.swift */; };
 		33C67BAC98679F8B29925333 /* DriveItemTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8834B35CB52B70D4F1BA48A6 /* DriveItemTests.swift */; };
+		35A28DA7F68CC8DF39DFBDFC /* SealedKeyCrypto.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9D218BBDBAB8CA89AA1DF5D3 /* SealedKeyCrypto.swift */; };
+		3A8DE6258F370323A679F285 /* DriveAPIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = D4BF259AF06C4C78A55DFD81 /* DriveAPIClient.swift */; };
 		3BD6B2A2583353EF5D435FE8 /* FilesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C03256BD9495BF647E1D621E /* FilesView.swift */; };
 		3C08EAD7CC4B4E1E8AAD1EBA /* BiometricSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E8D0E9F67E4BA7F2D9EAEB50 /* BiometricSettingsView.swift */; };
 		3ED8800DA1E7313D2A9BD588 /* DownloadService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00D351BC7EA7CA886AEB31CA /* DownloadService.swift */; };
+		43124650E742EFF3B315C1D5 /* IncomingDocument.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C8A71220EBAE89D8C5CF054 /* IncomingDocument.swift */; };
 		432A8D3417DE308C4C179878 /* ShareUploadCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = F374ECD6F62965B1D404D98A /* ShareUploadCoordinator.swift */; };
 		4354509529BAB0170D262425 /* LockScreenView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6A8AAD2BF70A2317058FAE59 /* LockScreenView.swift */; };
 		47335AA514E3DF49C3867543 /* KeychainServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AD1869BDB3871713930D9FC0 /* KeychainServiceTests.swift */; };
+		47C4A0597DF466BDF1F4B0CB /* FileProviderIdentifier.swift in Sources */ = {isa = PBXBuildFile; fileRef = 898ECC9ED926614156A2ACC7 /* FileProviderIdentifier.swift */; };
 		48CC24AF85BA1E18FA66A8D3 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F98AAC9AEF267C276800A5AA /* SettingsView.swift */; };
 		49E951E24B9A115064231733 /* Sodium in Frameworks */ = {isa = PBXBuildFile; productRef = C2BF65B88E6E5580857855E6 /* Sodium */; };
+		502EFD15A888392D30D39027 /* Sodium in Frameworks */ = {isa = PBXBuildFile; productRef = 35C2FC3A0993432DA00F0FC7 /* Sodium */; };
 		513BF32E8B0DB23D969F39E8 /* FavoritesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FAFF80153F6588C47A7B5E10 /* FavoritesTests.swift */; };
+		51B2DD757EF565E94A7B7FEB /* E2EEDownloader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 441BE4AAD3CC7639AB23885B /* E2EEDownloader.swift */; };
+		51E2598785055B7BE1F9F517 /* DriveAPIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = D4BF259AF06C4C78A55DFD81 /* DriveAPIClient.swift */; };
 		56D2621B530223F4F2178BE6 /* OfflineService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 133D81CEFB2A25FC07B29499 /* OfflineService.swift */; };
+		56F028A7E3D83B2CF24A8B27 /* FileProviderIdentifier.swift in Sources */ = {isa = PBXBuildFile; fileRef = 898ECC9ED926614156A2ACC7 /* FileProviderIdentifier.swift */; };
 		5821BEEE8F091BE483D457D7 /* DriveService.swift in Sources */ = {isa = PBXBuildFile; fileRef = F47172C7892BED92B27EEB8A /* DriveService.swift */; };
 		5975C8E31ED7C6CF28AF1109 /* NeutrinoDriveShare.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 372C73E6E1ACB5CC044D4FD3 /* NeutrinoDriveShare.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		5B4F29CF82E1C690CAE70CA8 /* FeatureFlags.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F8A06339C7846B57CB2C88A /* FeatureFlags.swift */; };
@@ -51,26 +65,39 @@
 		690F26E747D4DA457D331F5F /* NeutrinoDriveApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 25F1F0EE30A126A464CB4744 /* NeutrinoDriveApp.swift */; };
 		6B69A2B077D27029DD7924B9 /* FileBrowserView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AFDC3F2E1EDDF4169DEA3706 /* FileBrowserView.swift */; };
 		6DD2BE430D4F4DF066AC20E2 /* AuthService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 284FD49BE7C7F07B2470DE24 /* AuthService.swift */; };
+		6E590632E561521D48DDD4F2 /* KeychainService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7D43F66518BECD37AE74152A /* KeychainService.swift */; };
 		71628740A2133116DD9C6CFB /* QuotaService.swift in Sources */ = {isa = PBXBuildFile; fileRef = C346B842F6CCF727D2F047C7 /* QuotaService.swift */; };
 		73594E9C32767E462481C066 /* BackgroundTransferServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3848E2E1A8F52106B1ECEB94 /* BackgroundTransferServiceTests.swift */; };
 		73C4B9E7A14BEBE5550E8CD0 /* KeyQRDecryptService.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAD2E88A47B7F76FBB347769 /* KeyQRDecryptService.swift */; };
 		740D22FDE24B0348BEFE11ED /* AuthServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2BE879B8C0E1B1F29A9FACFB /* AuthServiceTests.swift */; };
+		74A51CBBFFF44170A981AB8F /* FileProviderExtension.swift in Sources */ = {isa = PBXBuildFile; fileRef = 86F9949E8CCD2C55A6A07E6F /* FileProviderExtension.swift */; };
+		7A3A1EC4026E1184ECF34B99 /* IncomingDocumentTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 21AC07E0D4EF58EE62A98127 /* IncomingDocumentTests.swift */; };
+		7AA70B348B698F3DC695350C /* E2EEUploader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 92DB4C10254E37F3C8B82159 /* E2EEUploader.swift */; };
 		7B51774A66E6E2B6B36084D0 /* MockURLProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = 965E54926CB9E957E39C2117 /* MockURLProtocol.swift */; };
 		7D6814BFC193B17976568C7D /* E2EEUploader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 92DB4C10254E37F3C8B82159 /* E2EEUploader.swift */; };
 		80359F913466643E0C14FB69 /* OfflineServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9D327F0E614DA668C3FFD6D /* OfflineServiceTests.swift */; };
+		80D62FC6BF77932804DA8F40 /* FileProviderDomainService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 14FB708641A150BA2D6914D7 /* FileProviderDomainService.swift */; };
 		83030D70D1FD82CA51BFA7C6 /* LoginView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA5181A063C7F11A804B0869 /* LoginView.swift */; };
 		830511757B1008B7376FC29F /* PhotoSyncService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A90FA64FCE70A0413A10B207 /* PhotoSyncService.swift */; };
 		837CB944498C1C88AC2965E6 /* Sodium in Frameworks */ = {isa = PBXBuildFile; productRef = B29E803B3FC632AE6E6F402F /* Sodium */; };
 		86B76EE3D6E6ED8E09FD3DD2 /* SharingService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3ADD7A2E9C27197434FE3A0A /* SharingService.swift */; };
+		95B33B62D7627078074268B5 /* SharedStorage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C34071C259B80445A15F5D3 /* SharedStorage.swift */; };
+		97FAB6EADF40B0F13D1C9EC2 /* FileProviderItem.swift in Sources */ = {isa = PBXBuildFile; fileRef = FAA45294FA48B45DF1D84003 /* FileProviderItem.swift */; };
 		98A677398FA74C9534C8CBB6 /* VersionHistorySheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD20A690770D70A67B5BDD4E /* VersionHistorySheet.swift */; };
 		99EF38075C56FB5F28A0AD2A /* KeyQRDecryptServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 69BA21EB1245B8848A89C2BF /* KeyQRDecryptServiceTests.swift */; };
 		9A19DF8556C44AD8D37D3695 /* CreateFolderSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = ACF13539E1CDAD54D5F123C8 /* CreateFolderSheet.swift */; };
+		9CDE9342D862B1DDFC38C7D2 /* NeutrinoDriveFileProvider.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 196345CB2E7DCB4B508CA097 /* NeutrinoDriveFileProvider.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		A4309A73D2D6CB256BD96435 /* MoveSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5E221501A1796A0C7CB2C7C3 /* MoveSheet.swift */; };
+		AA125990DFAE6C152330ECB0 /* FileProviderItem.swift in Sources */ = {isa = PBXBuildFile; fileRef = FAA45294FA48B45DF1D84003 /* FileProviderItem.swift */; };
 		AD889E27EDBC05A3A8D9767A /* SharedStorage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C34071C259B80445A15F5D3 /* SharedStorage.swift */; };
+		AF1C1E3B0F58D75D7DFCF199 /* FileProviderIdentifierTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51702688577668BC7E75E373 /* FileProviderIdentifierTests.swift */; };
+		B54C0386D67645FEEFB8D70F /* SpotlightIndexServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A2EE1AE217905FA9DD213C5 /* SpotlightIndexServiceTests.swift */; };
 		B712ECD01D50298923D94BA6 /* DriveServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E75AF3C358204F5340F0827 /* DriveServiceTests.swift */; };
 		B88EBD4DA680E13365EC3C85 /* DownloadServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7D8E929ED50294D7EE256659 /* DownloadServiceTests.swift */; };
 		C05DBAA6ABC844B145C4CE8B /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E3985D05C9C065C11E2FAFB0 /* ContentView.swift */; };
 		C1C0FD03CF16FB5E9E1A3166 /* VersionHistoryServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F7F1554986712BAA1146EC5 /* VersionHistoryServiceTests.swift */; };
+		C2154F91C0270FB8812E6129 /* BackgroundTransferService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9839D82A96C528D359452A8C /* BackgroundTransferService.swift */; };
+		C2D794866113B21DED3C6A07 /* E2EEDownloader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 441BE4AAD3CC7639AB23885B /* E2EEDownloader.swift */; };
 		C823CEBBB11E783512FE5286 /* KeyImportServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6E9DB7865AEED70BD34195A9 /* KeyImportServiceTests.swift */; };
 		CE253EA5C208A2BAFA023848 /* OfflineFile.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C6D8A297D25380ECD262C81 /* OfflineFile.swift */; };
 		D2CF5F59EAF12FE048AA1C0A /* UploadService.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC3153FC8A0FDB182E99909E /* UploadService.swift */; };
@@ -103,6 +130,13 @@
 			remoteGlobalIDString = 6D30D7DE8B2D3AB416758EC9;
 			remoteInfo = NeutrinoDrive;
 		};
+		CB9BDEA4A26C9763EDF79931 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = B87DF574DEF86AC8FB068E6A /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = C73E4D871D1A149D71972DA2;
+			remoteInfo = NeutrinoDriveFileProvider;
+		};
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -113,6 +147,7 @@
 			dstSubfolderSpec = 13;
 			files = (
 				5975C8E31ED7C6CF28AF1109 /* NeutrinoDriveShare.appex in Embed Foundation Extensions */,
+				9CDE9342D862B1DDFC38C7D2 /* NeutrinoDriveFileProvider.appex in Embed Foundation Extensions */,
 			);
 			name = "Embed Foundation Extensions";
 			runOnlyForDeploymentPostprocessing = 0;
@@ -122,15 +157,20 @@
 /* Begin PBXFileReference section */
 		00D351BC7EA7CA886AEB31CA /* DownloadService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DownloadService.swift; sourceTree = "<group>"; };
 		02A960AD4F40AE693E121681 /* NeutrinoDriveTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = NeutrinoDriveTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		0A2AC7356BF9B7E818BEDE8A /* NeutrinoDriveFileProvider.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = NeutrinoDriveFileProvider.entitlements; sourceTree = "<group>"; };
 		0BC10848134DEC435F1F7763 /* SealedKeyCryptoTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SealedKeyCryptoTests.swift; sourceTree = "<group>"; };
 		0ED22D285A40B505185DC5F3 /* BiometricAuthServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BiometricAuthServiceTests.swift; sourceTree = "<group>"; };
 		0FF01D7775E4236733FC909F /* FileRowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileRowView.swift; sourceTree = "<group>"; };
 		11221E126AD26096B14DEDC6 /* NeutrinoDrive.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = NeutrinoDrive.entitlements; sourceTree = "<group>"; };
 		11242259008914C1DEF27482 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		133D81CEFB2A25FC07B29499 /* OfflineService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OfflineService.swift; sourceTree = "<group>"; };
+		14FB708641A150BA2D6914D7 /* FileProviderDomainService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileProviderDomainService.swift; sourceTree = "<group>"; };
+		196345CB2E7DCB4B508CA097 /* NeutrinoDriveFileProvider.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = NeutrinoDriveFileProvider.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		1F7F1554986712BAA1146EC5 /* VersionHistoryServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VersionHistoryServiceTests.swift; sourceTree = "<group>"; };
+		21AC07E0D4EF58EE62A98127 /* IncomingDocumentTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IncomingDocumentTests.swift; sourceTree = "<group>"; };
 		25F1F0EE30A126A464CB4744 /* NeutrinoDriveApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NeutrinoDriveApp.swift; sourceTree = "<group>"; };
 		284FD49BE7C7F07B2470DE24 /* AuthService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthService.swift; sourceTree = "<group>"; };
+		2A2EE1AE217905FA9DD213C5 /* SpotlightIndexServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpotlightIndexServiceTests.swift; sourceTree = "<group>"; };
 		2BE879B8C0E1B1F29A9FACFB /* AuthServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthServiceTests.swift; sourceTree = "<group>"; };
 		2D5320FC68012C09A76FD3F8 /* ShareViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareViewController.swift; sourceTree = "<group>"; };
 		3164F8D62550277E7500FB6D /* KeyImportView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyImportView.swift; sourceTree = "<group>"; };
@@ -141,11 +181,14 @@
 		3ADD7A2E9C27197434FE3A0A /* SharingService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SharingService.swift; sourceTree = "<group>"; };
 		3C6D8A297D25380ECD262C81 /* OfflineFile.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OfflineFile.swift; sourceTree = "<group>"; };
 		3F8A06339C7846B57CB2C88A /* FeatureFlags.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeatureFlags.swift; sourceTree = "<group>"; };
+		441BE4AAD3CC7639AB23885B /* E2EEDownloader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = E2EEDownloader.swift; sourceTree = "<group>"; };
 		476D22CD2F0DB6C8DBE3AD10 /* E2EEUploaderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = E2EEUploaderTests.swift; sourceTree = "<group>"; };
 		4B514FE69A64EC64CE2EE893 /* PhotoSyncSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoSyncSettingsView.swift; sourceTree = "<group>"; };
 		4E75AF3C358204F5340F0827 /* DriveServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DriveServiceTests.swift; sourceTree = "<group>"; };
 		4F9EEBB608D849ADEBE786FB /* DriveItem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DriveItem.swift; sourceTree = "<group>"; };
+		51702688577668BC7E75E373 /* FileProviderIdentifierTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileProviderIdentifierTests.swift; sourceTree = "<group>"; };
 		590E72C929910D24827A0391 /* NeutrinoFileViewer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NeutrinoFileViewer.swift; sourceTree = "<group>"; };
+		5C8A71220EBAE89D8C5CF054 /* IncomingDocument.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IncomingDocument.swift; sourceTree = "<group>"; };
 		5DB41FE55A0945983D9AD56C /* DriveSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DriveSection.swift; sourceTree = "<group>"; };
 		5E221501A1796A0C7CB2C7C3 /* MoveSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MoveSheet.swift; sourceTree = "<group>"; };
 		630C730986B97FEBB32C20EE /* ShareUploadCoordinatorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareUploadCoordinatorTests.swift; sourceTree = "<group>"; };
@@ -157,7 +200,9 @@
 		70A49B80E184DD242C3F71F4 /* RenameSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RenameSheet.swift; sourceTree = "<group>"; };
 		7D43F66518BECD37AE74152A /* KeychainService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainService.swift; sourceTree = "<group>"; };
 		7D8E929ED50294D7EE256659 /* DownloadServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DownloadServiceTests.swift; sourceTree = "<group>"; };
+		86F9949E8CCD2C55A6A07E6F /* FileProviderExtension.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileProviderExtension.swift; sourceTree = "<group>"; };
 		8834B35CB52B70D4F1BA48A6 /* DriveItemTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DriveItemTests.swift; sourceTree = "<group>"; };
+		898ECC9ED926614156A2ACC7 /* FileProviderIdentifier.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileProviderIdentifier.swift; sourceTree = "<group>"; };
 		8C34071C259B80445A15F5D3 /* SharedStorage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SharedStorage.swift; sourceTree = "<group>"; };
 		90469D5CC989E615DE795823 /* OfflineView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OfflineView.swift; sourceTree = "<group>"; };
 		92A6A5039A254CCFF5EF859B /* QuotaServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuotaServiceTests.swift; sourceTree = "<group>"; };
@@ -168,11 +213,13 @@
 		9D218BBDBAB8CA89AA1DF5D3 /* SealedKeyCrypto.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SealedKeyCrypto.swift; sourceTree = "<group>"; };
 		9F7CBDF1179B0B4EFACCB2C3 /* PhotoSyncQueueTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoSyncQueueTests.swift; sourceTree = "<group>"; };
 		A1AED111A1DFA3864B2AE787 /* BiometricAuthService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BiometricAuthService.swift; sourceTree = "<group>"; };
+		A4DDB65D5B66B8BFEA0C7A0E /* SpotlightSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpotlightSettingsView.swift; sourceTree = "<group>"; };
 		A90FA64FCE70A0413A10B207 /* PhotoSyncService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoSyncService.swift; sourceTree = "<group>"; };
 		A9D327F0E614DA668C3FFD6D /* OfflineServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OfflineServiceTests.swift; sourceTree = "<group>"; };
 		AC32FE0D6BB9D7C94882BB8F /* SearchService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SearchService.swift; sourceTree = "<group>"; };
 		ACF13539E1CDAD54D5F123C8 /* CreateFolderSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CreateFolderSheet.swift; sourceTree = "<group>"; };
 		AD1869BDB3871713930D9FC0 /* KeychainServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainServiceTests.swift; sourceTree = "<group>"; };
+		AE4872FD7CF65B71CE8EF958 /* DriveAPIClientTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DriveAPIClientTests.swift; sourceTree = "<group>"; };
 		AFDC3F2E1EDDF4169DEA3706 /* FileBrowserView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileBrowserView.swift; sourceTree = "<group>"; };
 		B3D07A84E1BF11CE2C7A187A /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		BBAF5D07C650FCC3CBE7E15F /* NeutrinoDrive.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = NeutrinoDrive.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -180,6 +227,8 @@
 		C03256BD9495BF647E1D621E /* FilesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FilesView.swift; sourceTree = "<group>"; };
 		C346B842F6CCF727D2F047C7 /* QuotaService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuotaService.swift; sourceTree = "<group>"; };
 		C77587DE1135BBDE2F75E650 /* PhotoSyncQueue.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoSyncQueue.swift; sourceTree = "<group>"; };
+		D4BF259AF06C4C78A55DFD81 /* DriveAPIClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DriveAPIClient.swift; sourceTree = "<group>"; };
+		D70235A500829AC210ADCE9B /* SpotlightIndexService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpotlightIndexService.swift; sourceTree = "<group>"; };
 		DAD2E88A47B7F76FBB347769 /* KeyQRDecryptService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyQRDecryptService.swift; sourceTree = "<group>"; };
 		E057910348FA5DD56CAF3BA2 /* UploadServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UploadServiceTests.swift; sourceTree = "<group>"; };
 		E1CEFB784C6C8B218A6C30BC /* KeyImportService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyImportService.swift; sourceTree = "<group>"; };
@@ -187,15 +236,19 @@
 		E8623DF607611C4B918D550F /* NeutrinoDriveShare.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = NeutrinoDriveShare.entitlements; sourceTree = "<group>"; };
 		E8D0E9F67E4BA7F2D9EAEB50 /* BiometricSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BiometricSettingsView.swift; sourceTree = "<group>"; };
 		E9E380C43E2F17633F9BE953 /* ShareSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareSheet.swift; sourceTree = "<group>"; };
+		ED37FEF7C8C1BF1D0215CF6D /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		F2D224B13367A618632AE95D /* FileProviderItemTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileProviderItemTests.swift; sourceTree = "<group>"; };
 		F374ECD6F62965B1D404D98A /* ShareUploadCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareUploadCoordinator.swift; sourceTree = "<group>"; };
 		F47172C7892BED92B27EEB8A /* DriveService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DriveService.swift; sourceTree = "<group>"; };
 		F89DB4C4E5203C9B985669D8 /* SearchServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SearchServiceTests.swift; sourceTree = "<group>"; };
 		F98AAC9AEF267C276800A5AA /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		F995FEAD8545B523E9E66C76 /* KeyQRImportView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyQRImportView.swift; sourceTree = "<group>"; };
 		FA5181A063C7F11A804B0869 /* LoginView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoginView.swift; sourceTree = "<group>"; };
+		FAA45294FA48B45DF1D84003 /* FileProviderItem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileProviderItem.swift; sourceTree = "<group>"; };
 		FAFF80153F6588C47A7B5E10 /* FavoritesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FavoritesTests.swift; sourceTree = "<group>"; };
 		FC3153FC8A0FDB182E99909E /* UploadService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UploadService.swift; sourceTree = "<group>"; };
 		FD20A690770D70A67B5BDD4E /* VersionHistorySheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VersionHistorySheet.swift; sourceTree = "<group>"; };
+		FE28D0357B10693AF318169C /* FileProviderEnumerator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileProviderEnumerator.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -215,13 +268,31 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		AB2047AC5BB3DCC171C8F104 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				502EFD15A888392D30D39027 /* Sodium in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		037AA12A41356A285885CB8E /* FileProvider */ = {
+			isa = PBXGroup;
+			children = (
+				898ECC9ED926614156A2ACC7 /* FileProviderIdentifier.swift */,
+				FAA45294FA48B45DF1D84003 /* FileProviderItem.swift */,
+			);
+			path = FileProvider;
+			sourceTree = "<group>";
+		};
 		0594613B18F9B50F4B44CE19 = {
 			isa = PBXGroup;
 			children = (
 				4F85FB0514347D724554EC6E /* NeutrinoDrive */,
+				F15E9A32CDB5CA73D90B174E /* NeutrinoDriveFileProvider */,
 				449C2B8FB98DD19AD785C12B /* NeutrinoDriveShare */,
 				C7F517A4BD12BFBF2F8E5445 /* NeutrinoDriveTests */,
 				F39AC04499B451F410CFEA55 /* Products */,
@@ -256,6 +327,7 @@
 				11221E126AD26096B14DEDC6 /* NeutrinoDrive.entitlements */,
 				25F1F0EE30A126A464CB4744 /* NeutrinoDriveApp.swift */,
 				BF02C80BD02B64A102980F4B /* Config */,
+				037AA12A41356A285885CB8E /* FileProvider */,
 				09139D2596E3C0F999C1200E /* Models */,
 				9291959B3C23CC6DEEC3D8E3 /* Services */,
 				C6C6DDC41EBC14956B4FBAF6 /* Views */,
@@ -270,8 +342,12 @@
 				9839D82A96C528D359452A8C /* BackgroundTransferService.swift */,
 				A1AED111A1DFA3864B2AE787 /* BiometricAuthService.swift */,
 				00D351BC7EA7CA886AEB31CA /* DownloadService.swift */,
+				D4BF259AF06C4C78A55DFD81 /* DriveAPIClient.swift */,
 				F47172C7892BED92B27EEB8A /* DriveService.swift */,
+				441BE4AAD3CC7639AB23885B /* E2EEDownloader.swift */,
 				92DB4C10254E37F3C8B82159 /* E2EEUploader.swift */,
+				14FB708641A150BA2D6914D7 /* FileProviderDomainService.swift */,
+				5C8A71220EBAE89D8C5CF054 /* IncomingDocument.swift */,
 				7D43F66518BECD37AE74152A /* KeychainService.swift */,
 				E1CEFB784C6C8B218A6C30BC /* KeyImportService.swift */,
 				DAD2E88A47B7F76FBB347769 /* KeyQRDecryptService.swift */,
@@ -283,6 +359,7 @@
 				AC32FE0D6BB9D7C94882BB8F /* SearchService.swift */,
 				F374ECD6F62965B1D404D98A /* ShareUploadCoordinator.swift */,
 				3ADD7A2E9C27197434FE3A0A /* SharingService.swift */,
+				D70235A500829AC210ADCE9B /* SpotlightIndexService.swift */,
 				FC3153FC8A0FDB182E99909E /* UploadService.swift */,
 				3204F85B044BBD53BB886983 /* VersionHistoryService.swift */,
 			);
@@ -319,6 +396,7 @@
 				70A49B80E184DD242C3F71F4 /* RenameSheet.swift */,
 				F98AAC9AEF267C276800A5AA /* SettingsView.swift */,
 				E9E380C43E2F17633F9BE953 /* ShareSheet.swift */,
+				A4DDB65D5B66B8BFEA0C7A0E /* SpotlightSettingsView.swift */,
 				BE36F23B5D81EEC1E84E1A77 /* UploadSheet.swift */,
 				FD20A690770D70A67B5BDD4E /* VersionHistorySheet.swift */,
 			);
@@ -332,10 +410,14 @@
 				3848E2E1A8F52106B1ECEB94 /* BackgroundTransferServiceTests.swift */,
 				0ED22D285A40B505185DC5F3 /* BiometricAuthServiceTests.swift */,
 				7D8E929ED50294D7EE256659 /* DownloadServiceTests.swift */,
+				AE4872FD7CF65B71CE8EF958 /* DriveAPIClientTests.swift */,
 				8834B35CB52B70D4F1BA48A6 /* DriveItemTests.swift */,
 				4E75AF3C358204F5340F0827 /* DriveServiceTests.swift */,
 				476D22CD2F0DB6C8DBE3AD10 /* E2EEUploaderTests.swift */,
 				FAFF80153F6588C47A7B5E10 /* FavoritesTests.swift */,
+				51702688577668BC7E75E373 /* FileProviderIdentifierTests.swift */,
+				F2D224B13367A618632AE95D /* FileProviderItemTests.swift */,
+				21AC07E0D4EF58EE62A98127 /* IncomingDocumentTests.swift */,
 				AD1869BDB3871713930D9FC0 /* KeychainServiceTests.swift */,
 				6E9DB7865AEED70BD34195A9 /* KeyImportServiceTests.swift */,
 				69BA21EB1245B8848A89C2BF /* KeyQRDecryptServiceTests.swift */,
@@ -348,16 +430,29 @@
 				F89DB4C4E5203C9B985669D8 /* SearchServiceTests.swift */,
 				630C730986B97FEBB32C20EE /* ShareUploadCoordinatorTests.swift */,
 				327677CD98415FF37039A2D0 /* SharingServiceTests.swift */,
+				2A2EE1AE217905FA9DD213C5 /* SpotlightIndexServiceTests.swift */,
 				E057910348FA5DD56CAF3BA2 /* UploadServiceTests.swift */,
 				1F7F1554986712BAA1146EC5 /* VersionHistoryServiceTests.swift */,
 			);
 			path = NeutrinoDriveTests;
 			sourceTree = "<group>";
 		};
+		F15E9A32CDB5CA73D90B174E /* NeutrinoDriveFileProvider */ = {
+			isa = PBXGroup;
+			children = (
+				FE28D0357B10693AF318169C /* FileProviderEnumerator.swift */,
+				86F9949E8CCD2C55A6A07E6F /* FileProviderExtension.swift */,
+				ED37FEF7C8C1BF1D0215CF6D /* Info.plist */,
+				0A2AC7356BF9B7E818BEDE8A /* NeutrinoDriveFileProvider.entitlements */,
+			);
+			path = NeutrinoDriveFileProvider;
+			sourceTree = "<group>";
+		};
 		F39AC04499B451F410CFEA55 /* Products */ = {
 			isa = PBXGroup;
 			children = (
 				BBAF5D07C650FCC3CBE7E15F /* NeutrinoDrive.app */,
+				196345CB2E7DCB4B508CA097 /* NeutrinoDriveFileProvider.appex */,
 				372C73E6E1ACB5CC044D4FD3 /* NeutrinoDriveShare.appex */,
 				02A960AD4F40AE693E121681 /* NeutrinoDriveTests.xctest */,
 			);
@@ -379,6 +474,7 @@
 			);
 			dependencies = (
 				2A8BD9925A548F67C7A26503 /* PBXTargetDependency */,
+				1A1A8174BDC9C2366BE2A59F /* PBXTargetDependency */,
 			);
 			name = NeutrinoDrive;
 			packageProductDependencies = (
@@ -405,6 +501,25 @@
 			productName = NeutrinoDriveTests;
 			productReference = 02A960AD4F40AE693E121681 /* NeutrinoDriveTests.xctest */;
 			productType = "com.apple.product-type.bundle.unit-test";
+		};
+		C73E4D871D1A149D71972DA2 /* NeutrinoDriveFileProvider */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 4D2789D317952ADA24ECC499 /* Build configuration list for PBXNativeTarget "NeutrinoDriveFileProvider" */;
+			buildPhases = (
+				EBC068C8B4DB3FD3F6634584 /* Sources */,
+				AB2047AC5BB3DCC171C8F104 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = NeutrinoDriveFileProvider;
+			packageProductDependencies = (
+				35C2FC3A0993432DA00F0FC7 /* Sodium */,
+			);
+			productName = NeutrinoDriveFileProvider;
+			productReference = 196345CB2E7DCB4B508CA097 /* NeutrinoDriveFileProvider.appex */;
+			productType = "com.apple.product-type.app-extension";
 		};
 		F9CD7DB36FBFFF953E5A64CC /* NeutrinoDriveShare */ = {
 			isa = PBXNativeTarget;
@@ -437,6 +552,9 @@
 					6D30D7DE8B2D3AB416758EC9 = {
 						DevelopmentTeam = 46KWJJ63FU;
 					};
+					C73E4D871D1A149D71972DA2 = {
+						DevelopmentTeam = 46KWJJ63FU;
+					};
 					F9CD7DB36FBFFF953E5A64CC = {
 						DevelopmentTeam = 46KWJJ63FU;
 					};
@@ -460,6 +578,7 @@
 			projectRoot = "";
 			targets = (
 				6D30D7DE8B2D3AB416758EC9 /* NeutrinoDrive */,
+				C73E4D871D1A149D71972DA2 /* NeutrinoDriveFileProvider */,
 				F9CD7DB36FBFFF953E5A64CC /* NeutrinoDriveShare */,
 				C4BAD065DCC87F3518298599 /* NeutrinoDriveTests */,
 			);
@@ -493,14 +612,20 @@
 				C05DBAA6ABC844B145C4CE8B /* ContentView.swift in Sources */,
 				9A19DF8556C44AD8D37D3695 /* CreateFolderSheet.swift in Sources */,
 				3ED8800DA1E7313D2A9BD588 /* DownloadService.swift in Sources */,
+				3A8DE6258F370323A679F285 /* DriveAPIClient.swift in Sources */,
 				DA5D08204C931BE6965C5D6B /* DriveItem.swift in Sources */,
 				622E177AB065C2332256FB53 /* DriveSection.swift in Sources */,
 				5821BEEE8F091BE483D457D7 /* DriveService.swift in Sources */,
+				C2D794866113B21DED3C6A07 /* E2EEDownloader.swift in Sources */,
 				E241253B65D070E9BD84CE94 /* E2EEUploader.swift in Sources */,
 				5B4F29CF82E1C690CAE70CA8 /* FeatureFlags.swift in Sources */,
 				6B69A2B077D27029DD7924B9 /* FileBrowserView.swift in Sources */,
+				80D62FC6BF77932804DA8F40 /* FileProviderDomainService.swift in Sources */,
+				56F028A7E3D83B2CF24A8B27 /* FileProviderIdentifier.swift in Sources */,
+				AA125990DFAE6C152330ECB0 /* FileProviderItem.swift in Sources */,
 				6363B4D2DB17A9276F46B17A /* FileRowView.swift in Sources */,
 				3BD6B2A2583353EF5D435FE8 /* FilesView.swift in Sources */,
+				43124650E742EFF3B315C1D5 /* IncomingDocument.swift in Sources */,
 				FB16FF91527531E74E5469A6 /* KeyImportService.swift in Sources */,
 				18E8F2192FDC05BBC327CBAE /* KeyImportView.swift in Sources */,
 				73C4B9E7A14BEBE5550E8CD0 /* KeyQRDecryptService.swift in Sources */,
@@ -528,10 +653,31 @@
 				432A8D3417DE308C4C179878 /* ShareUploadCoordinator.swift in Sources */,
 				0845C6477B280EBC8940B4FC /* SharedStorage.swift in Sources */,
 				86B76EE3D6E6ED8E09FD3DD2 /* SharingService.swift in Sources */,
+				0D3DD345903F13E19E3D60B2 /* SpotlightIndexService.swift in Sources */,
+				2760B714C86F3E85CE68E591 /* SpotlightSettingsView.swift in Sources */,
 				D2CF5F59EAF12FE048AA1C0A /* UploadService.swift in Sources */,
 				2AD383230B2EFD9ACF52D84F /* UploadSheet.swift in Sources */,
 				05BB68A98F5538EC38E8C3DA /* VersionHistoryService.swift in Sources */,
 				98A677398FA74C9534C8CBB6 /* VersionHistorySheet.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		EBC068C8B4DB3FD3F6634584 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				C2154F91C0270FB8812E6129 /* BackgroundTransferService.swift in Sources */,
+				51E2598785055B7BE1F9F517 /* DriveAPIClient.swift in Sources */,
+				51B2DD757EF565E94A7B7FEB /* E2EEDownloader.swift in Sources */,
+				7AA70B348B698F3DC695350C /* E2EEUploader.swift in Sources */,
+				1071F42D6FA2834E35885CD5 /* FeatureFlags.swift in Sources */,
+				10B3596C28DB422FFDD996D5 /* FileProviderEnumerator.swift in Sources */,
+				74A51CBBFFF44170A981AB8F /* FileProviderExtension.swift in Sources */,
+				47C4A0597DF466BDF1F4B0CB /* FileProviderIdentifier.swift in Sources */,
+				97FAB6EADF40B0F13D1C9EC2 /* FileProviderItem.swift in Sources */,
+				6E590632E561521D48DDD4F2 /* KeychainService.swift in Sources */,
+				35A28DA7F68CC8DF39DFBDFC /* SealedKeyCrypto.swift in Sources */,
+				95B33B62D7627078074268B5 /* SharedStorage.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -543,10 +689,14 @@
 				73594E9C32767E462481C066 /* BackgroundTransferServiceTests.swift in Sources */,
 				28FBB92B6226CFD82A3B4D89 /* BiometricAuthServiceTests.swift in Sources */,
 				B88EBD4DA680E13365EC3C85 /* DownloadServiceTests.swift in Sources */,
+				18D1C5D4AEEBA2B6C4AB8320 /* DriveAPIClientTests.swift in Sources */,
 				33C67BAC98679F8B29925333 /* DriveItemTests.swift in Sources */,
 				B712ECD01D50298923D94BA6 /* DriveServiceTests.swift in Sources */,
 				20F7A9EAC6847F2638576420 /* E2EEUploaderTests.swift in Sources */,
 				513BF32E8B0DB23D969F39E8 /* FavoritesTests.swift in Sources */,
+				AF1C1E3B0F58D75D7DFCF199 /* FileProviderIdentifierTests.swift in Sources */,
+				032E54B75378D36DE4FD2AF7 /* FileProviderItemTests.swift in Sources */,
+				7A3A1EC4026E1184ECF34B99 /* IncomingDocumentTests.swift in Sources */,
 				C823CEBBB11E783512FE5286 /* KeyImportServiceTests.swift in Sources */,
 				99EF38075C56FB5F28A0AD2A /* KeyQRDecryptServiceTests.swift in Sources */,
 				47335AA514E3DF49C3867543 /* KeychainServiceTests.swift in Sources */,
@@ -559,6 +709,7 @@
 				F5A3194F7AC59E856D828A8E /* SearchServiceTests.swift in Sources */,
 				6012EA629004AC1E165C1643 /* ShareUploadCoordinatorTests.swift in Sources */,
 				25F64EB08808A6C78ECD470B /* SharingServiceTests.swift in Sources */,
+				B54C0386D67645FEEFB8D70F /* SpotlightIndexServiceTests.swift in Sources */,
 				EC06929650A4ECF52EABF5FC /* UploadServiceTests.swift in Sources */,
 				C1C0FD03CF16FB5E9E1A3166 /* VersionHistoryServiceTests.swift in Sources */,
 			);
@@ -567,6 +718,11 @@
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
+		1A1A8174BDC9C2366BE2A59F /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = C73E4D871D1A149D71972DA2 /* NeutrinoDriveFileProvider */;
+			targetProxy = CB9BDEA4A26C9763EDF79931 /* PBXContainerItemProxy */;
+		};
 		2A8BD9925A548F67C7A26503 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
 			target = F9CD7DB36FBFFF953E5A64CC /* NeutrinoDriveShare */;
@@ -664,6 +820,27 @@
 			};
 			name = Release;
 		};
+		2BD1198870D786FE9FCA6EDD /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = NeutrinoDriveFileProvider/NeutrinoDriveFileProvider.entitlements;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 46KWJJ63FU;
+				INFOPLIST_FILE = NeutrinoDriveFileProvider/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.neutrino.drive.fileprovider;
+				SDKROOT = iphoneos;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
 		379191002BAEB1E51B0ECBAA /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -748,6 +925,27 @@
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};
 			name = Debug;
+		};
+		AA470193995A8BDE1EA6C24B /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = NeutrinoDriveFileProvider/NeutrinoDriveFileProvider.entitlements;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 46KWJJ63FU;
+				INFOPLIST_FILE = NeutrinoDriveFileProvider/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.neutrino.drive.fileprovider;
+				SDKROOT = iphoneos;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
 		};
 		C4AE62B7A3528B9C508408B5 /* Release */ = {
 			isa = XCBuildConfiguration;
@@ -837,6 +1035,15 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;
 		};
+		4D2789D317952ADA24ECC499 /* Build configuration list for PBXNativeTarget "NeutrinoDriveFileProvider" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				2BD1198870D786FE9FCA6EDD /* Debug */,
+				AA470193995A8BDE1EA6C24B /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
 		922FAA58E94822AE895DB10B /* Build configuration list for PBXProject "NeutrinoDrive" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
@@ -878,6 +1085,11 @@
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
+		35C2FC3A0993432DA00F0FC7 /* Sodium */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = FD4EA385FFAD4EBA5978F108 /* XCRemoteSwiftPackageReference "swift-sodium" */;
+			productName = Sodium;
+		};
 		B29E803B3FC632AE6E6F402F /* Sodium */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = FD4EA385FFAD4EBA5978F108 /* XCRemoteSwiftPackageReference "swift-sodium" */;

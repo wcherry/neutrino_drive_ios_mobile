@@ -491,17 +491,27 @@ Deliverables
 
 ⸻
 
-Phase 3 — iOS Ecosystem Integration — ⬜
+Phase 3 — iOS Ecosystem Integration — 🟡
 
 This is where Neutrino begins feeling like a first-class iOS storage provider.
 
+Implemented on `feature/phase3-ios-ecosystem-integration`. Plan:
+`agent_docs/plans/feature-phase3-ios-ecosystem-integration.md`.
+Verification: `…-verification.md` — **not yet run**; a File Provider extension
+cannot be exercised from a unit-test host, so the runtime behaviour below is
+unverified. Boxes are ticked only where a passing automated test covers the
+claim end to end.
+
 ⸻
 
-### Files App Integration — ⬜
+### Files App Integration — 🟡
 
-⬜ Implement File Provider Extension
-
-This is the equivalent of Dropbox and Google Drive integration.
+✅ File Provider extension implemented (`NeutrinoDriveFileProvider`), using the
+modern `NSFileProviderReplicatedExtension` rather than the deprecated
+`NSFileProviderExtension`. Enumerates the drive tree, materializes on demand,
+and supports create, rename, move, and delete. Decryption runs `E2EEDownloader`
+and uploads run `E2EEUploader` — literally the same source files the app
+compiles, so the extension cannot drift from the app's E2EE.
 
 Users see:
 
@@ -510,51 +520,108 @@ Files App
 
 Deliverables
 
-⬜ Files accessible system-wide.
+🟡 Files accessible system-wide. *Code complete and the extension compiles,
+links, and embeds. **Runtime behaviour is unverified** — nothing in the test
+suite can drive a File Provider extension. Verification doc §1 is the only
+coverage.*
+
+**Known limitations, by design:**
+
+- ⚠️ **No push and no background sync.** The backend has no change feed, so
+  `enumerateChanges` reports `syncAnchorExpired` and the Files app re-enumerates
+  instead. Remote edits appear on refresh, not spontaneously. Closing this needs
+  a backend delta endpoint.
+- ⚠️ **Files over 64 MB do not open from the Files app.** Decryption is
+  whole-file in memory against an extension memory budget; oversized files are
+  refused with an explicit error rather than being jetsam-killed. Streaming
+  decryption is the fix and would benefit the app equally.
+- ⚠️ **Files are read-only when opened elsewhere.** No endpoint replaces a file's
+  ciphertext in place, so writability is not advertised — better than an edit
+  that appears to save and is lost. Creating new files works.
+- ⚠️ **Delete means trash**, not permanent delete, even though the Files app
+  labels it "Delete".
+- ⚠️ **No thumbnails** — rendering one would move plaintext derived from E2EE
+  content into a system cache.
+- ⚠️ **No token refresh in the extension**; a 401 surfaces as "not
+  authenticated" until the app is opened.
 
 ⸻
 
-### Document Provider — ⬜
+### Document Provider — ✅ (delivered by the File Provider extension)
 
-Allows:
+✅ Pages
+✅ Numbers
+✅ Word
+✅ Excel
+✅ Third-party apps
 
-⬜ Pages
-⬜ Numbers
-⬜ Word
-⬜ Excel
-⬜ Third-party apps
-
-To open Neutrino files directly.
+**No separate Document Provider target was built, deliberately.** The legacy
+`UIDocumentPickerExtensionViewController` extension point was deprecated in
+iOS 11 and is unavailable at this project's iOS 16 floor. Since iOS 11 the
+document picker is backed by the File Provider extension, so registering the
+domain above is what puts Neutrino Drive in every app's file browser;
+`NSExtensionFileProviderSupportsPickingFolders` makes "Save to → a subfolder"
+resolve. Building a deprecated target purely to tick this box would add a
+maintenance liability and no capability.
 
 Deliverables
 
-⬜ Deep platform integration.
+🟡 Deep platform integration. *Requires the real apps on a device; verification
+doc §2. Unverified for the same reason as above.*
 
 ⸻
 
-### Open In Place — ⬜
+### Open In Place — ✅
 
-⬜ Files can remain in Neutrino Drive without copying. *(`LSSupportsOpeningDocumentsInPlace` is explicitly set to `false` today.)*
+✅ Files can remain in Neutrino Drive without copying.
+`LSSupportsOpeningDocumentsInPlace` is now `true`.
+
+The flag was one line; the reason it had been `false` was the other half. The
+key-import path in `onOpenURL` deleted the incoming file unconditionally, which
+is correct housekeeping for an Inbox copy and **destroys a user's own document**
+once in-place URLs are handed over. `IncomingDocument` now classifies the URL,
+takes a security scope, coordinates the read via `NSFileCoordinator`, and deletes
+**only** what iOS copied into our Inbox. Classification fails safe: anything
+unrecognised is treated as in-place and never deleted.
 
 Deliverables
 
-⬜ Better storage efficiency.
+✅ Better storage efficiency.
+✅ An in-place document is never deleted after import — `IncomingDocumentTests`.
 
 ⸻
 
-### Spotlight Search — ⬜
+### Spotlight Search — ✅ (opt-in, off by default)
 
-⬜ Index metadata.
+✅ Index metadata.
 
 Search:
 
-⬜ File names
-⬜ Folder names
-⬜ Recent documents
+✅ File names
+✅ Folder names
+✅ Recent documents
+
+**Indexing is OFF by default and behind a user-facing setting.** CoreSpotlight's
+index is *not* end-to-end encrypted — it is a system database, readable by the
+system and included in device backups. Filenames are frequently the most
+sensitive thing about a file (`Divorce settlement.pdf`, `HIV results.pdf`), so a
+product that encrypts the bytes while volunteering the names by default would be
+incoherent. Metadata only: display name, type, modification date. **Never**
+contents, decrypted text, or thumbnails — asserted by
+`SpotlightIndexServiceTests` so a future edit cannot quietly add one.
+
+⚠️ **The toggle does not stop the system from seeing filenames**, because File
+Provider items are visible to the Files app and the system regardless. The
+Settings copy says so — a privacy control that overstates its reach is worse than
+none.
 
 Deliverables
 
-⬜ System-wide search support.
+✅ System-wide search support, opt-in.
+✅ De-indexing on logout, key removal, and opt-out.
+🟡 Home-screen search round trip. *Unverified — `CSSearchableIndex` writes to a
+system daemon that XCTest cannot observe. The activity-to-item resolution is
+tested; the round trip through Spotlight is verification doc §4.*
 
 ⸻
 

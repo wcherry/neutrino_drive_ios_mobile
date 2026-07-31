@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import CoreSpotlight
 
 // MARK: - AppDelegate
 
@@ -37,6 +38,7 @@ struct NeutrinoDriveApp: App {
     @StateObject private var uploadService = UploadService()
     @StateObject private var photoSyncService = PhotoSyncService()
     @StateObject private var biometricService = BiometricAuthService()
+    @StateObject private var spotlightService = SpotlightIndexService()
 
     @Environment(\.scenePhase) private var scenePhase
 
@@ -61,6 +63,7 @@ struct NeutrinoDriveApp: App {
                     .environmentObject(offlineService)
                     .environmentObject(photoSyncService)
                     .environmentObject(biometricService)
+                    .environmentObject(spotlightService)
 
                 if biometricService.shouldPresentOverlay {
                     LockScreenView(biometricService: biometricService)
@@ -74,6 +77,27 @@ struct NeutrinoDriveApp: App {
                 photoSyncService.configure(driveService: driveService, uploadService: uploadService)
                 photoSyncService.start()
                 biometricService.lockOnLaunch()
+
+                // The Files-app location exists only while the user is signed in *and* holds
+                // keys — see `FileProviderDomainService` for why both are required.
+                await FileProviderDomainService.synchronize(
+                    isAuthenticated: authService.isAuthenticated,
+                    hasKeys: KeyImportService.hasStoredKeys()
+                )
+            }
+            .onChange(of: authService.isAuthenticated) { isAuthenticated in
+                Task {
+                    await FileProviderDomainService.synchronize(
+                        isAuthenticated: isAuthenticated,
+                        hasKeys: KeyImportService.hasStoredKeys()
+                    )
+                }
+                if !isAuthenticated {
+                    // Signing out must take the Spotlight entries with it. Leaving indexed
+                    // filenames behind after logout would mean a signed-out device still
+                    // answering system searches with the previous user's file names.
+                    spotlightService.deindexAll()
+                }
             }
         }
         .onChange(of: scenePhase) { newPhase in
@@ -99,6 +123,7 @@ struct NeutrinoDriveApp: App {
 /// Wraps the authenticated/unauthenticated content and handles "Open In" URLs.
 private struct RootContentView: View {
     @EnvironmentObject var authService: AuthService
+    @EnvironmentObject var spotlightService: SpotlightIndexService
 
     @State private var showOpenInAlert = false
     @State private var openInAlertMessage = ""
@@ -117,10 +142,18 @@ private struct RootContentView: View {
             guard url.pathExtension == "json" else { return }
             Task { @MainActor in
                 do {
-                    let data = try Data(contentsOf: url)
+                    // `IncomingDocument.consume` takes the security scope, coordinates the
+                    // read, and deletes the source **only** when it is a copy iOS placed in
+                    // this app's Inbox.
+                    //
+                    // The previous `Data(contentsOf:)` + unconditional `removeItem` was safe
+                    // only while `LSSupportsOpeningDocumentsInPlace` was `false`. Now that it
+                    // is `true`, this URL can be the user's own file in iCloud Drive, and the
+                    // old code would have deleted it as a side effect of importing a key from
+                    // it. See `IncomingDocument` for the full account.
+                    let data = try IncomingDocument.consume(url: url)
                     let bundle = try KeyImportService.importKey(from: data)
                     KeyImportService.storeKeys(bundle)
-                    try? FileManager.default.removeItem(at: url)
                     openInAlertMessage = "Encryption key v\(bundle.keyVersion) imported successfully."
                 } catch {
                     openInAlertMessage = error.localizedDescription
@@ -128,10 +161,27 @@ private struct RootContentView: View {
                 showOpenInAlert = true
             }
         }
+        .onContinueUserActivity(CSSearchableItemActionType) { activity in
+            // A Spotlight result. `driveItemID(from:)` returns nil for any activity that is not
+            // one of ours, so an unrelated continuation cannot be misread as a file to open.
+            guard let itemID = SpotlightIndexService.driveItemID(from: activity) else { return }
+            NotificationCenter.default.post(name: .openDriveItemFromSpotlight,
+                                            object: nil, userInfo: ["itemID": itemID])
+        }
         .alert("Key Import", isPresented: $showOpenInAlert) {
             Button("OK") {}
         } message: {
             Text(openInAlertMessage)
         }
     }
+}
+
+// MARK: - Notifications
+
+extension Notification.Name {
+    /// Posted when a Spotlight result is opened. Carries `userInfo["itemID"]`.
+    ///
+    /// A notification rather than a binding threaded down through the view tree: the deep-link
+    /// target depends on which section is on screen, and the browser already owns that state.
+    static let openDriveItemFromSpotlight = Notification.Name("nd.openDriveItemFromSpotlight")
 }
