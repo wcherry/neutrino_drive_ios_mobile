@@ -68,8 +68,22 @@ final class DownloadService: ObservableObject {
 
     /// Download and decrypt a Drive file. Returns a URL to the plaintext temp file.
     /// Mirrors the web's downloadAndDecryptFile flow exactly.
-    func download(fileID: String, fileName: String, mimeType: String?) async throws -> URL {
-        logger.debug("download: fileID=\(fileID, privacy: .public) name=\(fileName, privacy: .public)")
+    ///
+    /// - Parameter versionID: when non-nil, fetches that historical version's blob from
+    ///   `/files/{id}/versions/{vid}/download` instead of the current file. Everything else —
+    ///   the key fetch, the unseal, the secretstream decrypt — is **identical**, which is the
+    ///   whole reason this is a parameter rather than a second method.
+    ///
+    ///   Historical versions are decryptable with the file's *current* DEK because the server
+    ///   stores no per-version key (`FileVersionResponse` has no key field; a version snapshot
+    ///   is a byte copy of the blob) and clients reuse a file's DEK across saves. See
+    ///   "Version history and the DEK question" in
+    ///   `agent_docs/plans/feature-phase5-sharing-versions-favorites.md`.
+    func download(fileID: String,
+                  fileName: String,
+                  mimeType: String?,
+                  versionID: String? = nil) async throws -> URL {
+        logger.debug("download: fileID=\(fileID, privacy: .public) name=\(fileName, privacy: .public) version=\(versionID ?? "current", privacy: .public)")
 
         guard KeyImportService.hasStoredKeys() else {
             throw DownloadError.noEncryptionKey
@@ -95,23 +109,13 @@ final class DownloadService: ObservableObject {
         //
         // Mirrors the web's decryptFileKey(encryptedFileKey, kp.privateKey).
 
-        guard let pubKeyString = KeychainService.load(forKey: KeyImportService.publicKeyKeychainKey),
-              let pubKeyData = Data(base64URLEncoded: pubKeyString),
-              let privKeyString = KeychainService.load(forKey: KeyImportService.privateKeyKeychainKey),
-              let privKeyData = Data(base64URLEncoded: privKeyString) else {
+        // Unsealing runs through `SealedKeyCrypto`, the same primitive `SharingService` uses to
+        // read a DEK before re-wrapping it for a recipient.
+        guard SealedKeyCrypto.storedKeyPair() != nil else {
             throw DownloadError.noEncryptionKey
         }
-
-        guard let sealedDEKBytes = Self.sodium.utils.base642bin(
-            encryptedFileKey, variant: .URLSAFE_NO_PADDING
-        ) else {
-            throw DownloadError.decryptionFailed
-        }
-
-        guard let dek: Bytes = Self.sodium.box.open(
-            anonymousCipherText: sealedDEKBytes,
-            recipientPublicKey: Array(pubKeyData),
-            recipientSecretKey: Array(privKeyData)
+        guard let dek: Bytes = SealedKeyCrypto.openDEKWithStoredKeys(
+            sealedBase64URL: encryptedFileKey
         ) else {
             logger.error("download: failed to unseal DEK for \(fileID, privacy: .public)")
             throw DownloadError.decryptionFailed
@@ -121,7 +125,9 @@ final class DownloadService: ObservableObject {
 
         // MARK: Step 3 — Download encrypted file blob (background session)
 
-        let encryptedData = try await fetchEncryptedFile(fileID: fileID, token: token)
+        let encryptedData = try await fetchEncryptedFile(fileID: fileID,
+                                                         versionID: versionID,
+                                                         token: token)
         logger.debug("download: received \(encryptedData.count) bytes")
         progress = 0.7
 
@@ -209,21 +215,45 @@ final class DownloadService: ObservableObject {
     /// keeps transferring if iOS suspends the app mid-download. The delivered file is read into
     /// memory for decryption and then removed — streaming decryption is a separate follow-up
     /// (see the memory note in `feature-photo-auto-sync.md`).
-    private func fetchEncryptedFile(fileID: String, token: String) async throws -> Data {
-        guard let url = URL(string: baseURL + "/api/v1/drive/files/\(fileID)") else {
+    /// The blob path for a file, or for one of its historical versions.
+    ///
+    /// Extracted as a pure function purely so it can be unit-tested: the full download flow
+    /// cannot be exercised in this test harness, because it first requires an encryption
+    /// keypair in the Keychain and the test host's Keychain does not persist one (the same
+    /// limitation behind the pre-existing `test_download_throwsNotAuthenticated_…` failure).
+    /// Path construction is the part of version downloading that could silently be wrong, so
+    /// it is the part made testable.
+    static func blobPath(fileID: String, versionID: String?) -> String {
+        guard let versionID else { return "/api/v1/drive/files/\(fileID)" }
+        return "/api/v1/drive/files/\(fileID)/versions/\(versionID)/download"
+    }
+
+    /// Transfer identifier for a blob fetch. Distinct per version so a version download and a
+    /// current-file download of the same file are never mistaken for one another by the
+    /// background session's orphan-claim path.
+    static func blobTransferID(fileID: String, versionID: String?) -> String {
+        guard let versionID else { return "download-\(fileID)" }
+        return "download-\(fileID)-v\(versionID)"
+    }
+
+    private func fetchEncryptedFile(fileID: String,
+                                    versionID: String?,
+                                    token: String) async throws -> Data {
+        let path = Self.blobPath(fileID: fileID, versionID: versionID)
+        guard let url = URL(string: baseURL + path) else {
             throw DownloadError.serverError(statusCode: 0)
         }
         var req = URLRequest(url: url)
         req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
 
-        logger.debug("--> GET /api/v1/drive/files/\(fileID, privacy: .public)")
+        logger.debug("--> GET \(path, privacy: .public)")
 
         let fileURL: URL
         let http: HTTPURLResponse
         do {
             (fileURL, http) = try await transferService.download(
                 request: req,
-                transferID: "download-\(fileID)",
+                transferID: Self.blobTransferID(fileID: fileID, versionID: versionID),
                 progress: { [weak self] fraction in
                     Task { @MainActor in
                         // Step 3 spans the 0.4…0.7 band of the overall progress bar.

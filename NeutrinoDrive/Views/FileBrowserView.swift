@@ -25,6 +25,8 @@ struct FileBrowserView: View {
     @State private var showEmptyTrashConfirmation = false
     @State private var itemToRename: DriveItem?
     @State private var itemToMove: DriveItem?
+    @State private var itemToShare: DriveItem?
+    @State private var itemForVersionHistory: DriveItem?
 
     @StateObject private var downloadService = DownloadService()
     @State private var previewURL: URL?
@@ -119,6 +121,14 @@ struct FileBrowserView: View {
                 driveService.move(itemID: item.id, to: newParentID)
             }
             .environmentObject(driveService)
+        }
+        .sheet(item: $itemToShare) { item in
+            ShareSheet(item: item)
+                .environmentObject(authService)
+        }
+        .sheet(item: $itemForVersionHistory) { item in
+            VersionHistorySheet(item: item)
+                .environmentObject(authService)
         }
         .quickLookPreview($previewURL)
         .sheet(item: $nativeViewerItem) { item in
@@ -264,7 +274,7 @@ struct FileBrowserView: View {
             } label: {
                 Label("Delete Forever", systemImage: "trash.slash")
             }
-        case .shared, .recents:
+        case .shared, .recents, .starred:
             EmptyView()
         }
     }
@@ -286,6 +296,17 @@ struct FileBrowserView: View {
                 Label("Restore", systemImage: "arrow.uturn.backward")
             }
             .tint(.green)
+        case .starred:
+            // Unstarring from the Starred list removes the row, which is the natural
+            // swipe affordance here.
+            if FeatureFlags.favorites {
+                Button {
+                    driveService.setStarred(itemID: item.id, isStarred: false)
+                } label: {
+                    Label("Unstar", systemImage: "star.slash")
+                }
+                .tint(.yellow)
+            }
         case .shared, .recents:
             EmptyView()
         }
@@ -293,9 +314,58 @@ struct FileBrowserView: View {
 
     // MARK: - Context Menu
 
+    /// Actions that apply to an item wherever it is listed — My Drive, Starred, Recents, or
+    /// Shared. Factored out so the Starred section is not a second-class list missing the very
+    /// action (unstar) users will reach for there most.
+    @ViewBuilder
+    private func sharedItemActions(for item: DriveItem) -> some View {
+        if FeatureFlags.favorites {
+            Button {
+                driveService.setStarred(itemID: item.id, isStarred: !item.isStarred)
+            } label: {
+                if item.isStarred {
+                    Label("Remove Star", systemImage: "star.slash")
+                } else {
+                    Label("Add Star", systemImage: "star")
+                }
+            }
+        }
+        if FeatureFlags.sharing {
+            Button {
+                itemToShare = item
+            } label: {
+                Label("Share\u{2026}", systemImage: "person.badge.plus")
+            }
+        }
+        if FeatureFlags.versionHistory && item.type == .file {
+            Button {
+                itemForVersionHistory = item
+            } label: {
+                Label("Version History", systemImage: "clock.arrow.circlepath")
+            }
+        }
+    }
+
     @ViewBuilder
     private func contextMenuItems(for item: DriveItem) -> some View {
         switch section {
+        case .starred, .shared, .recents:
+            if item.type == .file && FeatureFlags.viewNeutrinoFiles && item.isNeutrinoNativeFormat {
+                Button {
+                    nativeViewerItem = item
+                } label: {
+                    Label("Open", systemImage: "doc.text.magnifyingglass")
+                }
+                Divider()
+            } else if item.type == .file && FeatureFlags.downloadFiles {
+                Button {
+                    startDownload(for: item)
+                } label: {
+                    Label("Download & Open", systemImage: "arrow.down.circle")
+                }
+                Divider()
+            }
+            sharedItemActions(for: item)
         case .myDrive:
             if item.type == .file && FeatureFlags.viewNeutrinoFiles && item.isNeutrinoNativeFormat {
                 Button {
@@ -334,6 +404,8 @@ struct FileBrowserView: View {
             } label: {
                 Label("Move", systemImage: "folder")
             }
+            Divider()
+            sharedItemActions(for: item)
             Divider()
             Button(role: .destructive) {
                 driveService.delete(itemID: item.id)
@@ -449,6 +521,7 @@ struct FileBrowserView: View {
     private var emptyStateIcon: String {
         switch section {
         case .myDrive: return "folder"
+        case .starred: return "star"
         case .shared:  return "person.2"
         case .recents: return "clock"
         case .trash:   return "trash"
@@ -458,6 +531,7 @@ struct FileBrowserView: View {
     private var emptyStateTitle: String {
         switch section {
         case .myDrive: return "No Files Here"
+        case .starred: return "No Starred Items"
         case .shared:  return "Nothing Shared Yet"
         case .recents: return "No Recent Files"
         case .trash:   return "Trash is Empty"
@@ -467,6 +541,7 @@ struct FileBrowserView: View {
     private var emptyStateSubtitle: String {
         switch section {
         case .myDrive: return "Tap the folder button to create your first folder."
+        case .starred: return "Touch and hold a file or folder, then choose Add Star to keep it here."
         case .shared:  return "Files shared with you will appear here."
         case .recents: return "Files you open or modify will appear here."
         case .trash:   return "Deleted files are moved here before being permanently removed."

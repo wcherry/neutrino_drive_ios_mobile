@@ -171,15 +171,14 @@ struct E2EEUploader {
         //
         // Matches the web's encryptFileKey(dek, kp.publicKey).
 
-        guard let pubKeyString = KeychainService.load(forKey: SharedStorage.Keys.publicKey),
-              let pubKeyData = Data(base64URLEncoded: pubKeyString) else {
+        // Sealing runs through `SealedKeyCrypto` — the same primitive `SharingService` uses to
+        // re-wrap this DEK to a recipient. Sharing a file must produce a key wrapped exactly
+        // the way upload wraps it, and sharing one implementation is what guarantees that.
+        guard let pubKeyString = KeychainService.load(forKey: SharedStorage.Keys.publicKey) else {
             throw UploadError.noEncryptionKey
         }
-        guard let sealedDEK = Self.sodium.box.seal(message: dek,
-                                                   recipientPublicKey: Array(pubKeyData)) else {
-            throw UploadError.encryptionFailed
-        }
-        guard let encryptedFileKey = Self.sodium.utils.bin2base64(sealedDEK, variant: .URLSAFE_NO_PADDING) else {
+        guard let encryptedFileKey = SealedKeyCrypto.seal(dek: dek,
+                                                          toPublicKeyBase64URL: pubKeyString) else {
             throw UploadError.encryptionFailed
         }
 

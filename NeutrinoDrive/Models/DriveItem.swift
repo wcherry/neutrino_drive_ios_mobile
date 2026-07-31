@@ -33,6 +33,9 @@ struct DriveItem: Identifiable, Hashable {
     var isTrashed: Bool
     var isShared: Bool
     var mimeType: String?       // e.g. "image/jpeg"; nil for folders
+    /// Declared last with a default so the synthesised memberwise initialiser stays
+    /// source-compatible with every existing call site and test.
+    var isStarred: Bool = false
 
     // MARK: - Computed
 

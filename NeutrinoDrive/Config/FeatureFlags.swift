@@ -53,4 +53,22 @@ enum FeatureFlags {
     /// configuration, so a regression in the background path can be turned off
     /// without reverting the refactor.
     static let backgroundTransfers: Bool = true
+
+    /// Set to true to enable the Phase 5 sharing feature.
+    /// When false, the "Share" context-menu action is hidden and the app issues no
+    /// permission, user-lookup, or key-share request at all — so a disabled feature can
+    /// never re-wrap a DEK to the wrong recipient.
+    static let sharing: Bool = true
+
+    /// Set to true to enable the Phase 5 version history feature.
+    /// When false, the "Version History" context-menu action is hidden. Historical versions
+    /// are decrypted through the same `DownloadService` path as current files, so this flag
+    /// gates only the listing and restore UI, not any separate crypto.
+    static let versionHistory: Bool = true
+
+    /// Set to true to enable the Phase 5 favorites feature.
+    /// When false, the star action is hidden from context menus and the "Starred" section is
+    /// dropped from `DriveSection.visibleCases`, so neither the iPhone picker nor the iPad
+    /// sidebar offers it.
+    static let favorites: Bool = true
 }
