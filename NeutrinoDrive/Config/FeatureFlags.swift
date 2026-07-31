@@ -19,6 +19,15 @@ enum FeatureFlags {
     /// in-app web viewer instead of triggering a download.
     static let viewNeutrinoFiles: Bool = true
 
+    /// Set to true to enable the Epic 8 Offline Files feature.
+    /// When false, the "Make Available Offline" context menu action is hidden in My Drive
+    /// (the Offline tab still shows any previously-cached files).
+    static let offlineFiles: Bool = true
+
+    /// Set to true to enable the Epic 9 Search feature.
+    /// When false, the search field is hidden from the My Drive list.
+    static let search: Bool = true
+
     /// Set to true to enable automatic background sync of new photos to Drive.
     /// When false, the Photo Sync section is hidden in Settings and no PhotoKit
     /// observer or background task is registered.

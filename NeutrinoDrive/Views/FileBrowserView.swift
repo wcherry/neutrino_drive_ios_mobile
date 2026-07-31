@@ -15,6 +15,8 @@ struct FileBrowserView: View {
     // MARK: - Environment
 
     @EnvironmentObject var driveService: DriveService
+    @EnvironmentObject var authService: AuthService
+    @EnvironmentObject var offlineService: OfflineService
 
     // MARK: - State
 
@@ -29,10 +31,19 @@ struct FileBrowserView: View {
     @State private var downloadError: String?
     @State private var nativeViewerItem: DriveItem?
 
+    @StateObject private var searchService = SearchService()
+    @State private var searchText = ""
+
     // MARK: - Computed
 
     private var currentItems: [DriveItem] {
         driveService.items(in: section, parentID: parentID)
+    }
+
+    /// True while a My Drive search is active and should replace `currentItems` in the list.
+    private var isSearchActive: Bool {
+        FeatureFlags.search && section == .myDrive
+            && !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     private var navigationTitle: String {
@@ -46,7 +57,16 @@ struct FileBrowserView: View {
 
     var body: some View {
         Group {
-            if driveService.isLoading && currentItems.isEmpty {
+            if isSearchActive {
+                if searchService.isSearching && searchService.results.isEmpty {
+                    ProgressView()
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else if searchService.results.isEmpty {
+                    searchEmptyStateView
+                } else {
+                    searchResultsList
+                }
+            } else if driveService.isLoading && currentItems.isEmpty {
                 ProgressView()
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if currentItems.isEmpty {
@@ -60,6 +80,16 @@ struct FileBrowserView: View {
         .toolbar { toolbarContent }
         .task(id: "\(section.rawValue)-\(parentID ?? "root")") {
             await driveService.loadSection(section, parentID: parentID)
+        }
+        .modifier(MyDriveSearchModifier(isEnabled: FeatureFlags.search && section == .myDrive, searchText: $searchText))
+        .task(id: searchText) {
+            guard FeatureFlags.search else { return }
+            try? await Task.sleep(nanoseconds: 300_000_000)
+            guard !Task.isCancelled else { return }
+            await searchService.search(query: searchText)
+        }
+        .task {
+            searchService.authService = authService
         }
         .alert("Error", isPresented: Binding(
             get: { driveService.error != nil },
@@ -129,6 +159,35 @@ struct FileBrowserView: View {
             if downloadService.isDownloading {
                 downloadingOverlay
             }
+        }
+    }
+
+    // MARK: - Search Results List
+
+    private var searchResultsList: some View {
+        List {
+            ForEach(searchService.results) { item in
+                fileRow(for: item)
+            }
+        }
+        .listStyle(.insetGrouped)
+    }
+
+    private var searchEmptyStateView: some View {
+        VStack(spacing: 16) {
+            Spacer()
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 60))
+                .foregroundStyle(.secondary)
+            Text("No Results")
+                .font(.title2)
+                .fontWeight(.semibold)
+            Text("No files match \u{201C}\(searchText)\u{201D}.")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 32)
+            Spacer()
         }
     }
 
@@ -253,6 +312,18 @@ struct FileBrowserView: View {
                 }
                 Divider()
             }
+            if item.type == .file && FeatureFlags.offlineFiles {
+                Button {
+                    toggleOffline(for: item)
+                } label: {
+                    if offlineService.isOffline(fileID: item.id) {
+                        Label("Remove Offline", systemImage: "arrow.down.circle.fill")
+                    } else {
+                        Label("Make Available Offline", systemImage: "arrow.down.circle")
+                    }
+                }
+                Divider()
+            }
             Button {
                 itemToRename = item
             } label: {
@@ -339,6 +410,22 @@ struct FileBrowserView: View {
         }
     }
 
+    // MARK: - Offline
+
+    private func toggleOffline(for item: DriveItem) {
+        if offlineService.isOffline(fileID: item.id) {
+            offlineService.removeOffline(fileID: item.id)
+        } else {
+            Task {
+                do {
+                    try await offlineService.makeAvailableOffline(item: item, downloadService: downloadService)
+                } catch {
+                    downloadError = error.localizedDescription
+                }
+            }
+        }
+    }
+
     // MARK: - Empty State
 
     private var emptyStateView: some View {
@@ -387,11 +474,30 @@ struct FileBrowserView: View {
     }
 }
 
+// MARK: - MyDriveSearchModifier
+
+/// Applies `.searchable(text:)` only when `isEnabled` — keeps the search field scoped to the
+/// My Drive list (gated by `FeatureFlags.search`) without affecting other sections.
+private struct MyDriveSearchModifier: ViewModifier {
+    let isEnabled: Bool
+    @Binding var searchText: String
+
+    func body(content: Content) -> some View {
+        if isEnabled {
+            content.searchable(text: $searchText, prompt: "Search My Drive")
+        } else {
+            content
+        }
+    }
+}
+
 // MARK: - Preview
 
 #Preview {
     NavigationStack {
         FileBrowserView(section: .myDrive, parentID: nil)
             .environmentObject(DriveService())
+            .environmentObject(AuthService())
+            .environmentObject(OfflineService())
     }
 }

@@ -4,6 +4,7 @@ import SwiftUI
 struct NeutrinoDriveApp: App {
     @StateObject private var authService = AuthService()
     @StateObject private var driveService = DriveService()
+    @StateObject private var offlineService = OfflineService()
     @StateObject private var uploadService = UploadService()
     @StateObject private var photoSyncService = PhotoSyncService()
 
@@ -22,6 +23,7 @@ struct NeutrinoDriveApp: App {
             RootContentView()
                 .environmentObject(authService)
                 .environmentObject(driveService)
+                .environmentObject(offlineService)
                 .environmentObject(photoSyncService)
                 .task {
                     driveService.authService = authService

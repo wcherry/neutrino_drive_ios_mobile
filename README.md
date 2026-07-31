@@ -20,9 +20,9 @@ A secure mobile file browser for Neutrino Drive encrypted cloud storage. Built w
 | Epic 5 | Upload Files | Pending |
 | Epic 6 | Download Files | Pending |
 | Epic 7 | File Viewers | Pending |
-| Epic 8 | Offline Files | Pending |
-| Epic 9 | Search | Pending |
-| Epic 10 | Settings | Pending |
+| Epic 8 | Offline Files | COMPLETE |
+| Epic 9 | Search | COMPLETE |
+| Epic 10 | Settings | COMPLETE |
 
 ## Getting Started
 
