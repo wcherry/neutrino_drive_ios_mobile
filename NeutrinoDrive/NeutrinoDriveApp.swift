@@ -4,12 +4,14 @@ import SwiftUI
 struct NeutrinoDriveApp: App {
     @StateObject private var authService = AuthService()
     @StateObject private var driveService = DriveService()
+    @StateObject private var offlineService = OfflineService()
 
     var body: some Scene {
         WindowGroup {
             RootContentView()
                 .environmentObject(authService)
                 .environmentObject(driveService)
+                .environmentObject(offlineService)
                 .task {
                     driveService.authService = authService
                 }
