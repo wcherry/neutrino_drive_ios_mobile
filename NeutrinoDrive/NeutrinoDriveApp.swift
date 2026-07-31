@@ -39,6 +39,8 @@ struct NeutrinoDriveApp: App {
     @StateObject private var photoSyncService = PhotoSyncService()
     @StateObject private var biometricService = BiometricAuthService()
     @StateObject private var spotlightService = SpotlightIndexService()
+    @StateObject private var streamingService = StreamingPlaybackService()
+    @StateObject private var smartOffline = SmartOfflineSyncService()
 
     @Environment(\.scenePhase) private var scenePhase
 
@@ -64,6 +66,8 @@ struct NeutrinoDriveApp: App {
                     .environmentObject(photoSyncService)
                     .environmentObject(biometricService)
                     .environmentObject(spotlightService)
+                    .environmentObject(streamingService)
+                    .environmentObject(smartOffline)
 
                 if biometricService.shouldPresentOverlay {
                     LockScreenView(biometricService: biometricService)
@@ -84,6 +88,14 @@ struct NeutrinoDriveApp: App {
                     isAuthenticated: authService.isAuthenticated,
                     hasKeys: KeyImportService.hasStoredKeys()
                 )
+
+                // Smart offline runs on foreground rather than from a background task. Photo
+                // sync already owns the app's one processing-task identifier, and competing
+                // with it for the background budget to prefetch a convenience cache is a poor
+                // trade. Documented as a deliberate limit in the plan.
+                await smartOffline.sync(offlineService: offlineService,
+                                        downloadService: DownloadService(),
+                                        driveService: driveService)
             }
             .onChange(of: authService.isAuthenticated) { isAuthenticated in
                 Task {
@@ -93,6 +105,9 @@ struct NeutrinoDriveApp: App {
                     )
                 }
                 if !isAuthenticated {
+                    // An access history must not outlive the session that produced it: it is a
+                    // record of what the previous user opened.
+                    FileAccessTracker.shared.reset()
                     // Signing out must take the Spotlight entries with it. Leaving indexed
                     // filenames behind after logout would mean a signed-out device still
                     // answering system searches with the previous user's file names.
@@ -113,6 +128,36 @@ struct NeutrinoDriveApp: App {
                 biometricService.sceneDidBecomeActive()
             @unknown default:
                 break
+            }
+        }
+
+        // Secondary scene: one window per open document (iPad, Stage Manager, external
+        // displays). `WindowGroup(id:for:)` persists the `DocumentWindowValue` and hands it
+        // back when iOS restores the scene, so a restored window can rebuild itself without
+        // any in-memory state — see `DocumentWindowValue` for why it carries a name and MIME
+        // type rather than only an ID, and for why it carries no plaintext.
+        //
+        // Declared unconditionally rather than behind `if FeatureFlags.multiWindow`, because
+        // `SceneBuilder` does not accept conditionals — wrapping this in an `if` fails to
+        // compile. The flag gates the only thing that can reach the scene instead: no
+        // `openWindow` call site is live when it is off (`FileBrowserView.canOpenInNewWindow`),
+        // so a declared-but-unreachable scene is never instantiated.
+        WindowGroup(id: DocumentWindowScene.identifier, for: DocumentWindowValue.self) { $value in
+            Group {
+                if let value {
+                    DocumentWindowView(value: value)
+                        .environmentObject(authService)
+                        .environmentObject(driveService)
+                        .environmentObject(offlineService)
+                        .environmentObject(streamingService)
+                        .environmentObject(smartOffline)
+                } else {
+                    ContentUnavailableCompat(
+                        title: "No document",
+                        message: "This window has nothing to show.",
+                        systemImage: "doc"
+                    )
+                }
             }
         }
     }

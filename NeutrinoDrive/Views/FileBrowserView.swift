@@ -32,6 +32,18 @@ struct FileBrowserView: View {
     @State private var previewURL: URL?
     @State private var downloadError: String?
     @State private var nativeViewerItem: DriveItem?
+    /// Non-nil while a large video/audio file is being played by streaming rather than by
+    /// downloading it in full. See `StreamingPlaybackService.shouldStream`.
+    @State private var streamingItem: DriveItem?
+    /// True while an external drag is hovering the list, so the drop target can be shown.
+    @State private var isDropTargeted = false
+    /// Owned here rather than injected: `UploadSheet` does the same, and a drop is just another
+    /// upload entry point.
+    @StateObject private var dropUploadService = UploadService()
+    @State private var dropError: String?
+
+    @Environment(\.openWindow) private var openWindow
+    @Environment(\.supportsMultipleWindows) private var supportsMultipleWindows
 
     @StateObject private var searchService = SearchService()
     @State private var searchText = ""
@@ -131,6 +143,31 @@ struct FileBrowserView: View {
                 .environmentObject(authService)
         }
         .quickLookPreview($previewURL)
+        // Drop in. Accepts files from Files, Mail, Notes, or any app that vends a file
+        // representation; each is encrypted locally before upload by the same `E2EEUploader`
+        // every other upload path uses.
+        .if(FeatureFlags.dragAndDrop && FeatureFlags.uploadFiles && section == .myDrive) { view in
+            view.onDrop(of: [.data, .item], isTargeted: $isDropTargeted) { providers in
+                handleDrop(providers)
+                return true
+            }
+        }
+        .overlay {
+            if isDropTargeted {
+                RoundedRectangle(cornerRadius: 12)
+                    .strokeBorder(Color.accentColor, style: StrokeStyle(lineWidth: 3, dash: [8]))
+                    .padding(8)
+                    .allowsHitTesting(false)
+            }
+        }
+        .alert("Couldn't add file", isPresented: .constant(dropError != nil)) {
+            Button("OK") { dropError = nil }
+        } message: {
+            Text(dropError ?? "")
+        }
+        .fullScreenCover(item: $streamingItem) { item in
+            MediaPlayerView(item: item)
+        }
         .sheet(item: $nativeViewerItem) { item in
             NeutrinoFileViewer(item: item)
         }
@@ -222,6 +259,22 @@ struct FileBrowserView: View {
 
     @ViewBuilder
     private func fileRow(for item: DriveItem) -> some View {
+        rowContent(for: item)
+            // Drag out. The provider decrypts lazily — on drop, not on drag — so dragging a
+            // large file and releasing it over nothing costs nothing. See `DriveItemTransfer`.
+            .if(DriveItemTransfer.canDrag(item: item)) { view in
+                view.onDrag {
+                    DriveItemTransfer.makeItemProvider(for: item) { item in
+                        try await downloadService.download(fileID: item.id,
+                                                           fileName: item.name,
+                                                           mimeType: item.mimeType)
+                    }
+                }
+            }
+    }
+
+    @ViewBuilder
+    private func rowContent(for item: DriveItem) -> some View {
         Group {
             if item.type == .folder {
                 NavigationLink(value: item) {
@@ -319,6 +372,15 @@ struct FileBrowserView: View {
     /// action (unstar) users will reach for there most.
     @ViewBuilder
     private func sharedItemActions(for item: DriveItem) -> some View {
+        // iPad only in practice — `supportsMultipleWindows` is false on iPhone, so the action
+        // is absent rather than present-and-doing-nothing.
+        if canOpenInNewWindow && item.type == .file {
+            Button {
+                openInNewWindow(item)
+            } label: {
+                Label("Open in New Window", systemImage: "macwindow.badge.plus")
+            }
+        }
         if FeatureFlags.favorites {
             Button {
                 driveService.setStarred(itemID: item.id, isStarred: !item.isStarred)
@@ -468,7 +530,17 @@ struct FileBrowserView: View {
 
     // MARK: - Download
 
+    /// Opens a file: streamed if it is large media, downloaded-then-previewed otherwise.
+    ///
+    /// The branch is deliberately here rather than inside `DownloadService`. Streaming and
+    /// downloading produce different *things* — a live player versus a decrypted file on disk —
+    /// and the caller is what knows which of the two it wants to present.
     private func startDownload(for item: DriveItem) {
+        if StreamingPlaybackService.shouldStream(mimeType: item.mimeType, sizeBytes: item.size) {
+            streamingItem = item
+            recordAccess(item)
+            return
+        }
         Task {
             do {
                 previewURL = try await downloadService.download(
@@ -476,10 +548,67 @@ struct FileBrowserView: View {
                     fileName: item.name,
                     mimeType: item.mimeType
                 )
+                recordAccess(item)
             } catch {
                 downloadError = error.localizedDescription
             }
         }
+    }
+
+    /// Feeds the local recency/frequency signal that drives smart offline sync.
+    ///
+    /// Local rather than server-side, and not because it was easier: the backend cannot supply
+    /// this. `/api/v1/drive/quick-access` silently degrades to "8 most recently updated" (its
+    /// scoring query groups on a column that does not exist), and `file_activity_log` is never
+    /// written for opens or downloads at all. See "Finding 2" in
+    /// `agent_docs/plans/feature-phase5-6-streaming-smart-offline-ipad.md`. Keeping it local is
+    /// also the privacy-correct answer — which files a user opens, and how often, is exactly
+    /// the behavioural metadata an E2EE product exists to withhold.
+    private func recordAccess(_ item: DriveItem) {
+        FileAccessTracker.shared.recordAccess(item: item)
+    }
+
+    // MARK: - Drag and Drop
+
+    /// Uploads every dropped file into the folder currently being browsed.
+    ///
+    /// Failures are reported per-drop rather than aborting the batch: dropping five files and
+    /// having one unsupported item silently cancel the other four would be worse than partial
+    /// success.
+    private func handleDrop(_ providers: [NSItemProvider]) {
+        Task {
+            for provider in providers {
+                do {
+                    guard let dropped = try await DriveItemTransfer.loadDroppedFile(from: provider)
+                    else { continue }
+                    defer { try? FileManager.default.removeItem(at: dropped.url.deletingLastPathComponent()) }
+
+                    let data = try Data(contentsOf: dropped.url)
+                    _ = try await dropUploadService.upload(data: data,
+                                                           fileName: dropped.fileName,
+                                                           mimeType: dropped.mimeType,
+                                                           parentFolderID: parentID)
+                } catch {
+                    dropError = error.localizedDescription
+                }
+            }
+            await driveService.loadSection(section, parentID: parentID)
+        }
+    }
+
+    // MARK: - Multi-Window
+
+    /// Opens `item` in its own iPad window.
+    ///
+    /// Guarded on `supportsMultipleWindows` rather than on the idiom: the environment value is
+    /// what actually reflects whether the running platform will honour `openWindow`, and it is
+    /// false on iPhone and on an iPad running in a configuration that forbids it.
+    private var canOpenInNewWindow: Bool {
+        FeatureFlags.multiWindow && supportsMultipleWindows
+    }
+
+    private func openInNewWindow(_ item: DriveItem) {
+        openWindow(id: DocumentWindowScene.identifier, value: DocumentWindowValue(item: item))
     }
 
     // MARK: - Offline

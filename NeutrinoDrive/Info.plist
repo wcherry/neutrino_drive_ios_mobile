@@ -52,6 +52,8 @@
 	<string>Neutrino Drive uses Face ID to unlock the app and to protect access to your encryption keys.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>Neutrino Drive needs access to your photo library to automatically back up new photos to your encrypted Drive.</string>
+	<key>UIApplicationSupportsMultipleScenes</key>
+	<true/>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>processing</string>

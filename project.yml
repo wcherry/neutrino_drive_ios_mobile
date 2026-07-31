@@ -18,6 +18,13 @@ targets:
     dependencies:
       - package: swift-sodium
         product: Sodium
+      # Raw libsodium C API. Needed by SecretStreamCrypto, which reimplements the *pull* half
+      # of the secretstream construction incrementally (crypto_core_hchacha20,
+      # crypto_stream_chacha20_ietf_xor_ic, streaming crypto_onetimeauth_poly1305). The Sodium
+      # Swift wrapper only vends the one-shot whole-message pull, which is precisely the
+      # whole-file-in-memory behaviour being removed.
+      - package: swift-sodium
+        product: Clibsodium
       - target: NeutrinoDriveShare
         embed: true
       - target: NeutrinoDriveFileProvider
@@ -61,6 +68,10 @@ targets:
         NSFaceIDUsageDescription: "Neutrino Drive uses Face ID to unlock the app and to protect access to your encryption keys."
         UIBackgroundModes:
           - processing
+        # Phase 6 multi-window. Without this iOS refuses `openWindow` outright, so the
+        # secondary WindowGroup would compile, declare a scene, and silently never appear.
+        # Paired with `FeatureFlags.multiWindow`, which gates the scene declaration itself.
+        UIApplicationSupportsMultipleScenes: true
         BGTaskSchedulerPermittedIdentifiers:
           - com.neutrino.drive.photosync
         NSAppTransportSecurity:
@@ -117,9 +128,19 @@ targets:
       - path: NeutrinoDrive/Services/E2EEUploader.swift
       - path: NeutrinoDrive/Services/BackgroundTransferService.swift
       - path: NeutrinoDrive/Services/ShareUploadCoordinator.swift
+      # Compiled here only because E2EEUploader/E2EEDownloader reference the shared
+      # SecretStreamError type. Same file-identity rule as the rest of this list.
+      - path: NeutrinoDrive/Services/SecretStreamCrypto.swift
     dependencies:
       - package: swift-sodium
         product: Sodium
+      # Raw libsodium C API. Needed by SecretStreamCrypto, which reimplements the *pull* half
+      # of the secretstream construction incrementally (crypto_core_hchacha20,
+      # crypto_stream_chacha20_ietf_xor_ic, streaming crypto_onetimeauth_poly1305). The Sodium
+      # Swift wrapper only vends the one-shot whole-message pull, which is precisely the
+      # whole-file-in-memory behaviour being removed.
+      - package: swift-sodium
+        product: Clibsodium
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.neutrino.drive.share
@@ -185,6 +206,9 @@ targets:
       # The decrypt half. Extracted out of DownloadService in Phase 3 for exactly this reason —
       # a reimplementation would not fail any build and would hand the Files app plausible
       # garbage.
+      # The constant-memory streaming decrypt. This is what lets the extension materialize a
+      # file larger than its memory budget, retiring the 64 MB cap PR #9 had to impose.
+      - path: NeutrinoDrive/Services/SecretStreamCrypto.swift
       - path: NeutrinoDrive/Services/E2EEDownloader.swift
       # The encrypt half, so a document saved into Neutrino Drive from Pages is sealed with the
       # user's DEK exactly as an in-app upload is.
@@ -199,6 +223,13 @@ targets:
     dependencies:
       - package: swift-sodium
         product: Sodium
+      # Raw libsodium C API. Needed by SecretStreamCrypto, which reimplements the *pull* half
+      # of the secretstream construction incrementally (crypto_core_hchacha20,
+      # crypto_stream_chacha20_ietf_xor_ic, streaming crypto_onetimeauth_poly1305). The Sodium
+      # Swift wrapper only vends the one-shot whole-message pull, which is precisely the
+      # whole-file-in-memory behaviour being removed.
+      - package: swift-sodium
+        product: Clibsodium
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.neutrino.drive.fileprovider
