@@ -389,7 +389,7 @@ Target: 1–2 months
 
 ⸻
 
-### Face ID / Touch ID — ⬜
+### Face ID / Touch ID — ✅
 
 Require biometric unlock.
 
@@ -397,60 +397,83 @@ Features
 
 Protect:
 
-⬜ App launch
-⬜ Key access
+✅ App launch
+✅ Key access
 
 Deliverables
 
-⬜ Improved security.
+✅ Improved security.
+
+*Implemented — see [agent_docs/plans/feature-phase2-biometrics-share-background.md](plans/feature-phase2-biometrics-share-background.md) §1.
+Uses `.deviceOwnerAuthentication` so the device passcode is always a fallback. The lock state
+machine is unit-tested; **the biometric integration itself has not been exercised on a device** —
+no simulator API produces a genuine Face ID success. See the verification doc.*
 
 ⸻
 
-### Background Transfers — ⬜
+### Background Transfers — ✅
 
 Use:
 
-⬜ `URLSession` Background Tasks
+✅ `URLSession` Background Tasks
 
 Allows:
 
-⬜ Large uploads
-⬜ Large downloads
+✅ Large uploads
+✅ Large downloads
 
-(When app is suspended — currently `UploadService`/`DownloadService` use `URLSession.shared`, so transfers do not survive suspension.)
-
-Deliverables
-
-⬜ Reliable transfers.
-
-⸻
-
-### Share Sheet Support — ⬜
-
-⬜ From any app: Share → Neutrino Drive
+(`UploadService`/`DownloadService` now route their blob transfers through
+`BackgroundTransferService`, a `.background` `URLSessionConfiguration` with a delegate. The small
+sealed-key JSON calls stay on a foreground session because background sessions do not support
+data tasks. Photo auto-sync inherits this automatically, retiring the biggest risk named in the
+photo-sync plan.)
 
 Deliverables
 
-⬜ Upload directly into Drive.
+✅ Reliable transfers.
+
+*Implemented — see [agent_docs/plans/feature-phase2-biometrics-share-background.md](plans/feature-phase2-biometrics-share-background.md) §3.
+The async/delegate bridge is unit-tested; **surviving real suspension has not been verified** —
+`URLProtocol` is never consulted by a background session, and the simulator does not suspend apps
+the way iOS does. Needs a physical device.*
 
 ⸻
 
-### Photo Auto Backup — ⬜
+### Share Sheet Support — ✅
+
+✅ From any app: Share → Neutrino Drive
+
+Deliverables
+
+✅ Upload directly into Drive.
+
+*Implemented — see [agent_docs/plans/feature-phase2-biometrics-share-background.md](plans/feature-phase2-biometrics-share-background.md) §2.
+A `NeutrinoDriveShare` app-extension target compiles the same `E2EEUploader` source file as the
+app, so the two cannot drift; an App Group and a shared Keychain access group let it read the
+stored keys and token. **Not verified end to end** — the test bundle cannot link an app-extension
+target, so `ShareViewController` and the real memory ceiling are covered only by the verification
+doc.*
+
+⸻
+
+### Photo Auto Backup — ✅
 
 Optional.
 
 Backup:
 
-⬜ Camera Roll
-⬜ Albums
+✅ Camera Roll
+⬜ Albums (album-scoped selection remains out of scope)
 
 (Similar to Google Photos.)
 
-*Spec written but not yet implemented — see [docs/plans/feature-photo-auto-sync.md](../docs/plans/feature-photo-auto-sync.md).*
+*Implemented — see [agent_docs/plans/feature-photo-auto-sync.md](plans/feature-photo-auto-sync.md),
+whose acceptance criteria record exactly which parts are verified. Its largest "Known risk"
+(transfers dying on suspension) was retired by the Background Transfers work above.*
 
 Deliverables
 
-⬜ Strong mobile value proposition.
+✅ Strong mobile value proposition.
 
 ⸻
 

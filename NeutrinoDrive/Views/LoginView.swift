@@ -72,7 +72,10 @@ struct LoginView: View {
                     .background(Color(.secondarySystemBackground))
                     .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                     .onChange(of: serverHost) { newValue in
-                        UserDefaults.standard.set(newValue, forKey: AuthService.serverHostKey)
+                        // Writes both the App Group suite (so the share extension resolves the
+                        // same host) and `.standard` (so nothing that still reads it directly
+                        // regresses).
+                        SharedStorage.setServerHost(newValue)
                     }
 
                     TextField("Email", text: $email)

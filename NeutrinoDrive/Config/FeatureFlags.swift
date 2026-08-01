@@ -32,4 +32,25 @@ enum FeatureFlags {
     /// When false, the Photo Sync section is hidden in Settings and no PhotoKit
     /// observer or background task is registered.
     static let photoAutoSync: Bool = true
+
+    /// Set to true to enable the Phase 2 Face ID / Touch ID lock.
+    /// When false, the Security section is hidden in Settings, no lock overlay is
+    /// ever presented, and `BiometricAuthService` reports every gate as passed —
+    /// so a disabled feature never prompts and never blocks.
+    static let biometricLock: Bool = true
+
+    /// Set to true to enable the Phase 2 share extension upload path.
+    /// When false, the extension shows an "unavailable" message instead of
+    /// uploading. (Removing the extension from the Share sheet entirely requires
+    /// uninstalling the app — an extension's presence is a bundle property, not a
+    /// runtime one.)
+    static let shareExtension: Bool = true
+
+    /// Set to true to route large upload/download transfers through a
+    /// `.background` URLSession, so they survive app suspension.
+    /// When false, transfers use a standard foreground session — the pre-Phase-2
+    /// behaviour. This is a real kill switch: it swaps only the session
+    /// configuration, so a regression in the background path can be turned off
+    /// without reverting the refactor.
+    static let backgroundTransfers: Bool = true
 }

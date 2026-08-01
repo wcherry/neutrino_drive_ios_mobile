@@ -48,6 +48,8 @@
 	</dict>
 	<key>NSCameraUsageDescription</key>
 	<string>Neutrino Drive needs camera access to scan QR codes for key import.</string>
+	<key>NSFaceIDUsageDescription</key>
+	<string>Neutrino Drive uses Face ID to unlock the app and to protect access to your encryption keys.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>Neutrino Drive needs access to your photo library to automatically back up new photos to your encrypted Drive.</string>
 	<key>UIBackgroundModes</key>

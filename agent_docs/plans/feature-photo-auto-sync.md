@@ -30,9 +30,9 @@ plaintext photos.
 **Out of scope (follow-up work)**
 - Backfilling the entire existing library (see "Initial baseline" — MVP syncs
   only assets created *after* the feature is enabled).
-- True background `URLSession` transfers (`.background` configuration). See
-  "Known risks" — this is the main reason large videos may not complete while
-  suspended.
+- ~~True background `URLSession` transfers (`.background` configuration).~~
+  **Delivered later** by the Phase 2 background-transfers work; see "Known
+  risks" below.
 - Two-way sync, deletion propagation, or removing photos from the device.
 - Album-scoped or smart-album-scoped selection.
 - iCloud Photos "optimised storage" originals being force-downloaded over
@@ -340,16 +340,40 @@ invisible in the permission prompts.
 
 ## Known risks / edge cases
 
-- **`URLSession.shared` is not a background session.** If the OS suspends the
-  app mid-upload, that transfer dies and the entry retries from scratch. For
-  large videos on a slow link this can loop indefinitely. Mitigation for MVP:
-  cap auto-sync at a configurable max asset size (default 512 MB) and mark
-  oversized assets `failed` with "Too large for automatic backup". The real fix
-  is a `.background` `URLSession` with a delegate, which requires restructuring
-  `UploadService` around a non-`async` delegate flow — deliberately deferred.
-- **Memory.** `UploadService` holds plaintext + ciphertext simultaneously. A
-  200 MB video means ~400 MB resident and a likely jetsam kill. Reinforces the
-  size cap; streaming secretstream chunking is the follow-up.
+- **~~`URLSession.shared` is not a background session.~~ — RETIRED.**
+  *Original risk:* if the OS suspended the app mid-upload, that transfer died and
+  the entry retried from scratch; for large videos on a slow link this could loop
+  indefinitely. The stated mitigation was the 512 MB size cap, with the real fix
+  ("a `.background` `URLSession` with a delegate, which requires restructuring
+  `UploadService` around a non-`async` delegate flow") deliberately deferred.
+
+  **That fix has now shipped** — see
+  `agent_docs/plans/feature-phase2-biometrics-share-background.md` §3. The
+  encrypt-and-POST pipeline moved out of `UploadService` into `E2EEUploader`,
+  whose blob POST runs through `BackgroundTransferService` on a `.background`
+  `URLSessionConfiguration` with a delegate. `PhotoSyncService` uploads via
+  `UploadService.upload(data:…)`, so it inherits background transfers with **no
+  change of its own** — the wiring is structural rather than a parallel code
+  path, which is why it cannot silently fail to apply. `DownloadService`'s blob
+  fetch moved onto the same session.
+
+  Two honest caveats. First, the small sealed-key JSON calls stay on a foreground
+  session, because background sessions do not support data tasks at all; they are
+  sub-kilobyte and complete in milliseconds, so a suspension between the blob
+  upload and the key `PUT` still leaves a file on the server with no stored DEK —
+  the same retry path handles it, but it is not the transfer daemon's problem to
+  solve. Second, **none of this is verified on a device.** `URLProtocol` is never
+  consulted by a background session, so no test in this repo exercises the real
+  suspension path; coverage stops at the async/delegate bridge. The kill switch
+  is `FeatureFlags.backgroundTransfers`.
+- **Memory — STILL OPEN.** The pipeline holds plaintext + ciphertext + the
+  assembled multipart body simultaneously. A 200 MB video means several hundred MB
+  resident and a likely jetsam kill. Background transfers fix *suspension*, not
+  *footprint*: the encryption step is unchanged and still buffers everything.
+  **The 512 MB cap therefore stays.** Streaming secretstream chunking straight to
+  the body file remains the follow-up. (The share extension, which runs with far
+  less memory than the app, uses its own much smaller 25 MB cap for the same
+  reason — see `ShareLimits.maxItemBytes`.)
 - **Duplicate uploads across reinstall.** The queue file lives in Application
   Support and is lost on delete-and-reinstall; the completed ledger goes with
   it. A reinstalled app with the same anchor date could re-upload. Mitigation:

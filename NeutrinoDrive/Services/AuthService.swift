@@ -42,14 +42,16 @@ final class AuthService: ObservableObject {
 
     // MARK: - Keychain Keys
 
-    static let accessTokenKey  = "nd.access_token"
-    static let refreshTokenKey = "nd.refresh_token"
+    // Aliases for the canonical definitions in `SharedStorage`, which the share extension
+    // compiles without pulling in this class. Every existing call site keeps working.
+    static let accessTokenKey  = SharedStorage.Keys.accessToken
+    static let refreshTokenKey = SharedStorage.Keys.refreshToken
     static let tokenExpiryKey  = "nd.token_expiry"
 
     // MARK: - OAuth Configuration
 
-    static let serverHostKey = "nd.server_host"
-    static let defaultHost   = "http://localhost:8080"
+    static let serverHostKey = SharedStorage.Keys.serverHost
+    static let defaultHost   = SharedStorage.defaultHost
 
     private enum AuthConfig {
         static var baseURL: String {
