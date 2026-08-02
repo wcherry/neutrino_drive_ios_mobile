@@ -34,6 +34,8 @@ final class DriveService: ObservableObject {
     @Published private(set) var trashItems: [DriveItem] = []
     /// Items from GET /api/v1/drive/shared-with-me.
     @Published private(set) var sharedItems: [DriveItem] = []
+    /// Items from GET /api/v1/drive/starred.
+    @Published private(set) var starredItems: [DriveItem] = []
 
     @Published var isLoading = false
     @Published var error: String?
@@ -142,6 +144,7 @@ final class DriveService: ObservableObject {
         case .recents:  return recentItems
         case .trash:    return trashItems
         case .shared:   return sharedItems
+        case .starred:  return starredItems
         }
     }
 
@@ -181,6 +184,16 @@ final class DriveService: ObservableObject {
                 trashItems = response.folders.map { DriveItem(trashFolder: $0) }
                            + response.files.map   { DriveItem(trashFile: $0) }
                 logger.debug("loadSection trash: loaded \(response.folders.count) folders, \(response.files.count) files")
+
+            case .starred:
+                // The server's default limit is 5 — that is a "Quick Access" default, not a
+                // favorites list — so an explicit larger limit is always sent.
+                let response: APIStarredContentsResponse = try await get(
+                    "/api/v1/drive/starred?limit=\(Self.starredFetchLimit)"
+                )
+                starredItems = response.folders.map { DriveItem(folder: $0) }
+                            + response.files.map   { DriveItem(file: $0) }
+                logger.debug("loadSection starred: loaded \(response.folders.count) folders, \(response.files.count) files")
 
             case .shared:
                 // The shared-with-me endpoint has no defined schema; decode best-effort.
@@ -295,6 +308,85 @@ final class DriveService: ObservableObject {
                 }
             }
         }
+    }
+
+    // MARK: - Favorites
+
+    /// How many starred items to request. The endpoint defaults to 5, which suits the web
+    /// app's "Quick Access" strip but would silently truncate a Favorites list.
+    static let starredFetchLimit = 200
+
+    /// Star or unstar an item.
+    ///
+    /// There is no dedicated star endpoint — it is a field on the ordinary update handler
+    /// (`UpdateFileRequest.is_starred` / `UpdateFolderRequest.is_starred`), so this is a
+    /// `PATCH` to the item itself with a single key.
+    ///
+    /// Optimistic with rollback, matching `rename`/`move`. Both `allItems` and `starredItems`
+    /// are updated so the Starred section reflects the change immediately without a refetch.
+    func setStarred(itemID: String, isStarred: Bool) {
+        let previous = item(withID: itemID)
+        guard let previous else { return }
+        let isFolder = previous.type == .folder
+        logger.debug("setStarred: id=\(itemID, privacy: .public) starred=\(isStarred)")
+
+        applyStarred(itemID: itemID, isStarred: isStarred, template: previous)
+
+        Task {
+            do {
+                if isFolder {
+                    let body = APISetStarredRequest(isStarred: isStarred)
+                    let _: APIFolderResponse = try await patch("/api/v1/drive/folders/\(itemID)", body: body)
+                } else {
+                    let body = APISetStarredRequest(isStarred: isStarred)
+                    let _: APIFileResponse = try await patch("/api/v1/drive/files/\(itemID)", body: body)
+                }
+                logger.debug("setStarred succeeded: id=\(itemID, privacy: .public)")
+            } catch {
+                logger.error("setStarred failed: id=\(itemID, privacy: .public) error=\(error, privacy: .public)")
+                applyStarred(itemID: itemID, isStarred: !isStarred, template: previous)
+                self.error = error.localizedDescription
+            }
+        }
+    }
+
+    func isStarred(itemID: String) -> Bool {
+        item(withID: itemID)?.isStarred ?? false
+    }
+
+    /// Mirrors a star change into every cached collection.
+    ///
+    /// `starredItems` is maintained here rather than recomputed from `allItems`, because the
+    /// Starred section can contain items whose parent folder has never been loaded — they
+    /// would not be in `allItems` at all.
+    private func applyStarred(itemID: String, isStarred: Bool, template: DriveItem) {
+        for index in allItems.indices where allItems[index].id == itemID {
+            allItems[index].isStarred = isStarred
+        }
+        for index in recentItems.indices where recentItems[index].id == itemID {
+            recentItems[index].isStarred = isStarred
+        }
+        for index in sharedItems.indices where sharedItems[index].id == itemID {
+            sharedItems[index].isStarred = isStarred
+        }
+        if isStarred {
+            if !starredItems.contains(where: { $0.id == itemID }) {
+                var starred = template
+                starred.isStarred = true
+                starredItems.append(starred)
+            }
+        } else {
+            starredItems.removeAll { $0.id == itemID }
+        }
+    }
+
+    /// Finds an item in any cached collection — the star action is reachable from My Drive,
+    /// Recents, Shared, and Starred itself.
+    private func item(withID itemID: String) -> DriveItem? {
+        allItems.first(where: { $0.id == itemID })
+            ?? starredItems.first(where: { $0.id == itemID })
+            ?? recentItems.first(where: { $0.id == itemID })
+            ?? sharedItems.first(where: { $0.id == itemID })
     }
 
     func move(itemID: String, to newParentID: String?) {
@@ -555,7 +647,8 @@ private extension DriveItem {
             modifiedAt: folder.updatedAt,
             isTrashed: false,
             isShared: isShared,
-            mimeType: nil
+            mimeType: nil,
+            isStarred: folder.isStarred ?? false
         )
     }
 
@@ -569,7 +662,8 @@ private extension DriveItem {
             modifiedAt: file.updatedAt,
             isTrashed: false,
             isShared: isShared,
-            mimeType: file.mimeType
+            mimeType: file.mimeType,
+            isStarred: file.isStarred ?? false
         )
     }
 
@@ -628,6 +722,9 @@ private struct APIFolderResponse: Decodable {
     let name: String
     let parentId: String?
     let updatedAt: Date
+    /// Optional so a response that omits the field cannot break folder listing — the star
+    /// feature must never be able to take down browsing.
+    let isStarred: Bool?
 }
 
 private struct APIFileResponse: Decodable {
@@ -637,6 +734,16 @@ private struct APIFileResponse: Decodable {
     let sizeBytes: Int64
     let mimeType: String
     let updatedAt: Date
+    let isStarred: Bool?
+}
+
+private struct APIStarredContentsResponse: Decodable {
+    let files: [APIFileResponse]
+    let folders: [APIFolderResponse]
+}
+
+private struct APISetStarredRequest: Encodable {
+    let isStarred: Bool
 }
 
 private struct APIFileMetadataResponse: Decodable {

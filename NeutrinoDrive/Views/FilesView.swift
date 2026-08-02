@@ -44,7 +44,7 @@ struct FilesView: View {
             .toolbar {
                 ToolbarItem(placement: .principal) {
                     Picker("Section", selection: $selectedSection) {
-                        ForEach(DriveSection.allCases) { section in
+                        ForEach(DriveSection.visibleCases) { section in
                             Text(section.rawValue).tag(section)
                         }
                     }
@@ -58,7 +58,7 @@ struct FilesView: View {
 
     private var ipadBody: some View {
         NavigationSplitView {
-            List(DriveSection.allCases, id: \.self) { section in
+            List(DriveSection.visibleCases, id: \.self) { section in
                 Label(section.rawValue, systemImage: section.iconName)
                     .tag(section)
                     .listRowBackground(
