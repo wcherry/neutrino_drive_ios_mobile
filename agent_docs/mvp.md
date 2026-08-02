@@ -614,32 +614,64 @@ Phase 5 — Advanced Drive Features — ⬜
 
 ⸻
 
-### Sharing — ⬜
+### Sharing — ✅
 
 Support:
 
-⬜ User sharing
-⬜ Public links
-⬜ Team folders
+✅ User sharing (add by email, role picker, list/revoke — with the file's DEK re-wrapped
+   to the recipient's Curve25519 public key client-side)
+✅ Public links (create/copy/remove)
+⬜ Team folders (not started)
 
 Using wrapped file keys.
 
+*Implemented — see [agent_docs/plans/feature-phase5-sharing-versions-favorites.md](plans/feature-phase5-sharing-versions-favorites.md) §1.
+The DEK seal/unseal primitives were extracted into `SealedKeyCrypto`, so upload, download, and
+sharing provably run the same wrap rather than three copies that could drift.
+**The one claim that matters most is unverified:** that a second real user can actually decrypt
+a shared file. The client-side crypto chain is proven end to end in-process
+(`test_shareRoundTrip_recipientCanDecryptTheFile`), and the exact bytes posted to
+`key/share` are proven to open with the recipient's private key — but no live server and no
+second account were available. See the verification doc §1.*
+
+*Two honest limitations, both by design and both surfaced in the UI rather than hidden:
+sharing a **folder** does not cascade the keys of the files inside it (recipients see the
+folder and cannot decrypt its contents), and **share links** grant access to ciphertext that a
+link recipient has no key to decrypt.*
+
 ⸻
 
-### Version History — ⬜
+### Version History — ✅
 
 View:
 
-⬜ Previous versions
-⬜ Restore versions
+✅ Previous versions
+✅ Restore versions
 
 Reuse existing Drive APIs.
 
+*Implemented — see [agent_docs/plans/feature-phase5-sharing-versions-favorites.md](plans/feature-phase5-sharing-versions-favorites.md) §2.
+Historical versions go through `DownloadService` with a `versionID` parameter — the same
+fetch-key → unseal → decrypt path as a current file, not a parallel one. **No test drives a
+real version download end to end**, because that flow needs an encryption keypair in the
+Keychain and the test host does not persist one; only path construction is asserted.*
+
+*Standing risk worth knowing about: the server stores **no per-version key**, so an old version
+is decryptable only while clients reuse a file's DEK. If any client ever rotates a DEK, every
+older version becomes permanently undecryptable and nothing in the schema would detect it.
+That is a backend/web property, not an iOS one — but version history is the feature that
+exposes it.*
+
 ⸻
 
-### Favorites — ⬜
+### Favorites — ✅
 
-⬜ Star important files.
+✅ Star important files (and folders), with a Starred section in the picker/sidebar.
+
+*Implemented — see [agent_docs/plans/feature-phase5-sharing-versions-favorites.md](plans/feature-phase5-sharing-versions-favorites.md) §3.
+There is no dedicated star endpoint — it is `isStarred` on the ordinary file/folder update
+handler. The Starred list requests an explicit limit, because the server's default of 5 is a
+"Quick Access" default that would silently truncate a favorites list.*
 
 ⸻
 

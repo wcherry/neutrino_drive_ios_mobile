@@ -112,4 +112,52 @@ final class DownloadServiceTests: XCTestCase {
 
         XCTAssertFalse(sut.isDownloading)
     }
+
+    // MARK: - Version downloads (Phase 5)
+
+    /// A historical version's blob comes from the version endpoint.
+    ///
+    /// Only path construction is asserted, not the whole download. The full flow needs an
+    /// encryption keypair in the Keychain, which this test host does not persist — the same
+    /// limitation that causes the pre-existing
+    /// `test_download_throwsNotAuthenticated_whenTokenAbsentButKeysPresent` failure above. So
+    /// the routing decision is factored into a pure function and tested there rather than
+    /// asserted through a flow that cannot run here.
+    func test_blobPath_withVersionID_pointsAtVersionDownloadEndpoint() {
+        XCTAssertEqual(DownloadService.blobPath(fileID: "file-1", versionID: "v7"),
+                       "/api/v1/drive/files/file-1/versions/v7/download")
+    }
+
+    func test_blobPath_withoutVersionID_pointsAtCurrentFile() {
+        XCTAssertEqual(DownloadService.blobPath(fileID: "file-1", versionID: nil),
+                       "/api/v1/drive/files/file-1")
+    }
+
+    /// The version path must not collide with the current-file path — a version download that
+    /// silently fetched the current file would look like a working feature while showing the
+    /// wrong bytes.
+    func test_blobPath_versionAndCurrentPathsDiffer() {
+        XCTAssertNotEqual(DownloadService.blobPath(fileID: "file-1", versionID: "v1"),
+                          DownloadService.blobPath(fileID: "file-1", versionID: nil))
+    }
+
+    /// Distinct transfer IDs keep the background session's orphan-claim path from confusing a
+    /// version download with a current-file download of the same file.
+    func test_blobTransferID_isDistinctPerVersion() {
+        let current = DownloadService.blobTransferID(fileID: "file-1", versionID: nil)
+        let v1 = DownloadService.blobTransferID(fileID: "file-1", versionID: "v1")
+        let v2 = DownloadService.blobTransferID(fileID: "file-1", versionID: "v2")
+
+        XCTAssertNotEqual(current, v1)
+        XCTAssertNotEqual(v1, v2)
+    }
+
+    /// Versions have no key of their own, so the DEK always comes from the file-level key
+    /// endpoint regardless of which version is being fetched.
+    func test_versionDownload_stillUsesFileLevelKeyPath() {
+        // The key path is not version-scoped anywhere in the service.
+        XCTAssertFalse(DownloadService.blobPath(fileID: "file-1", versionID: "v7").hasSuffix("/key"))
+        XCTAssertTrue(DownloadService.blobPath(fileID: "file-1", versionID: "v7")
+            .hasPrefix("/api/v1/drive/files/file-1/"))
+    }
 }

@@ -100,6 +100,10 @@ targets:
       - path: NeutrinoDrive/Config/FeatureFlags.swift
       - path: NeutrinoDrive/Config/SharedStorage.swift
       - path: NeutrinoDrive/Services/KeychainService.swift
+      # E2EEUploader seals the DEK via SealedKeyCrypto, so the extension needs it too.
+      # Same rationale as the rest of this list: compiling the identical source is what
+      # guarantees the extension's key wrap matches the app's.
+      - path: NeutrinoDrive/Services/SealedKeyCrypto.swift
       - path: NeutrinoDrive/Services/E2EEUploader.swift
       - path: NeutrinoDrive/Services/BackgroundTransferService.swift
       - path: NeutrinoDrive/Services/ShareUploadCoordinator.swift
