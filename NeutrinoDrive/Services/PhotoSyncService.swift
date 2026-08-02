@@ -186,18 +186,41 @@ final class PhotoSyncService: NSObject, ObservableObject {
     // MARK: - UserDefaults keys
 
     enum Keys {
-        static let enabled            = "photoSync.enabled"
-        static let folderName         = "photoSync.folderName"
-        static let folderID           = "photoSync.folderID"
-        static let includeVideos      = "photoSync.includeVideos"
-        static let wifiOnly           = "photoSync.wifiOnly"
-        static let whileChargingOnly  = "photoSync.whileChargingOnly"
-        static let anchorDate         = "photoSync.anchorDate"
-        static let changeToken        = "photoSync.changeToken"
-        static let lastSuccessfulSync = "photoSync.lastSuccessfulSyncDate"
+        static let enabled              = "photoSync.enabled"
+        static let folderName           = "photoSync.folderName"
+        static let folderID             = "photoSync.folderID"
+        static let includeVideos        = "photoSync.includeVideos"
+        static let includeExisting      = "photoSync.includeExistingPhotos"
+        static let wifiOnly             = "photoSync.wifiOnly"
+        static let whileChargingOnly    = "photoSync.whileChargingOnly"
+        static let anchorDate           = "photoSync.anchorDate"
+        static let changeToken          = "photoSync.changeToken"
+        static let lastSuccessfulSync   = "photoSync.lastSuccessfulSyncDate"
+        static let backfillEnqueued     = "photoSync.existingLibraryEnqueued"
     }
 
-    static let defaultFolderName = "iPhone Photos"
+    /// Destination folder used until the user renames it: the device's name plus " Photos",
+    /// e.g. "Fred's iPhone Photos".
+    ///
+    /// On iOS 16+ `UIDevice.current.name` returns the *model* name ("iPhone") rather than the
+    /// user-assigned name unless the app carries the
+    /// `com.apple.developer.device-information.user-assigned-device-name` entitlement, so
+    /// without that entitlement this resolves to "iPhone Photos".
+    static var defaultFolderName: String { "\(sanitizedDeviceName) Photos" }
+
+    /// `UIDevice.current.name` with path/reserved characters folded to "-" so it is always a
+    /// legal single folder name on the server. Falls back to the model name, then "Device".
+    static var sanitizedDeviceName: String {
+        let raw = UIDevice.current.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let cleaned = raw
+            .components(separatedBy: CharacterSet(charactersIn: "/\\:*?\"<>|"))
+            .joined(separator: "-")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        if !cleaned.isEmpty { return cleaned }
+        let model = UIDevice.current.model.trimmingCharacters(in: .whitespacesAndNewlines)
+        return model.isEmpty ? "Device" : model
+    }
+
     static let backgroundTaskIdentifier = "com.neutrino.drive.photosync"
     static let maxAssetSizeBytes: Int64 = 512 * 1024 * 1024   // 512 MB — see plan "Known risks"
 
@@ -314,6 +337,33 @@ final class PhotoSyncService: NSObject, ObservableObject {
         set { defaults.set(newValue, forKey: Keys.includeVideos) }
     }
 
+    /// When `true`, the whole photo library is eligible for backup, not just assets created
+    /// after the feature was switched on. Turning it on queues the existing library
+    /// immediately; turning it off leaves anything already queued or uploaded alone and
+    /// simply stops considering older assets again.
+    var includeExistingPhotos: Bool {
+        get { defaults.object(forKey: Keys.includeExisting) as? Bool ?? false }
+        set {
+            guard newValue != includeExistingPhotos else { return }
+            // Backed by UserDefaults rather than a @Published property, so the settings
+            // screen (whose footer copy depends on this) has to be told to re-render.
+            objectWillChange.send()
+            defaults.set(newValue, forKey: Keys.includeExisting)
+            defaults.set(false, forKey: Keys.backfillEnqueued)
+            if newValue {
+                Task { await backfillExistingLibrary() }
+            }
+        }
+    }
+
+    /// The cutoff `enqueueIfNeeded` applies to `creationDate`. With `includeExistingPhotos`
+    /// set there is no cutoff; otherwise it is the moment the feature was enabled
+    /// (`.distantFuture` before that, so nothing is ever picked up by accident).
+    private var effectiveAnchorDate: Date {
+        if includeExistingPhotos { return .distantPast }
+        return defaults.object(forKey: Keys.anchorDate) as? Date ?? .distantFuture
+    }
+
     var wifiOnly: Bool {
         get { defaults.object(forKey: Keys.wifiOnly) as? Bool ?? true }
         set { defaults.set(newValue, forKey: Keys.wifiOnly) }
@@ -372,10 +422,16 @@ final class PhotoSyncService: NSObject, ObservableObject {
             // starts fresh here rather than re-uploading history.
             defaults.set(Date(), forKey: Keys.anchorDate)
             defaults.removeObject(forKey: Keys.changeToken)
+            defaults.set(false, forKey: Keys.backfillEnqueued)
             self.status = status == .limited ? .permissionLimited : .idle
             startObservingIfNeeded()
             startNetworkMonitoring()
             await captureInitialChangeToken()
+            // Opted into the whole library on a previous run: sweep it now rather than
+            // waiting for the next launch's catch-up.
+            if includeExistingPhotos {
+                await backfillExistingLibrary()
+            }
         case .denied, .restricted:
             isEnabled = false   // revert the toggle; caller deep-links to Settings
             self.status = .permissionDenied
@@ -427,13 +483,16 @@ final class PhotoSyncService: NSObject, ObservableObject {
     // MARK: - Change enqueue (pure — testable without PhotoKit)
 
     /// Returns the identifiers from `assets` that are not already known to `queue` and were
-    /// created on/after `anchorDate`, oldest-first.
+    /// created on/after `anchorDate`, oldest-first. Assets with no `creationDate` are treated
+    /// as infinitely old: skipped for a normal (new-photos-only) anchor, included by the
+    /// `.distantPast` anchor used when backing up the existing library.
     static func newIdentifiers(from assets: [PhotoAssetProviding], anchorDate: Date,
                                includeVideos: Bool, queue: PhotoSyncQueue) -> [(id: String, creationDate: Date)] {
         assets
             .filter { includeVideos || $0.mediaType != .video }
             .compactMap { asset -> (String, Date)? in
-                guard let created = asset.creationDate, created >= anchorDate else { return nil }
+                let created = asset.creationDate ?? .distantPast
+                guard created >= anchorDate else { return nil }
                 guard !queue.contains(id: asset.localIdentifier) else { return nil }
                 return (asset.localIdentifier, created)
             }
@@ -444,8 +503,7 @@ final class PhotoSyncService: NSObject, ObservableObject {
     /// returns the number newly enqueued.
     @discardableResult
     func enqueueIfNeeded(_ assets: [PhotoAssetProviding]) -> Int {
-        let anchor = defaults.object(forKey: Keys.anchorDate) as? Date ?? .distantFuture
-        let newOnes = Self.newIdentifiers(from: assets, anchorDate: anchor,
+        let newOnes = Self.newIdentifiers(from: assets, anchorDate: effectiveAnchorDate,
                                           includeVideos: includeVideos, queue: queue)
         for entry in newOnes {
             queue.enqueue(id: entry.id, creationDate: entry.creationDate)
@@ -462,6 +520,15 @@ final class PhotoSyncService: NSObject, ObservableObject {
     private func runCatchUpScan() async {
         guard FeatureFlags.photoAutoSync, isEnabled else { return }
         guard authorizationStatus == .authorized || authorizationStatus == .limited else { return }
+
+        // A pending existing-library backfill supersedes the incremental catch-up: it covers
+        // everything the token-based scan would have found, and more.
+        if includeExistingPhotos && !hasEnqueuedExistingLibrary {
+            enqueueIfNeeded(fetchAssets(createdOnOrAfter: nil))
+            defaults.set(true, forKey: Keys.backfillEnqueued)
+            await captureInitialChangeToken()
+            return
+        }
 
         if #available(iOS 16.0, *), let tokenData = defaults.data(forKey: Keys.changeToken) {
             do {
@@ -498,16 +565,50 @@ final class PhotoSyncService: NSObject, ObservableObject {
     }
 
     private func runBoundedFallbackScan() {
+        // With "back up existing photos" on there is no lower bound to scan from — the whole
+        // library is in scope, and `enqueueIfNeeded` dedups against the queue as usual.
+        guard !includeExistingPhotos else {
+            enqueueIfNeeded(fetchAssets(createdOnOrAfter: nil))
+            return
+        }
         let anchor = defaults.object(forKey: Keys.anchorDate) as? Date ?? .distantFuture
         let lastSync = defaults.object(forKey: Keys.lastSuccessfulSync) as? Date ?? .distantPast
-        let cutoff = max(anchor, lastSync)
+        enqueueIfNeeded(fetchAssets(createdOnOrAfter: max(anchor, lastSync)))
+    }
 
+    /// Fetches library assets, optionally bounded to those created on/after `cutoff`.
+    private func fetchAssets(createdOnOrAfter cutoff: Date?) -> [PhotoAssetProviding] {
         let options = PHFetchOptions()
-        options.predicate = NSPredicate(format: "creationDate >= %@", cutoff as NSDate)
+        if let cutoff {
+            options.predicate = NSPredicate(format: "creationDate >= %@", cutoff as NSDate)
+        }
         let result = PHAsset.fetchAssets(with: options)
         var assets: [PhotoAssetProviding] = []
         result.enumerateObjects { asset, _, _ in assets.append(asset) }
-        enqueueIfNeeded(assets)
+        return assets
+    }
+
+    // MARK: - Existing-library backfill
+
+    /// Queues the entire photo library (minus anything already pending/uploaded/failed) and
+    /// starts draining. Triggered by turning on "Back Up Existing Photos"; the drain honours
+    /// the same Wi-Fi/charging constraints as ordinary sync, so a large backfill waits for
+    /// them rather than pushing through on cellular.
+    func backfillExistingLibrary() async {
+        guard FeatureFlags.photoAutoSync, isEnabled, includeExistingPhotos else { return }
+        guard authorizationStatus == .authorized || authorizationStatus == .limited else { return }
+        let added = enqueueIfNeeded(fetchAssets(createdOnOrAfter: nil))
+        // Only after the sweep completes, so an interrupted launch re-runs it (enqueue is
+        // deduplicated, so a repeat sweep costs a fetch and nothing else).
+        defaults.set(true, forKey: Keys.backfillEnqueued)
+        logger.info("backfill enqueued \(added, privacy: .public) existing asset(s)")
+        await drain(ignoringPowerConstraint: false)
+    }
+
+    /// `true` once the whole library has been swept into the queue for the current
+    /// `includeExistingPhotos` opt-in.
+    private var hasEnqueuedExistingLibrary: Bool {
+        defaults.object(forKey: Keys.backfillEnqueued) as? Bool ?? false
     }
 
     private func captureInitialChangeToken() async {
@@ -727,12 +828,7 @@ extension PhotoSyncService: PHPhotoLibraryChangeObserver {
             // not already known. The persistent-change catch-up (run on launch/foreground)
             // covers the gap while the app was not running; this covers changes while it is.
             let anchor = self.defaults.object(forKey: Keys.anchorDate) as? Date ?? .distantFuture
-            let options = PHFetchOptions()
-            options.predicate = NSPredicate(format: "creationDate >= %@", anchor as NSDate)
-            let result = PHAsset.fetchAssets(with: options)
-            var assets: [PhotoAssetProviding] = []
-            result.enumerateObjects { asset, _, _ in assets.append(asset) }
-            self.enqueueIfNeeded(assets)
+            self.enqueueIfNeeded(self.fetchAssets(createdOnOrAfter: anchor))
             await self.drain(ignoringPowerConstraint: false)
         }
     }

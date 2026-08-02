@@ -318,6 +318,101 @@ final class PhotoSyncServiceTests: XCTestCase {
         XCTAssertTrue(result.isEmpty)
     }
 
+    func test_newIdentifiers_distantPastAnchor_includesAssetsWithNoCreationDate() {
+        let dated   = FakePhotoAsset(localIdentifier: "dated", creationDate: Date(timeIntervalSince1970: 500))
+        let undated = FakePhotoAsset(localIdentifier: "undated", creationDate: nil)
+
+        let backfill = PhotoSyncService.newIdentifiers(from: [dated, undated], anchorDate: .distantPast,
+                                                       includeVideos: true, queue: PhotoSyncQueue())
+        XCTAssertEqual(Set(backfill.map(\.id)), ["dated", "undated"])
+
+        // A normal (new-photos-only) anchor still skips an asset with no creation date.
+        let normal = PhotoSyncService.newIdentifiers(from: [undated], anchorDate: Date(timeIntervalSince1970: 1000),
+                                                     includeVideos: true, queue: PhotoSyncQueue())
+        XCTAssertTrue(normal.isEmpty)
+    }
+
+    // MARK: - Existing-library backup
+
+    func test_includeExistingPhotos_defaultsToOff_andExcludesPreAnchorAssets() {
+        let (sut, defaults) = makeSUT(enabled: true)
+        defaults.set(Date(timeIntervalSince1970: 1000), forKey: PhotoSyncService.Keys.anchorDate)
+        XCTAssertFalse(sut.includeExistingPhotos)
+
+        let old = FakePhotoAsset(localIdentifier: "old", creationDate: Date(timeIntervalSince1970: 10))
+        let new = FakePhotoAsset(localIdentifier: "new", creationDate: Date(timeIntervalSince1970: 2000))
+
+        XCTAssertEqual(sut.enqueueIfNeeded([old, new]), 1)
+        XCTAssertNotNil(sut.debugPendingEntry("new"))
+        XCTAssertNil(sut.debugPendingEntry("old"))
+    }
+
+    func test_includeExistingPhotos_on_enqueuesAssetsCreatedBeforeTheAnchor() {
+        let (sut, defaults) = makeSUT(enabled: true)
+        defaults.set(Date(timeIntervalSince1970: 1000), forKey: PhotoSyncService.Keys.anchorDate)
+        defaults.set(true, forKey: PhotoSyncService.Keys.includeExisting)
+
+        let old = FakePhotoAsset(localIdentifier: "old", creationDate: Date(timeIntervalSince1970: 10))
+        let new = FakePhotoAsset(localIdentifier: "new", creationDate: Date(timeIntervalSince1970: 2000))
+
+        XCTAssertEqual(sut.enqueueIfNeeded([old, new]), 2)
+        XCTAssertNotNil(sut.debugPendingEntry("old"))
+    }
+
+    func test_includeExistingPhotos_turningOffAgain_stopsQueueingOlderAssets() {
+        let (sut, defaults) = makeSUT(enabled: true)
+        defaults.set(Date(timeIntervalSince1970: 1000), forKey: PhotoSyncService.Keys.anchorDate)
+        sut.includeExistingPhotos = true
+        sut.includeExistingPhotos = false
+
+        let old = FakePhotoAsset(localIdentifier: "old", creationDate: Date(timeIntervalSince1970: 10))
+        XCTAssertEqual(sut.enqueueIfNeeded([old]), 0)
+    }
+
+    func test_includeExistingPhotos_dedupesAgainstAlreadyUploadedAssets() async {
+        let (sut, defaults) = makeSUT(enabled: true)
+        defaults.set(Date.distantPast, forKey: PhotoSyncService.Keys.anchorDate)
+        defaults.set(true, forKey: PhotoSyncService.Keys.includeExisting)
+        sut.hasAccessTokenProvider = { true }
+        sut.hasStoredKeysProvider = { true }
+        sut.isOnWiFi = true
+        sut.folderResolver = { _, _ in "folder-1" }
+        sut.uploadHandler = { data, fileName, mimeType, parentFolderID in
+            UploadResult(id: "file-1", name: fileName, folderId: parentFolderID,
+                         sizeBytes: Int64(data.count), mimeType: mimeType, updatedAt: Date())
+        }
+
+        let asset = FakePhotoAsset(localIdentifier: "asset-1", creationDate: Date(timeIntervalSince1970: 10))
+        sut.enqueueIfNeeded([asset])
+        _ = await sut.drain(ignoringPowerConstraint: false)
+        XCTAssertTrue(sut.debugIsCompleted("asset-1"))
+
+        // A second sweep of the same library must not re-upload what is already in Drive.
+        XCTAssertEqual(sut.enqueueIfNeeded([asset]), 0)
+    }
+
+    // MARK: - Default destination folder
+
+    func test_defaultFolderName_isDeviceNamePlusPhotos() {
+        XCTAssertEqual(PhotoSyncService.defaultFolderName, "\(PhotoSyncService.sanitizedDeviceName) Photos")
+        XCTAssertTrue(PhotoSyncService.defaultFolderName.hasSuffix(" Photos"))
+        XCTAssertFalse(PhotoSyncService.sanitizedDeviceName.isEmpty)
+        XCTAssertFalse(PhotoSyncService.sanitizedDeviceName.contains("/"),
+                       "path separators must never reach the server-side folder name")
+    }
+
+    func test_folderName_usesDefaultUntilOverridden_andClearsCachedFolderID() {
+        let (sut, defaults) = makeSUT(enabled: true)
+        XCTAssertEqual(sut.folderName, PhotoSyncService.defaultFolderName)
+
+        defaults.set("cached-folder-id", forKey: PhotoSyncService.Keys.folderID)
+        sut.folderName = "Camera Roll Backup"
+
+        XCTAssertEqual(sut.folderName, "Camera Roll Backup")
+        XCTAssertNil(defaults.string(forKey: PhotoSyncService.Keys.folderID),
+                     "renaming the destination must force the folder to be re-resolved")
+    }
+
     // MARK: - Enable / permission handling
 
     func test_isEnabled_setToFalse_setsStatusDisabled() {

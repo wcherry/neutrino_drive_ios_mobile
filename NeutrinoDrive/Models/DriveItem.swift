@@ -12,16 +12,6 @@ struct DriveItem: Identifiable, Hashable {
         case file
     }
 
-    // MARK: - Neutrino Native MIME Types
-
-    enum NeutrinoMIME {
-        static let doc      = "application/vnd.neutrino.doc"
-        static let sheet    = "application/vnd.neutrino.sheet"
-        static let slide    = "application/vnd.neutrino.slide"
-        static let diagram  = "application/vnd.neutrino.diagram"
-        static let drawing  = "application/vnd.neutrino.drawing"
-    }
-
     // MARK: - Properties
 
     let id: String
@@ -39,33 +29,25 @@ struct DriveItem: Identifiable, Hashable {
 
     // MARK: - Computed
 
-    var isNeutrinoNativeFormat: Bool {
-        guard let mime = mimeType else { return false }
-        return mime.hasPrefix("application/vnd.neutrino.")
+    /// What this item is, for icon and tint purposes.
+    ///
+    /// Derived from the MIME type *and* the filename, so a file the server could only
+    /// describe as `application/octet-stream` still gets the icon its extension implies.
+    /// See `FileKind.classify`.
+    var kind: FileKind {
+        FileKind.classify(mimeType: mimeType, filename: name, isFolder: type == .folder)
     }
 
-    /// Returns the appropriate SF Symbol name for this item.
+    var isNeutrinoNativeFormat: Bool {
+        kind.isNeutrinoNative
+    }
+
+    /// SF Symbol name for this item.
+    ///
+    /// Note that the Neutrino-native formats are drawn from custom artwork rather than an
+    /// SF Symbol — use `FileTypeIcon(kind:)` to render an item, which picks correctly
+    /// between the two. This stays for callers that genuinely need a symbol name.
     var iconName: String {
-        switch type {
-        case .folder:
-            return "folder.fill"
-        case .file:
-            guard let mime = mimeType else { return "doc" }
-            if mime == NeutrinoMIME.doc      { return "doc.text.fill" }
-            if mime == NeutrinoMIME.sheet    { return "tablecells" }
-            if mime == NeutrinoMIME.slide    { return "rectangle.stack.fill" }
-            if mime == NeutrinoMIME.diagram  { return "flowchart" }
-            if mime == NeutrinoMIME.drawing  { return "paintbrush.fill" }
-            if mime.hasPrefix("image/")      { return "photo" }
-            if mime == "application/pdf"     { return "doc.richtext" }
-            if mime.hasPrefix("video/")      { return "film" }
-            if mime.hasPrefix("audio/")      { return "music.note" }
-            if mime == "application/zip"
-                || mime == "application/x-zip-compressed"
-                || mime == "application/x-tar"
-                || mime == "application/x-gzip" { return "archivebox" }
-            if mime.hasPrefix("text/")       { return "doc.text" }
-            return "doc"
-        }
+        kind.symbolName
     }
 }

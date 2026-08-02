@@ -36,9 +36,9 @@
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>1.0</string>
+	<string>$(MARKETING_VERSION)</string>
 	<key>CFBundleVersion</key>
-	<string>1</string>
+	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>LSSupportsOpeningDocumentsInPlace</key>
 	<true/>
 	<key>NSAppTransportSecurity</key>
@@ -52,6 +52,8 @@
 	<string>Neutrino Drive uses Face ID to unlock the app and to protect access to your encryption keys.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>Neutrino Drive needs access to your photo library to automatically back up new photos to your encrypted Drive.</string>
+	<key>UIApplicationSupportsMultipleScenes</key>
+	<true/>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>processing</string>

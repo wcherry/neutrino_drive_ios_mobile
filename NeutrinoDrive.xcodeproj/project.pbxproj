@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		01DFFA7460638926FDC7C180 /* FileKind.swift in Sources */ = {isa = PBXBuildFile; fileRef = 353E423634A3CA9F584BC176 /* FileKind.swift */; };
 		024934D9C46EEEEF7C4B44EF /* KeychainService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7D43F66518BECD37AE74152A /* KeychainService.swift */; };
 		032E54B75378D36DE4FD2AF7 /* FileProviderItemTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F2D224B13367A618632AE95D /* FileProviderItemTests.swift */; };
 		05BB68A98F5538EC38E8C3DA /* VersionHistoryService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3204F85B044BBD53BB886983 /* VersionHistoryService.swift */; };
@@ -22,6 +23,8 @@
 		10B3596C28DB422FFDD996D5 /* FileProviderEnumerator.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE28D0357B10693AF318169C /* FileProviderEnumerator.swift */; };
 		18D1C5D4AEEBA2B6C4AB8320 /* DriveAPIClientTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE4872FD7CF65B71CE8EF958 /* DriveAPIClientTests.swift */; };
 		18E8F2192FDC05BBC327CBAE /* KeyImportView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3164F8D62550277E7500FB6D /* KeyImportView.swift */; };
+		1B183F17B4EDED7C7E85214A /* SmartOfflineSyncTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 898FF3547ABC3544B6AB393B /* SmartOfflineSyncTests.swift */; };
+		1C2BD8BA005BE68C0149DF13 /* SecretStreamCrypto.swift in Sources */ = {isa = PBXBuildFile; fileRef = 25539212C96D589615FF3C3A /* SecretStreamCrypto.swift */; };
 		1F786DEF7714CD8067ADC7F8 /* PhotoSyncQueue.swift in Sources */ = {isa = PBXBuildFile; fileRef = C77587DE1135BBDE2F75E650 /* PhotoSyncQueue.swift */; };
 		20F7A9EAC6847F2638576420 /* E2EEUploaderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 476D22CD2F0DB6C8DBE3AD10 /* E2EEUploaderTests.swift */; };
 		20FCC32606F17E69E397EF25 /* BackgroundTransferService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9839D82A96C528D359452A8C /* BackgroundTransferService.swift */; };
@@ -38,6 +41,7 @@
 		3BD6B2A2583353EF5D435FE8 /* FilesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C03256BD9495BF647E1D621E /* FilesView.swift */; };
 		3C08EAD7CC4B4E1E8AAD1EBA /* BiometricSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E8D0E9F67E4BA7F2D9EAEB50 /* BiometricSettingsView.swift */; };
 		3ED8800DA1E7313D2A9BD588 /* DownloadService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00D351BC7EA7CA886AEB31CA /* DownloadService.swift */; };
+		3FA42CC9FBEB78AFF32A5F7A /* Clibsodium in Frameworks */ = {isa = PBXBuildFile; productRef = BAE16F712EAC23A6FE18A9CC /* Clibsodium */; };
 		43124650E742EFF3B315C1D5 /* IncomingDocument.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C8A71220EBAE89D8C5CF054 /* IncomingDocument.swift */; };
 		432A8D3417DE308C4C179878 /* ShareUploadCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = F374ECD6F62965B1D404D98A /* ShareUploadCoordinator.swift */; };
 		4354509529BAB0170D262425 /* LockScreenView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6A8AAD2BF70A2317058FAE59 /* LockScreenView.swift */; };
@@ -49,11 +53,13 @@
 		513BF32E8B0DB23D969F39E8 /* FavoritesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FAFF80153F6588C47A7B5E10 /* FavoritesTests.swift */; };
 		51B2DD757EF565E94A7B7FEB /* E2EEDownloader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 441BE4AAD3CC7639AB23885B /* E2EEDownloader.swift */; };
 		51E2598785055B7BE1F9F517 /* DriveAPIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = D4BF259AF06C4C78A55DFD81 /* DriveAPIClient.swift */; };
+		54BB9346818A01F2C28F2698 /* SecretStreamCryptoTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 72017104DD0D5C5768581832 /* SecretStreamCryptoTests.swift */; };
 		56D2621B530223F4F2178BE6 /* OfflineService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 133D81CEFB2A25FC07B29499 /* OfflineService.swift */; };
 		56F028A7E3D83B2CF24A8B27 /* FileProviderIdentifier.swift in Sources */ = {isa = PBXBuildFile; fileRef = 898ECC9ED926614156A2ACC7 /* FileProviderIdentifier.swift */; };
 		5821BEEE8F091BE483D457D7 /* DriveService.swift in Sources */ = {isa = PBXBuildFile; fileRef = F47172C7892BED92B27EEB8A /* DriveService.swift */; };
 		5975C8E31ED7C6CF28AF1109 /* NeutrinoDriveShare.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 372C73E6E1ACB5CC044D4FD3 /* NeutrinoDriveShare.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		5B4F29CF82E1C690CAE70CA8 /* FeatureFlags.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F8A06339C7846B57CB2C88A /* FeatureFlags.swift */; };
+		5F5622705603831DC1D14373 /* ViewConditional.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8C97CA4E8105BF14A8E4E64 /* ViewConditional.swift */; };
 		6012EA629004AC1E165C1643 /* ShareUploadCoordinatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 630C730986B97FEBB32C20EE /* ShareUploadCoordinatorTests.swift */; };
 		622E177AB065C2332256FB53 /* DriveSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5DB41FE55A0945983D9AD56C /* DriveSection.swift */; };
 		6363B4D2DB17A9276F46B17A /* FileRowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0FF01D7775E4236733FC909F /* FileRowView.swift */; };
@@ -61,6 +67,7 @@
 		6544A610BB9F4EEE9D896EDE /* RenameSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 70A49B80E184DD242C3F71F4 /* RenameSheet.swift */; };
 		65879C3FC4AB6E23CE34C75B /* PhotoSyncQueueTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9F7CBDF1179B0B4EFACCB2C3 /* PhotoSyncQueueTests.swift */; };
 		67A59774AAC56E1CADC2ECFD /* ShareUploadCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = F374ECD6F62965B1D404D98A /* ShareUploadCoordinator.swift */; };
+		67F7D538F51469965FD1D8E9 /* EncryptedMediaStream.swift in Sources */ = {isa = PBXBuildFile; fileRef = E6F34122ED1E5535B04A9A42 /* EncryptedMediaStream.swift */; };
 		67FE7B95DCE2398E17E38339 /* ShareViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2D5320FC68012C09A76FD3F8 /* ShareViewController.swift */; };
 		690F26E747D4DA457D331F5F /* NeutrinoDriveApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 25F1F0EE30A126A464CB4744 /* NeutrinoDriveApp.swift */; };
 		6B69A2B077D27029DD7924B9 /* FileBrowserView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AFDC3F2E1EDDF4169DEA3706 /* FileBrowserView.swift */; };
@@ -75,11 +82,14 @@
 		7AA70B348B698F3DC695350C /* E2EEUploader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 92DB4C10254E37F3C8B82159 /* E2EEUploader.swift */; };
 		7B51774A66E6E2B6B36084D0 /* MockURLProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = 965E54926CB9E957E39C2117 /* MockURLProtocol.swift */; };
 		7D6814BFC193B17976568C7D /* E2EEUploader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 92DB4C10254E37F3C8B82159 /* E2EEUploader.swift */; };
+		7EC7807F23E4F1E6D14D847F /* StreamingPlaybackService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2FAF88AC98AA3A3D67211B2A /* StreamingPlaybackService.swift */; };
+		7FC89968DA9B2C8B91E886DE /* SmartOfflineSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4D17FA33C89A6080C686118 /* SmartOfflineSettingsView.swift */; };
 		80359F913466643E0C14FB69 /* OfflineServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9D327F0E614DA668C3FFD6D /* OfflineServiceTests.swift */; };
 		80D62FC6BF77932804DA8F40 /* FileProviderDomainService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 14FB708641A150BA2D6914D7 /* FileProviderDomainService.swift */; };
 		83030D70D1FD82CA51BFA7C6 /* LoginView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA5181A063C7F11A804B0869 /* LoginView.swift */; };
 		830511757B1008B7376FC29F /* PhotoSyncService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A90FA64FCE70A0413A10B207 /* PhotoSyncService.swift */; };
 		837CB944498C1C88AC2965E6 /* Sodium in Frameworks */ = {isa = PBXBuildFile; productRef = B29E803B3FC632AE6E6F402F /* Sodium */; };
+		86226BFA9AFD27CC24C2A5F1 /* DriveItemTransfer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9633C5B15033CA3CEF7C9BAD /* DriveItemTransfer.swift */; };
 		86B76EE3D6E6ED8E09FD3DD2 /* SharingService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3ADD7A2E9C27197434FE3A0A /* SharingService.swift */; };
 		95B33B62D7627078074268B5 /* SharedStorage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C34071C259B80445A15F5D3 /* SharedStorage.swift */; };
 		97FAB6EADF40B0F13D1C9EC2 /* FileProviderItem.swift in Sources */ = {isa = PBXBuildFile; fileRef = FAA45294FA48B45DF1D84003 /* FileProviderItem.swift */; };
@@ -88,12 +98,19 @@
 		9A19DF8556C44AD8D37D3695 /* CreateFolderSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = ACF13539E1CDAD54D5F123C8 /* CreateFolderSheet.swift */; };
 		9CDE9342D862B1DDFC38C7D2 /* NeutrinoDriveFileProvider.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 196345CB2E7DCB4B508CA097 /* NeutrinoDriveFileProvider.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		A4309A73D2D6CB256BD96435 /* MoveSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5E221501A1796A0C7CB2C7C3 /* MoveSheet.swift */; };
+		A84D6CE463BCE83605503014 /* DriveItemTransferTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2350D5A37D3585F3E293272F /* DriveItemTransferTests.swift */; };
 		AA125990DFAE6C152330ECB0 /* FileProviderItem.swift in Sources */ = {isa = PBXBuildFile; fileRef = FAA45294FA48B45DF1D84003 /* FileProviderItem.swift */; };
+		ACA719B5DE8D4E93E0C2AAFB /* MediaPlayerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 85801D03C756B32A18BE7F44 /* MediaPlayerView.swift */; };
 		AD889E27EDBC05A3A8D9767A /* SharedStorage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C34071C259B80445A15F5D3 /* SharedStorage.swift */; };
 		AF1C1E3B0F58D75D7DFCF199 /* FileProviderIdentifierTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51702688577668BC7E75E373 /* FileProviderIdentifierTests.swift */; };
+		B14CB89618525A700600438C /* FileAccessTracker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 009A809C4CC61FE504654944 /* FileAccessTracker.swift */; };
+		B3EC28701836603C11A801C5 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 79A7A0E78EC06A9490BA2757 /* Assets.xcassets */; };
 		B54C0386D67645FEEFB8D70F /* SpotlightIndexServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A2EE1AE217905FA9DD213C5 /* SpotlightIndexServiceTests.swift */; };
+		B61476C944200666CF260009 /* FileTypeIcon.swift in Sources */ = {isa = PBXBuildFile; fileRef = 67E4E60AD80C078A44ED9252 /* FileTypeIcon.swift */; };
+		B621990872A6DC1B07DD3BEE /* SecretStreamCrypto.swift in Sources */ = {isa = PBXBuildFile; fileRef = 25539212C96D589615FF3C3A /* SecretStreamCrypto.swift */; };
 		B712ECD01D50298923D94BA6 /* DriveServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E75AF3C358204F5340F0827 /* DriveServiceTests.swift */; };
 		B88EBD4DA680E13365EC3C85 /* DownloadServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7D8E929ED50294D7EE256659 /* DownloadServiceTests.swift */; };
+		B9EC650E242F110652BA9713 /* Clibsodium in Frameworks */ = {isa = PBXBuildFile; productRef = 5751171CDB214E69398E9F61 /* Clibsodium */; };
 		C05DBAA6ABC844B145C4CE8B /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E3985D05C9C065C11E2FAFB0 /* ContentView.swift */; };
 		C1C0FD03CF16FB5E9E1A3166 /* VersionHistoryServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F7F1554986712BAA1146EC5 /* VersionHistoryServiceTests.swift */; };
 		C2154F91C0270FB8812E6129 /* BackgroundTransferService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9839D82A96C528D359452A8C /* BackgroundTransferService.swift */; };
@@ -102,15 +119,21 @@
 		CE253EA5C208A2BAFA023848 /* OfflineFile.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C6D8A297D25380ECD262C81 /* OfflineFile.swift */; };
 		D2CF5F59EAF12FE048AA1C0A /* UploadService.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC3153FC8A0FDB182E99909E /* UploadService.swift */; };
 		D33381B0005BD3A30285FC38 /* SealedKeyCrypto.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9D218BBDBAB8CA89AA1DF5D3 /* SealedKeyCrypto.swift */; };
+		D6EEA87B8D67254543DE4CAB /* Clibsodium in Frameworks */ = {isa = PBXBuildFile; productRef = 780688E1424C81F4D6D645F3 /* Clibsodium */; };
+		D7018E2A559D474126CC84B9 /* FileKindTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 39FB13F36FE4A9DB1F158C18 /* FileKindTests.swift */; };
+		D94615342E0FEBC1BC74334B /* EncryptedMediaStreamTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF251DE0A8BEB8220CDDDC4A /* EncryptedMediaStreamTests.swift */; };
+		DA05F735AC7602A6B6AD36E7 /* SecretStreamCrypto.swift in Sources */ = {isa = PBXBuildFile; fileRef = 25539212C96D589615FF3C3A /* SecretStreamCrypto.swift */; };
 		DA5D08204C931BE6965C5D6B /* DriveItem.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F9EEBB608D849ADEBE786FB /* DriveItem.swift */; };
 		E241253B65D070E9BD84CE94 /* E2EEUploader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 92DB4C10254E37F3C8B82159 /* E2EEUploader.swift */; };
 		E75D0175C7B415D9BB299056 /* KeychainService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7D43F66518BECD37AE74152A /* KeychainService.swift */; };
 		EAC107B86724E7BEC6452CAC /* ShareSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = E9E380C43E2F17633F9BE953 /* ShareSheet.swift */; };
 		EAE5682B2200BC87C4559F48 /* RecentsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6DA4F68F868089DB48832A1A /* RecentsView.swift */; };
 		EC06929650A4ECF52EABF5FC /* UploadServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E057910348FA5DD56CAF3BA2 /* UploadServiceTests.swift */; };
+		F016F0D64D7F81DE111BE2D6 /* SmartOfflineSyncService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 516FA8530C0495007B58C725 /* SmartOfflineSyncService.swift */; };
 		F5A3194F7AC59E856D828A8E /* SearchServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F89DB4C4E5203C9B985669D8 /* SearchServiceTests.swift */; };
 		F7889A9C8B773AE5D43BA085 /* SealedKeyCryptoTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0BC10848134DEC435F1F7763 /* SealedKeyCryptoTests.swift */; };
 		FB16FF91527531E74E5469A6 /* KeyImportService.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1CEFB784C6C8B218A6C30BC /* KeyImportService.swift */; };
+		FBD528108F481DFFCEB23D61 /* DocumentWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 072824F102F915B214F121E6 /* DocumentWindow.swift */; };
 		FCD16281A07596302DA0FA13 /* QuotaServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 92A6A5039A254CCFF5EF859B /* QuotaServiceTests.swift */; };
 		FD7CD39C75002E56CFD48806 /* SealedKeyCrypto.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9D218BBDBAB8CA89AA1DF5D3 /* SealedKeyCrypto.swift */; };
 /* End PBXBuildFile section */
@@ -155,8 +178,10 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		009A809C4CC61FE504654944 /* FileAccessTracker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileAccessTracker.swift; sourceTree = "<group>"; };
 		00D351BC7EA7CA886AEB31CA /* DownloadService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DownloadService.swift; sourceTree = "<group>"; };
 		02A960AD4F40AE693E121681 /* NeutrinoDriveTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = NeutrinoDriveTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		072824F102F915B214F121E6 /* DocumentWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DocumentWindow.swift; sourceTree = "<group>"; };
 		0A2AC7356BF9B7E818BEDE8A /* NeutrinoDriveFileProvider.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = NeutrinoDriveFileProvider.entitlements; sourceTree = "<group>"; };
 		0BC10848134DEC435F1F7763 /* SealedKeyCryptoTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SealedKeyCryptoTests.swift; sourceTree = "<group>"; };
 		0ED22D285A40B505185DC5F3 /* BiometricAuthServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BiometricAuthServiceTests.swift; sourceTree = "<group>"; };
@@ -168,16 +193,21 @@
 		196345CB2E7DCB4B508CA097 /* NeutrinoDriveFileProvider.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = NeutrinoDriveFileProvider.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		1F7F1554986712BAA1146EC5 /* VersionHistoryServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VersionHistoryServiceTests.swift; sourceTree = "<group>"; };
 		21AC07E0D4EF58EE62A98127 /* IncomingDocumentTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IncomingDocumentTests.swift; sourceTree = "<group>"; };
+		2350D5A37D3585F3E293272F /* DriveItemTransferTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DriveItemTransferTests.swift; sourceTree = "<group>"; };
+		25539212C96D589615FF3C3A /* SecretStreamCrypto.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SecretStreamCrypto.swift; sourceTree = "<group>"; };
 		25F1F0EE30A126A464CB4744 /* NeutrinoDriveApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NeutrinoDriveApp.swift; sourceTree = "<group>"; };
 		284FD49BE7C7F07B2470DE24 /* AuthService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthService.swift; sourceTree = "<group>"; };
 		2A2EE1AE217905FA9DD213C5 /* SpotlightIndexServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpotlightIndexServiceTests.swift; sourceTree = "<group>"; };
 		2BE879B8C0E1B1F29A9FACFB /* AuthServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthServiceTests.swift; sourceTree = "<group>"; };
 		2D5320FC68012C09A76FD3F8 /* ShareViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareViewController.swift; sourceTree = "<group>"; };
+		2FAF88AC98AA3A3D67211B2A /* StreamingPlaybackService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StreamingPlaybackService.swift; sourceTree = "<group>"; };
 		3164F8D62550277E7500FB6D /* KeyImportView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyImportView.swift; sourceTree = "<group>"; };
 		3204F85B044BBD53BB886983 /* VersionHistoryService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VersionHistoryService.swift; sourceTree = "<group>"; };
 		327677CD98415FF37039A2D0 /* SharingServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SharingServiceTests.swift; sourceTree = "<group>"; };
+		353E423634A3CA9F584BC176 /* FileKind.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileKind.swift; sourceTree = "<group>"; };
 		372C73E6E1ACB5CC044D4FD3 /* NeutrinoDriveShare.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = NeutrinoDriveShare.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		3848E2E1A8F52106B1ECEB94 /* BackgroundTransferServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackgroundTransferServiceTests.swift; sourceTree = "<group>"; };
+		39FB13F36FE4A9DB1F158C18 /* FileKindTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileKindTests.swift; sourceTree = "<group>"; };
 		3ADD7A2E9C27197434FE3A0A /* SharingService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SharingService.swift; sourceTree = "<group>"; };
 		3C6D8A297D25380ECD262C81 /* OfflineFile.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OfflineFile.swift; sourceTree = "<group>"; };
 		3F8A06339C7846B57CB2C88A /* FeatureFlags.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeatureFlags.swift; sourceTree = "<group>"; };
@@ -186,27 +216,34 @@
 		4B514FE69A64EC64CE2EE893 /* PhotoSyncSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoSyncSettingsView.swift; sourceTree = "<group>"; };
 		4E75AF3C358204F5340F0827 /* DriveServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DriveServiceTests.swift; sourceTree = "<group>"; };
 		4F9EEBB608D849ADEBE786FB /* DriveItem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DriveItem.swift; sourceTree = "<group>"; };
+		516FA8530C0495007B58C725 /* SmartOfflineSyncService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SmartOfflineSyncService.swift; sourceTree = "<group>"; };
 		51702688577668BC7E75E373 /* FileProviderIdentifierTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileProviderIdentifierTests.swift; sourceTree = "<group>"; };
 		590E72C929910D24827A0391 /* NeutrinoFileViewer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NeutrinoFileViewer.swift; sourceTree = "<group>"; };
 		5C8A71220EBAE89D8C5CF054 /* IncomingDocument.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IncomingDocument.swift; sourceTree = "<group>"; };
 		5DB41FE55A0945983D9AD56C /* DriveSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DriveSection.swift; sourceTree = "<group>"; };
 		5E221501A1796A0C7CB2C7C3 /* MoveSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MoveSheet.swift; sourceTree = "<group>"; };
 		630C730986B97FEBB32C20EE /* ShareUploadCoordinatorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareUploadCoordinatorTests.swift; sourceTree = "<group>"; };
+		67E4E60AD80C078A44ED9252 /* FileTypeIcon.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileTypeIcon.swift; sourceTree = "<group>"; };
 		69BA21EB1245B8848A89C2BF /* KeyQRDecryptServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyQRDecryptServiceTests.swift; sourceTree = "<group>"; };
 		6A582F8B0E924BC7F78C9733 /* PhotoSyncServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoSyncServiceTests.swift; sourceTree = "<group>"; };
 		6A8AAD2BF70A2317058FAE59 /* LockScreenView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LockScreenView.swift; sourceTree = "<group>"; };
 		6DA4F68F868089DB48832A1A /* RecentsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecentsView.swift; sourceTree = "<group>"; };
 		6E9DB7865AEED70BD34195A9 /* KeyImportServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyImportServiceTests.swift; sourceTree = "<group>"; };
 		70A49B80E184DD242C3F71F4 /* RenameSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RenameSheet.swift; sourceTree = "<group>"; };
+		72017104DD0D5C5768581832 /* SecretStreamCryptoTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SecretStreamCryptoTests.swift; sourceTree = "<group>"; };
+		79A7A0E78EC06A9490BA2757 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		7D43F66518BECD37AE74152A /* KeychainService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainService.swift; sourceTree = "<group>"; };
 		7D8E929ED50294D7EE256659 /* DownloadServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DownloadServiceTests.swift; sourceTree = "<group>"; };
+		85801D03C756B32A18BE7F44 /* MediaPlayerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaPlayerView.swift; sourceTree = "<group>"; };
 		86F9949E8CCD2C55A6A07E6F /* FileProviderExtension.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileProviderExtension.swift; sourceTree = "<group>"; };
 		8834B35CB52B70D4F1BA48A6 /* DriveItemTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DriveItemTests.swift; sourceTree = "<group>"; };
 		898ECC9ED926614156A2ACC7 /* FileProviderIdentifier.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileProviderIdentifier.swift; sourceTree = "<group>"; };
+		898FF3547ABC3544B6AB393B /* SmartOfflineSyncTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SmartOfflineSyncTests.swift; sourceTree = "<group>"; };
 		8C34071C259B80445A15F5D3 /* SharedStorage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SharedStorage.swift; sourceTree = "<group>"; };
 		90469D5CC989E615DE795823 /* OfflineView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OfflineView.swift; sourceTree = "<group>"; };
 		92A6A5039A254CCFF5EF859B /* QuotaServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuotaServiceTests.swift; sourceTree = "<group>"; };
 		92DB4C10254E37F3C8B82159 /* E2EEUploader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = E2EEUploader.swift; sourceTree = "<group>"; };
+		9633C5B15033CA3CEF7C9BAD /* DriveItemTransfer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DriveItemTransfer.swift; sourceTree = "<group>"; };
 		965E54926CB9E957E39C2117 /* MockURLProtocol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MockURLProtocol.swift; sourceTree = "<group>"; };
 		9839D82A96C528D359452A8C /* BackgroundTransferService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackgroundTransferService.swift; sourceTree = "<group>"; };
 		9B9EC0F713F068F7C8A12EDD /* QRScannerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QRScannerView.swift; sourceTree = "<group>"; };
@@ -220,6 +257,7 @@
 		ACF13539E1CDAD54D5F123C8 /* CreateFolderSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CreateFolderSheet.swift; sourceTree = "<group>"; };
 		AD1869BDB3871713930D9FC0 /* KeychainServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainServiceTests.swift; sourceTree = "<group>"; };
 		AE4872FD7CF65B71CE8EF958 /* DriveAPIClientTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DriveAPIClientTests.swift; sourceTree = "<group>"; };
+		AF251DE0A8BEB8220CDDDC4A /* EncryptedMediaStreamTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EncryptedMediaStreamTests.swift; sourceTree = "<group>"; };
 		AFDC3F2E1EDDF4169DEA3706 /* FileBrowserView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileBrowserView.swift; sourceTree = "<group>"; };
 		B3D07A84E1BF11CE2C7A187A /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		BBAF5D07C650FCC3CBE7E15F /* NeutrinoDrive.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = NeutrinoDrive.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -227,12 +265,14 @@
 		C03256BD9495BF647E1D621E /* FilesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FilesView.swift; sourceTree = "<group>"; };
 		C346B842F6CCF727D2F047C7 /* QuotaService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuotaService.swift; sourceTree = "<group>"; };
 		C77587DE1135BBDE2F75E650 /* PhotoSyncQueue.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoSyncQueue.swift; sourceTree = "<group>"; };
+		C8C97CA4E8105BF14A8E4E64 /* ViewConditional.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ViewConditional.swift; sourceTree = "<group>"; };
 		D4BF259AF06C4C78A55DFD81 /* DriveAPIClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DriveAPIClient.swift; sourceTree = "<group>"; };
 		D70235A500829AC210ADCE9B /* SpotlightIndexService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpotlightIndexService.swift; sourceTree = "<group>"; };
 		DAD2E88A47B7F76FBB347769 /* KeyQRDecryptService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyQRDecryptService.swift; sourceTree = "<group>"; };
 		E057910348FA5DD56CAF3BA2 /* UploadServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UploadServiceTests.swift; sourceTree = "<group>"; };
 		E1CEFB784C6C8B218A6C30BC /* KeyImportService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyImportService.swift; sourceTree = "<group>"; };
 		E3985D05C9C065C11E2FAFB0 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		E6F34122ED1E5535B04A9A42 /* EncryptedMediaStream.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EncryptedMediaStream.swift; sourceTree = "<group>"; };
 		E8623DF607611C4B918D550F /* NeutrinoDriveShare.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = NeutrinoDriveShare.entitlements; sourceTree = "<group>"; };
 		E8D0E9F67E4BA7F2D9EAEB50 /* BiometricSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BiometricSettingsView.swift; sourceTree = "<group>"; };
 		E9E380C43E2F17633F9BE953 /* ShareSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareSheet.swift; sourceTree = "<group>"; };
@@ -240,6 +280,7 @@
 		F2D224B13367A618632AE95D /* FileProviderItemTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileProviderItemTests.swift; sourceTree = "<group>"; };
 		F374ECD6F62965B1D404D98A /* ShareUploadCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareUploadCoordinator.swift; sourceTree = "<group>"; };
 		F47172C7892BED92B27EEB8A /* DriveService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DriveService.swift; sourceTree = "<group>"; };
+		F4D17FA33C89A6080C686118 /* SmartOfflineSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SmartOfflineSettingsView.swift; sourceTree = "<group>"; };
 		F89DB4C4E5203C9B985669D8 /* SearchServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SearchServiceTests.swift; sourceTree = "<group>"; };
 		F98AAC9AEF267C276800A5AA /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		F995FEAD8545B523E9E66C76 /* KeyQRImportView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyQRImportView.swift; sourceTree = "<group>"; };
@@ -257,6 +298,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				837CB944498C1C88AC2965E6 /* Sodium in Frameworks */,
+				3FA42CC9FBEB78AFF32A5F7A /* Clibsodium in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -265,6 +307,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				49E951E24B9A115064231733 /* Sodium in Frameworks */,
+				D6EEA87B8D67254543DE4CAB /* Clibsodium in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -273,6 +316,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				502EFD15A888392D30D39027 /* Sodium in Frameworks */,
+				B9EC650E242F110652BA9713 /* Clibsodium in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -304,6 +348,7 @@
 			children = (
 				4F9EEBB608D849ADEBE786FB /* DriveItem.swift */,
 				5DB41FE55A0945983D9AD56C /* DriveSection.swift */,
+				353E423634A3CA9F584BC176 /* FileKind.swift */,
 				3C6D8A297D25380ECD262C81 /* OfflineFile.swift */,
 			);
 			path = Models;
@@ -322,6 +367,7 @@
 		4F85FB0514347D724554EC6E /* NeutrinoDrive */ = {
 			isa = PBXGroup;
 			children = (
+				79A7A0E78EC06A9490BA2757 /* Assets.xcassets */,
 				E3985D05C9C065C11E2FAFB0 /* ContentView.swift */,
 				11242259008914C1DEF27482 /* Info.plist */,
 				11221E126AD26096B14DEDC6 /* NeutrinoDrive.entitlements */,
@@ -343,9 +389,12 @@
 				A1AED111A1DFA3864B2AE787 /* BiometricAuthService.swift */,
 				00D351BC7EA7CA886AEB31CA /* DownloadService.swift */,
 				D4BF259AF06C4C78A55DFD81 /* DriveAPIClient.swift */,
+				9633C5B15033CA3CEF7C9BAD /* DriveItemTransfer.swift */,
 				F47172C7892BED92B27EEB8A /* DriveService.swift */,
 				441BE4AAD3CC7639AB23885B /* E2EEDownloader.swift */,
 				92DB4C10254E37F3C8B82159 /* E2EEUploader.swift */,
+				E6F34122ED1E5535B04A9A42 /* EncryptedMediaStream.swift */,
+				009A809C4CC61FE504654944 /* FileAccessTracker.swift */,
 				14FB708641A150BA2D6914D7 /* FileProviderDomainService.swift */,
 				5C8A71220EBAE89D8C5CF054 /* IncomingDocument.swift */,
 				7D43F66518BECD37AE74152A /* KeychainService.swift */,
@@ -357,9 +406,12 @@
 				C346B842F6CCF727D2F047C7 /* QuotaService.swift */,
 				9D218BBDBAB8CA89AA1DF5D3 /* SealedKeyCrypto.swift */,
 				AC32FE0D6BB9D7C94882BB8F /* SearchService.swift */,
+				25539212C96D589615FF3C3A /* SecretStreamCrypto.swift */,
 				F374ECD6F62965B1D404D98A /* ShareUploadCoordinator.swift */,
 				3ADD7A2E9C27197434FE3A0A /* SharingService.swift */,
+				516FA8530C0495007B58C725 /* SmartOfflineSyncService.swift */,
 				D70235A500829AC210ADCE9B /* SpotlightIndexService.swift */,
+				2FAF88AC98AA3A3D67211B2A /* StreamingPlaybackService.swift */,
 				FC3153FC8A0FDB182E99909E /* UploadService.swift */,
 				3204F85B044BBD53BB886983 /* VersionHistoryService.swift */,
 			);
@@ -380,13 +432,16 @@
 			children = (
 				E8D0E9F67E4BA7F2D9EAEB50 /* BiometricSettingsView.swift */,
 				ACF13539E1CDAD54D5F123C8 /* CreateFolderSheet.swift */,
+				072824F102F915B214F121E6 /* DocumentWindow.swift */,
 				AFDC3F2E1EDDF4169DEA3706 /* FileBrowserView.swift */,
 				0FF01D7775E4236733FC909F /* FileRowView.swift */,
 				C03256BD9495BF647E1D621E /* FilesView.swift */,
+				67E4E60AD80C078A44ED9252 /* FileTypeIcon.swift */,
 				3164F8D62550277E7500FB6D /* KeyImportView.swift */,
 				F995FEAD8545B523E9E66C76 /* KeyQRImportView.swift */,
 				6A8AAD2BF70A2317058FAE59 /* LockScreenView.swift */,
 				FA5181A063C7F11A804B0869 /* LoginView.swift */,
+				85801D03C756B32A18BE7F44 /* MediaPlayerView.swift */,
 				5E221501A1796A0C7CB2C7C3 /* MoveSheet.swift */,
 				590E72C929910D24827A0391 /* NeutrinoFileViewer.swift */,
 				90469D5CC989E615DE795823 /* OfflineView.swift */,
@@ -396,9 +451,11 @@
 				70A49B80E184DD242C3F71F4 /* RenameSheet.swift */,
 				F98AAC9AEF267C276800A5AA /* SettingsView.swift */,
 				E9E380C43E2F17633F9BE953 /* ShareSheet.swift */,
+				F4D17FA33C89A6080C686118 /* SmartOfflineSettingsView.swift */,
 				A4DDB65D5B66B8BFEA0C7A0E /* SpotlightSettingsView.swift */,
 				BE36F23B5D81EEC1E84E1A77 /* UploadSheet.swift */,
 				FD20A690770D70A67B5BDD4E /* VersionHistorySheet.swift */,
+				C8C97CA4E8105BF14A8E4E64 /* ViewConditional.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -412,9 +469,12 @@
 				7D8E929ED50294D7EE256659 /* DownloadServiceTests.swift */,
 				AE4872FD7CF65B71CE8EF958 /* DriveAPIClientTests.swift */,
 				8834B35CB52B70D4F1BA48A6 /* DriveItemTests.swift */,
+				2350D5A37D3585F3E293272F /* DriveItemTransferTests.swift */,
 				4E75AF3C358204F5340F0827 /* DriveServiceTests.swift */,
 				476D22CD2F0DB6C8DBE3AD10 /* E2EEUploaderTests.swift */,
+				AF251DE0A8BEB8220CDDDC4A /* EncryptedMediaStreamTests.swift */,
 				FAFF80153F6588C47A7B5E10 /* FavoritesTests.swift */,
+				39FB13F36FE4A9DB1F158C18 /* FileKindTests.swift */,
 				51702688577668BC7E75E373 /* FileProviderIdentifierTests.swift */,
 				F2D224B13367A618632AE95D /* FileProviderItemTests.swift */,
 				21AC07E0D4EF58EE62A98127 /* IncomingDocumentTests.swift */,
@@ -428,8 +488,10 @@
 				92A6A5039A254CCFF5EF859B /* QuotaServiceTests.swift */,
 				0BC10848134DEC435F1F7763 /* SealedKeyCryptoTests.swift */,
 				F89DB4C4E5203C9B985669D8 /* SearchServiceTests.swift */,
+				72017104DD0D5C5768581832 /* SecretStreamCryptoTests.swift */,
 				630C730986B97FEBB32C20EE /* ShareUploadCoordinatorTests.swift */,
 				327677CD98415FF37039A2D0 /* SharingServiceTests.swift */,
+				898FF3547ABC3544B6AB393B /* SmartOfflineSyncTests.swift */,
 				2A2EE1AE217905FA9DD213C5 /* SpotlightIndexServiceTests.swift */,
 				E057910348FA5DD56CAF3BA2 /* UploadServiceTests.swift */,
 				1F7F1554986712BAA1146EC5 /* VersionHistoryServiceTests.swift */,
@@ -467,6 +529,7 @@
 			buildConfigurationList = BAD03B2A575713D6C368E4C1 /* Build configuration list for PBXNativeTarget "NeutrinoDrive" */;
 			buildPhases = (
 				75562A5E1732CF80E98DD6D0 /* Sources */,
+				03E17055ADD5D2651FD5E0B7 /* Resources */,
 				9A547FF706D284F727113223 /* Frameworks */,
 				0C3BF9770F7819AEDDF23A5A /* Embed Foundation Extensions */,
 			);
@@ -479,6 +542,7 @@
 			name = NeutrinoDrive;
 			packageProductDependencies = (
 				C2BF65B88E6E5580857855E6 /* Sodium */,
+				780688E1424C81F4D6D645F3 /* Clibsodium */,
 			);
 			productName = NeutrinoDrive;
 			productReference = BBAF5D07C650FCC3CBE7E15F /* NeutrinoDrive.app */;
@@ -516,6 +580,7 @@
 			name = NeutrinoDriveFileProvider;
 			packageProductDependencies = (
 				35C2FC3A0993432DA00F0FC7 /* Sodium */,
+				5751171CDB214E69398E9F61 /* Clibsodium */,
 			);
 			productName = NeutrinoDriveFileProvider;
 			productReference = 196345CB2E7DCB4B508CA097 /* NeutrinoDriveFileProvider.appex */;
@@ -535,6 +600,7 @@
 			name = NeutrinoDriveShare;
 			packageProductDependencies = (
 				B29E803B3FC632AE6E6F402F /* Sodium */,
+				BAE16F712EAC23A6FE18A9CC /* Clibsodium */,
 			);
 			productName = NeutrinoDriveShare;
 			productReference = 372C73E6E1ACB5CC044D4FD3 /* NeutrinoDriveShare.appex */;
@@ -551,12 +617,15 @@
 				TargetAttributes = {
 					6D30D7DE8B2D3AB416758EC9 = {
 						DevelopmentTeam = 46KWJJ63FU;
+						ProvisioningStyle = Automatic;
 					};
 					C73E4D871D1A149D71972DA2 = {
 						DevelopmentTeam = 46KWJJ63FU;
+						ProvisioningStyle = Automatic;
 					};
 					F9CD7DB36FBFFF953E5A64CC = {
 						DevelopmentTeam = 46KWJJ63FU;
+						ProvisioningStyle = Automatic;
 					};
 				};
 			};
@@ -585,6 +654,17 @@
 		};
 /* End PBXProject section */
 
+/* Begin PBXResourcesBuildPhase section */
+		03E17055ADD5D2651FD5E0B7 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				B3EC28701836603C11A801C5 /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
 /* Begin PBXSourcesBuildPhase section */
 		0D25B3852B7F0CF516848EB1 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
@@ -595,6 +675,7 @@
 				31F95E62549DB45B742EE08F /* FeatureFlags.swift in Sources */,
 				024934D9C46EEEEF7C4B44EF /* KeychainService.swift in Sources */,
 				D33381B0005BD3A30285FC38 /* SealedKeyCrypto.swift in Sources */,
+				B621990872A6DC1B07DD3BEE /* SecretStreamCrypto.swift in Sources */,
 				67A59774AAC56E1CADC2ECFD /* ShareUploadCoordinator.swift in Sources */,
 				67FE7B95DCE2398E17E38339 /* ShareViewController.swift in Sources */,
 				AD889E27EDBC05A3A8D9767A /* SharedStorage.swift in Sources */,
@@ -611,19 +692,25 @@
 				3C08EAD7CC4B4E1E8AAD1EBA /* BiometricSettingsView.swift in Sources */,
 				C05DBAA6ABC844B145C4CE8B /* ContentView.swift in Sources */,
 				9A19DF8556C44AD8D37D3695 /* CreateFolderSheet.swift in Sources */,
+				FBD528108F481DFFCEB23D61 /* DocumentWindow.swift in Sources */,
 				3ED8800DA1E7313D2A9BD588 /* DownloadService.swift in Sources */,
 				3A8DE6258F370323A679F285 /* DriveAPIClient.swift in Sources */,
 				DA5D08204C931BE6965C5D6B /* DriveItem.swift in Sources */,
+				86226BFA9AFD27CC24C2A5F1 /* DriveItemTransfer.swift in Sources */,
 				622E177AB065C2332256FB53 /* DriveSection.swift in Sources */,
 				5821BEEE8F091BE483D457D7 /* DriveService.swift in Sources */,
 				C2D794866113B21DED3C6A07 /* E2EEDownloader.swift in Sources */,
 				E241253B65D070E9BD84CE94 /* E2EEUploader.swift in Sources */,
+				67F7D538F51469965FD1D8E9 /* EncryptedMediaStream.swift in Sources */,
 				5B4F29CF82E1C690CAE70CA8 /* FeatureFlags.swift in Sources */,
+				B14CB89618525A700600438C /* FileAccessTracker.swift in Sources */,
 				6B69A2B077D27029DD7924B9 /* FileBrowserView.swift in Sources */,
+				01DFFA7460638926FDC7C180 /* FileKind.swift in Sources */,
 				80D62FC6BF77932804DA8F40 /* FileProviderDomainService.swift in Sources */,
 				56F028A7E3D83B2CF24A8B27 /* FileProviderIdentifier.swift in Sources */,
 				AA125990DFAE6C152330ECB0 /* FileProviderItem.swift in Sources */,
 				6363B4D2DB17A9276F46B17A /* FileRowView.swift in Sources */,
+				B61476C944200666CF260009 /* FileTypeIcon.swift in Sources */,
 				3BD6B2A2583353EF5D435FE8 /* FilesView.swift in Sources */,
 				43124650E742EFF3B315C1D5 /* IncomingDocument.swift in Sources */,
 				FB16FF91527531E74E5469A6 /* KeyImportService.swift in Sources */,
@@ -633,6 +720,7 @@
 				E75D0175C7B415D9BB299056 /* KeychainService.swift in Sources */,
 				4354509529BAB0170D262425 /* LockScreenView.swift in Sources */,
 				83030D70D1FD82CA51BFA7C6 /* LoginView.swift in Sources */,
+				ACA719B5DE8D4E93E0C2AAFB /* MediaPlayerView.swift in Sources */,
 				A4309A73D2D6CB256BD96435 /* MoveSheet.swift in Sources */,
 				690F26E747D4DA457D331F5F /* NeutrinoDriveApp.swift in Sources */,
 				073E8D2DE0797446D3138732 /* NeutrinoFileViewer.swift in Sources */,
@@ -648,17 +736,22 @@
 				6544A610BB9F4EEE9D896EDE /* RenameSheet.swift in Sources */,
 				FD7CD39C75002E56CFD48806 /* SealedKeyCrypto.swift in Sources */,
 				091C7DB3F9F6513A761DEF25 /* SearchService.swift in Sources */,
+				DA05F735AC7602A6B6AD36E7 /* SecretStreamCrypto.swift in Sources */,
 				48CC24AF85BA1E18FA66A8D3 /* SettingsView.swift in Sources */,
 				EAC107B86724E7BEC6452CAC /* ShareSheet.swift in Sources */,
 				432A8D3417DE308C4C179878 /* ShareUploadCoordinator.swift in Sources */,
 				0845C6477B280EBC8940B4FC /* SharedStorage.swift in Sources */,
 				86B76EE3D6E6ED8E09FD3DD2 /* SharingService.swift in Sources */,
+				7FC89968DA9B2C8B91E886DE /* SmartOfflineSettingsView.swift in Sources */,
+				F016F0D64D7F81DE111BE2D6 /* SmartOfflineSyncService.swift in Sources */,
 				0D3DD345903F13E19E3D60B2 /* SpotlightIndexService.swift in Sources */,
 				2760B714C86F3E85CE68E591 /* SpotlightSettingsView.swift in Sources */,
+				7EC7807F23E4F1E6D14D847F /* StreamingPlaybackService.swift in Sources */,
 				D2CF5F59EAF12FE048AA1C0A /* UploadService.swift in Sources */,
 				2AD383230B2EFD9ACF52D84F /* UploadSheet.swift in Sources */,
 				05BB68A98F5538EC38E8C3DA /* VersionHistoryService.swift in Sources */,
 				98A677398FA74C9534C8CBB6 /* VersionHistorySheet.swift in Sources */,
+				5F5622705603831DC1D14373 /* ViewConditional.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -677,6 +770,7 @@
 				97FAB6EADF40B0F13D1C9EC2 /* FileProviderItem.swift in Sources */,
 				6E590632E561521D48DDD4F2 /* KeychainService.swift in Sources */,
 				35A28DA7F68CC8DF39DFBDFC /* SealedKeyCrypto.swift in Sources */,
+				1C2BD8BA005BE68C0149DF13 /* SecretStreamCrypto.swift in Sources */,
 				95B33B62D7627078074268B5 /* SharedStorage.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -691,9 +785,12 @@
 				B88EBD4DA680E13365EC3C85 /* DownloadServiceTests.swift in Sources */,
 				18D1C5D4AEEBA2B6C4AB8320 /* DriveAPIClientTests.swift in Sources */,
 				33C67BAC98679F8B29925333 /* DriveItemTests.swift in Sources */,
+				A84D6CE463BCE83605503014 /* DriveItemTransferTests.swift in Sources */,
 				B712ECD01D50298923D94BA6 /* DriveServiceTests.swift in Sources */,
 				20F7A9EAC6847F2638576420 /* E2EEUploaderTests.swift in Sources */,
+				D94615342E0FEBC1BC74334B /* EncryptedMediaStreamTests.swift in Sources */,
 				513BF32E8B0DB23D969F39E8 /* FavoritesTests.swift in Sources */,
+				D7018E2A559D474126CC84B9 /* FileKindTests.swift in Sources */,
 				AF1C1E3B0F58D75D7DFCF199 /* FileProviderIdentifierTests.swift in Sources */,
 				032E54B75378D36DE4FD2AF7 /* FileProviderItemTests.swift in Sources */,
 				7A3A1EC4026E1184ECF34B99 /* IncomingDocumentTests.swift in Sources */,
@@ -707,8 +804,10 @@
 				FCD16281A07596302DA0FA13 /* QuotaServiceTests.swift in Sources */,
 				F7889A9C8B773AE5D43BA085 /* SealedKeyCryptoTests.swift in Sources */,
 				F5A3194F7AC59E856D828A8E /* SearchServiceTests.swift in Sources */,
+				54BB9346818A01F2C28F2698 /* SecretStreamCryptoTests.swift in Sources */,
 				6012EA629004AC1E165C1643 /* ShareUploadCoordinatorTests.swift in Sources */,
 				25F64EB08808A6C78ECD470B /* SharingServiceTests.swift in Sources */,
+				1B183F17B4EDED7C7E85214A /* SmartOfflineSyncTests.swift in Sources */,
 				B54C0386D67645FEEFB8D70F /* SpotlightIndexServiceTests.swift in Sources */,
 				EC06929650A4ECF52EABF5FC /* UploadServiceTests.swift in Sources */,
 				C1C0FD03CF16FB5E9E1A3166 /* VersionHistoryServiceTests.swift in Sources */,
@@ -803,7 +902,8 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_ENTITLEMENTS = NeutrinoDriveShare/NeutrinoDriveShare.entitlements;
-				CURRENT_PROJECT_VERSION = 1;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 4;
 				DEVELOPMENT_TEAM = 46KWJJ63FU;
 				INFOPLIST_FILE = NeutrinoDriveShare/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
@@ -824,7 +924,8 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_ENTITLEMENTS = NeutrinoDriveFileProvider/NeutrinoDriveFileProvider.entitlements;
-				CURRENT_PROJECT_VERSION = 1;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 4;
 				DEVELOPMENT_TEAM = 46KWJJ63FU;
 				INFOPLIST_FILE = NeutrinoDriveFileProvider/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
@@ -845,7 +946,8 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_ENTITLEMENTS = NeutrinoDriveShare/NeutrinoDriveShare.entitlements;
-				CURRENT_PROJECT_VERSION = 1;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 4;
 				DEVELOPMENT_TEAM = 46KWJJ63FU;
 				INFOPLIST_FILE = NeutrinoDriveShare/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
@@ -868,7 +970,8 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = NeutrinoDrive/NeutrinoDrive.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
-				CURRENT_PROJECT_VERSION = 1;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 4;
 				DEVELOPMENT_TEAM = 46KWJJ63FU;
 				INFOPLIST_FILE = NeutrinoDrive/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
@@ -910,7 +1013,8 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = NeutrinoDrive/NeutrinoDrive.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
-				CURRENT_PROJECT_VERSION = 1;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 4;
 				DEVELOPMENT_TEAM = 46KWJJ63FU;
 				INFOPLIST_FILE = NeutrinoDrive/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
@@ -930,7 +1034,8 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_ENTITLEMENTS = NeutrinoDriveFileProvider/NeutrinoDriveFileProvider.entitlements;
-				CURRENT_PROJECT_VERSION = 1;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 4;
 				DEVELOPMENT_TEAM = 46KWJJ63FU;
 				INFOPLIST_FILE = NeutrinoDriveFileProvider/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
@@ -1090,10 +1195,25 @@
 			package = FD4EA385FFAD4EBA5978F108 /* XCRemoteSwiftPackageReference "swift-sodium" */;
 			productName = Sodium;
 		};
+		5751171CDB214E69398E9F61 /* Clibsodium */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = FD4EA385FFAD4EBA5978F108 /* XCRemoteSwiftPackageReference "swift-sodium" */;
+			productName = Clibsodium;
+		};
+		780688E1424C81F4D6D645F3 /* Clibsodium */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = FD4EA385FFAD4EBA5978F108 /* XCRemoteSwiftPackageReference "swift-sodium" */;
+			productName = Clibsodium;
+		};
 		B29E803B3FC632AE6E6F402F /* Sodium */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = FD4EA385FFAD4EBA5978F108 /* XCRemoteSwiftPackageReference "swift-sodium" */;
 			productName = Sodium;
+		};
+		BAE16F712EAC23A6FE18A9CC /* Clibsodium */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = FD4EA385FFAD4EBA5978F108 /* XCRemoteSwiftPackageReference "swift-sodium" */;
+			productName = Clibsodium;
 		};
 		C2BF65B88E6E5580857855E6 /* Sodium */ = {
 			isa = XCSwiftPackageProductDependency;

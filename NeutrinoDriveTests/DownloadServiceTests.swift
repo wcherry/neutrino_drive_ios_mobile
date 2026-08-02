@@ -44,13 +44,17 @@ final class DownloadServiceTests: XCTestCase {
     }
 
     func test_download_throwsNotAuthenticated_whenTokenAbsentButKeysPresent() async {
-        // Store a fake key pair so the keys check passes.
+        // Store a fake key pair so the keys check passes. All three entries are required —
+        // `hasStoredKeys()` counts the key version too, and seeding only the pair leaves the
+        // download failing with `.noEncryptionKey` before it ever reaches the token check.
         KeychainService.save("fake-public-key", forKey: KeyImportService.publicKeyKeychainKey)
         KeychainService.save("fake-private-key", forKey: KeyImportService.privateKeyKeychainKey)
+        KeychainService.save("1", forKey: KeyImportService.keyVersionKeychainKey)
         KeychainService.delete(forKey: AuthService.accessTokenKey)
         defer {
             KeychainService.delete(forKey: KeyImportService.publicKeyKeychainKey)
             KeychainService.delete(forKey: KeyImportService.privateKeyKeychainKey)
+            KeychainService.delete(forKey: KeyImportService.keyVersionKeychainKey)
         }
 
         let sut = DownloadService()
@@ -117,12 +121,10 @@ final class DownloadServiceTests: XCTestCase {
 
     /// A historical version's blob comes from the version endpoint.
     ///
-    /// Only path construction is asserted, not the whole download. The full flow needs an
-    /// encryption keypair in the Keychain, which this test host does not persist — the same
-    /// limitation that causes the pre-existing
-    /// `test_download_throwsNotAuthenticated_whenTokenAbsentButKeysPresent` failure above. So
-    /// the routing decision is factored into a pure function and tested there rather than
-    /// asserted through a flow that cannot run here.
+    /// Only path construction is asserted, not the whole download: the full flow would need a
+    /// real key pair, a token, and a server to answer the key and blob requests. So the routing
+    /// decision is factored into a pure function and tested there rather than asserted through
+    /// a flow this test host cannot complete.
     func test_blobPath_withVersionID_pointsAtVersionDownloadEndpoint() {
         XCTAssertEqual(DownloadService.blobPath(fileID: "file-1", versionID: "v7"),
                        "/api/v1/drive/files/file-1/versions/v7/download")

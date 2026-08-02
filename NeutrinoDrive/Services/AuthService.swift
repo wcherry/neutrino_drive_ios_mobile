@@ -101,7 +101,7 @@ final class AuthService: ObservableObject {
 
     func refreshTokenIfNeeded() async {
         if let raw = KeychainService.load(forKey: AuthService.tokenExpiryKey),
-           let expiry = ISO8601DateFormatter().date(from: raw),
+           let expiry = Self.parseExpiry(raw),
            expiry.timeIntervalSinceNow > 60 {
             return
         }
@@ -247,6 +247,26 @@ final class AuthService: ObservableObject {
             throw AuthError.networkError(underlying: error)
         }
     }
+
+    /// Parses a stored token expiry, with and without fractional seconds.
+    ///
+    /// `persist` writes the plain form, but a bare `ISO8601DateFormatter` refuses to read a
+    /// timestamp that carries fractional seconds — and an expiry it cannot parse reads as
+    /// "expired", which sends a perfectly fresh session down the refresh path on every launch.
+    /// Accepting both formats keeps that from turning into a spurious logout when the refresh
+    /// call is rejected. Same two-formatter approach as `VersionHistoryService`.
+    private static func parseExpiry(_ raw: String) -> Date? {
+        for formatter in expiryFormatters {
+            if let date = formatter.date(from: raw) { return date }
+        }
+        return nil
+    }
+
+    private static let expiryFormatters: [ISO8601DateFormatter] = {
+        let withFractionalSeconds = ISO8601DateFormatter()
+        withFractionalSeconds.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return [ISO8601DateFormatter(), withFractionalSeconds]
+    }()
 
     private func persist(_ response: TokenResponse) {
         KeychainService.save(response.accessToken,  forKey: AuthService.accessTokenKey)

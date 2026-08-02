@@ -19,7 +19,9 @@ struct PhotoSyncSettingsView: View {
                     limitedAccessRow
                 }
             } footer: {
-                Text("Photos taken from now on will be backed up. Existing photos in your library are not uploaded.")
+                Text(photoSyncService.includeExistingPhotos
+                     ? "Photos taken from now on will be backed up, along with the photos already in your library."
+                     : "Photos taken from now on will be backed up. Existing photos in your library are not uploaded.")
             }
 
             if photoSyncService.isEnabled {
@@ -33,7 +35,18 @@ struct PhotoSyncSettingsView: View {
                 } header: {
                     Text("Destination")
                 } footer: {
-                    Text("Photos are uploaded to this folder in your Drive. Encrypted before they leave your device.")
+                    Text("Photos are uploaded to this folder in your Drive, created at the top level if it doesn't exist yet. Defaults to \"\(PhotoSyncService.defaultFolderName)\". Encrypted before they leave your device.")
+                }
+
+                Section {
+                    Toggle("Back Up Existing Photos", isOn: Binding(
+                        get: { photoSyncService.includeExistingPhotos },
+                        set: { photoSyncService.includeExistingPhotos = $0 }
+                    ))
+                } header: {
+                    Text("Existing Library")
+                } footer: {
+                    Text("Uploads the photos already on this device, oldest first, in addition to new ones. A large library can take a while and uses storage in your Drive. Turning this back off stops older photos from being queued; anything already uploaded stays.")
                 }
 
                 Section("Constraints") {

@@ -18,6 +18,13 @@ targets:
     dependencies:
       - package: swift-sodium
         product: Sodium
+      # Raw libsodium C API. Needed by SecretStreamCrypto, which reimplements the *pull* half
+      # of the secretstream construction incrementally (crypto_core_hchacha20,
+      # crypto_stream_chacha20_ietf_xor_ic, streaming crypto_onetimeauth_poly1305). The Sodium
+      # Swift wrapper only vends the one-shot whole-message pull, which is precisely the
+      # whole-file-in-memory behaviour being removed.
+      - package: swift-sodium
+        product: Clibsodium
       - target: NeutrinoDriveShare
         embed: true
       - target: NeutrinoDriveFileProvider
@@ -26,10 +33,12 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.neutrino.drive
         MARKETING_VERSION: "1.0.0"
-        CURRENT_PROJECT_VERSION: "1"
+        CURRENT_PROJECT_VERSION: "4"
         SWIFT_VERSION: "5.0"
         IPHONEOS_DEPLOYMENT_TARGET: "16.0"
         DEVELOPMENT_TEAM: "46KWJJ63FU"
+        CODE_SIGN_STYLE: Automatic
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
     entitlements:
       path: NeutrinoDrive/NeutrinoDrive.entitlements
       properties:
@@ -46,6 +55,11 @@ targets:
       properties:
         CFBundleName: Neutrino Drive
         CFBundleDisplayName: Neutrino Drive
+        # Without these, xcodegen writes literal "1.0"/"1" into Info.plist and the
+        # MARKETING_VERSION / CURRENT_PROJECT_VERSION build settings are ignored — the
+        # archive then ships whatever build number App Store Connect last saw.
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
         UILaunchScreen: {}
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
@@ -61,6 +75,10 @@ targets:
         NSFaceIDUsageDescription: "Neutrino Drive uses Face ID to unlock the app and to protect access to your encryption keys."
         UIBackgroundModes:
           - processing
+        # Phase 6 multi-window. Without this iOS refuses `openWindow` outright, so the
+        # secondary WindowGroup would compile, declare a scene, and silently never appear.
+        # Paired with `FeatureFlags.multiWindow`, which gates the scene declaration itself.
+        UIApplicationSupportsMultipleScenes: true
         BGTaskSchedulerPermittedIdentifiers:
           - com.neutrino.drive.photosync
         NSAppTransportSecurity:
@@ -117,17 +135,28 @@ targets:
       - path: NeutrinoDrive/Services/E2EEUploader.swift
       - path: NeutrinoDrive/Services/BackgroundTransferService.swift
       - path: NeutrinoDrive/Services/ShareUploadCoordinator.swift
+      # Compiled here only because E2EEUploader/E2EEDownloader reference the shared
+      # SecretStreamError type. Same file-identity rule as the rest of this list.
+      - path: NeutrinoDrive/Services/SecretStreamCrypto.swift
     dependencies:
       - package: swift-sodium
         product: Sodium
+      # Raw libsodium C API. Needed by SecretStreamCrypto, which reimplements the *pull* half
+      # of the secretstream construction incrementally (crypto_core_hchacha20,
+      # crypto_stream_chacha20_ietf_xor_ic, streaming crypto_onetimeauth_poly1305). The Sodium
+      # Swift wrapper only vends the one-shot whole-message pull, which is precisely the
+      # whole-file-in-memory behaviour being removed.
+      - package: swift-sodium
+        product: Clibsodium
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.neutrino.drive.share
         MARKETING_VERSION: "1.0.0"
-        CURRENT_PROJECT_VERSION: "1"
+        CURRENT_PROJECT_VERSION: "4"
         SWIFT_VERSION: "5.0"
         IPHONEOS_DEPLOYMENT_TARGET: "16.0"
         DEVELOPMENT_TEAM: "46KWJJ63FU"
+        CODE_SIGN_STYLE: Automatic
     entitlements:
       path: NeutrinoDriveShare/NeutrinoDriveShare.entitlements
       properties:
@@ -140,6 +169,12 @@ targets:
       properties:
         CFBundleName: Neutrino Drive
         CFBundleDisplayName: Neutrino Drive
+        # An embedded extension whose CFBundleVersion / CFBundleShortVersionString differ
+        # from the container app's is rejected at upload ("bundle version does not match").
+        # Reading them from the build settings keeps all three bundles in lockstep, which is
+        # what lets deploy_testflight.sh bump every CURRENT_PROJECT_VERSION in project.yml.
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
         NSAppTransportSecurity:
           NSAllowsArbitraryLoads: true
         NSExtension:
@@ -185,6 +220,9 @@ targets:
       # The decrypt half. Extracted out of DownloadService in Phase 3 for exactly this reason —
       # a reimplementation would not fail any build and would hand the Files app plausible
       # garbage.
+      # The constant-memory streaming decrypt. This is what lets the extension materialize a
+      # file larger than its memory budget, retiring the 64 MB cap PR #9 had to impose.
+      - path: NeutrinoDrive/Services/SecretStreamCrypto.swift
       - path: NeutrinoDrive/Services/E2EEDownloader.swift
       # The encrypt half, so a document saved into Neutrino Drive from Pages is sealed with the
       # user's DEK exactly as an in-app upload is.
@@ -199,14 +237,22 @@ targets:
     dependencies:
       - package: swift-sodium
         product: Sodium
+      # Raw libsodium C API. Needed by SecretStreamCrypto, which reimplements the *pull* half
+      # of the secretstream construction incrementally (crypto_core_hchacha20,
+      # crypto_stream_chacha20_ietf_xor_ic, streaming crypto_onetimeauth_poly1305). The Sodium
+      # Swift wrapper only vends the one-shot whole-message pull, which is precisely the
+      # whole-file-in-memory behaviour being removed.
+      - package: swift-sodium
+        product: Clibsodium
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.neutrino.drive.fileprovider
         MARKETING_VERSION: "1.0.0"
-        CURRENT_PROJECT_VERSION: "1"
+        CURRENT_PROJECT_VERSION: "4"
         SWIFT_VERSION: "5.0"
         IPHONEOS_DEPLOYMENT_TARGET: "16.0"
         DEVELOPMENT_TEAM: "46KWJJ63FU"
+        CODE_SIGN_STYLE: Automatic
     entitlements:
       path: NeutrinoDriveFileProvider/NeutrinoDriveFileProvider.entitlements
       properties:
@@ -221,6 +267,9 @@ targets:
       properties:
         CFBundleName: Neutrino Drive
         CFBundleDisplayName: Neutrino Drive
+        # Must match the container app's — see the note on the share extension above.
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
         NSAppTransportSecurity:
           NSAllowsArbitraryLoads: true
         NSExtension:

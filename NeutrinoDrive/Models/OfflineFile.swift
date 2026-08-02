@@ -20,4 +20,45 @@ struct OfflineFile: Identifiable, Codable {
     let sizeBytes: Int64
     let localURL: URL
     let cachedAt: Date
+
+    /// Whether smart offline sync put this file here, as opposed to the user pinning it with
+    /// "Make Available Offline".
+    ///
+    /// This is the flag eviction keys on, and the distinction matters more than its size
+    /// suggests: an automatic cache that can delete a file the user *explicitly* asked to keep
+    /// is not a cache, it is a bug that only shows up on a plane. `SmartOfflineSyncService`
+    /// evicts managed entries only, and `SmartOfflineSyncServiceTests` asserts a pinned file
+    /// survives a budget overflow that clears everything else.
+    ///
+    /// Declared last with a default so every existing initializer call site and every manifest
+    /// written before this branch still decodes — an older manifest has no `isManaged` key, and
+    /// absent means "the user pinned it", which is the safe reading.
+    var isManaged: Bool = false
+
+    init(id: String,
+         name: String,
+         mimeType: String,
+         sizeBytes: Int64,
+         localURL: URL,
+         cachedAt: Date,
+         isManaged: Bool = false) {
+        self.id = id
+        self.name = name
+        self.mimeType = mimeType
+        self.sizeBytes = sizeBytes
+        self.localURL = localURL
+        self.cachedAt = cachedAt
+        self.isManaged = isManaged
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id        = try c.decode(String.self, forKey: .id)
+        name      = try c.decode(String.self, forKey: .name)
+        mimeType  = try c.decode(String.self, forKey: .mimeType)
+        sizeBytes = try c.decode(Int64.self,  forKey: .sizeBytes)
+        localURL  = try c.decode(URL.self,    forKey: .localURL)
+        cachedAt  = try c.decode(Date.self,   forKey: .cachedAt)
+        isManaged = try c.decodeIfPresent(Bool.self, forKey: .isManaged) ?? false
+    }
 }

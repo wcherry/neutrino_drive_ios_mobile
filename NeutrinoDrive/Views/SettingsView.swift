@@ -7,6 +7,7 @@ struct SettingsView: View {
     @EnvironmentObject var photoSyncService: PhotoSyncService
     @EnvironmentObject var biometricService: BiometricAuthService
     @EnvironmentObject var spotlightService: SpotlightIndexService
+    @EnvironmentObject var smartOffline: SmartOfflineSyncService
 
     @StateObject private var quotaService = QuotaService()
 
@@ -105,6 +106,10 @@ struct SettingsView: View {
                         }
                     }
                 }
+            }
+
+            if FeatureFlags.smartOfflineSync {
+                SmartOfflineSettingsView()
             }
 
             if FeatureFlags.spotlightSearch {

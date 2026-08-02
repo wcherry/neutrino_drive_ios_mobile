@@ -117,14 +117,23 @@ enum KeyImportService {
 
     /// Returns true if pubData and privData form a valid cryptographic key pair.
     /// Tries Curve25519 key agreement (X25519), Curve25519 signing (Ed25519), and P-256 in order.
+    ///
+    /// Each branch only ever returns *true*; a branch that fails falls through to the next one.
+    /// Returning a branch's own result would make the first branch the only one that ever runs:
+    /// a raw P-256 private key is 32 bytes, exactly like an X25519 one, so it parses as X25519
+    /// too — and its derived 32-byte X25519 public key can never equal the 65-byte X9.63 P-256
+    /// public key it is being compared against. Every valid P-256 pair would be rejected as a
+    /// mismatch without reaching the P-256 branch below.
     private static func validateKeyPair(pubData: Data, privData: Data) -> Bool {
         // X25519: derive public key from private and compare directly.
-        if let priv = try? Curve25519.KeyAgreement.PrivateKey(rawRepresentation: privData) {
-            return priv.publicKey.rawRepresentation == pubData
+        if let priv = try? Curve25519.KeyAgreement.PrivateKey(rawRepresentation: privData),
+           priv.publicKey.rawRepresentation == pubData {
+            return true
         }
         // Ed25519: same approach.
-        if let priv = try? Curve25519.Signing.PrivateKey(rawRepresentation: privData) {
-            return priv.publicKey.rawRepresentation == pubData
+        if let priv = try? Curve25519.Signing.PrivateKey(rawRepresentation: privData),
+           priv.publicKey.rawRepresentation == pubData {
+            return true
         }
         // P-256: sign a test payload and verify with the public key.
         let p256priv = (try? P256.Signing.PrivateKey(rawRepresentation: privData))

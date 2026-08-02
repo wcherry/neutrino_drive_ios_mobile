@@ -8,17 +8,32 @@ enum FileProviderLimits {
 
     /// The largest ciphertext the File Provider extension will attempt to decrypt.
     ///
-    /// `E2EEDownloader` decrypts whole-file in memory — libsodium's secretstream is opened over
-    /// one buffer and pulled in a single call — so peak usage is roughly two copies of the file.
-    /// An app can absorb that. A File Provider extension's memory budget cannot, and exceeding
-    /// it means a jetsam kill, which the Files app surfaces as an uninformative generic failure
-    /// with no hint that size was the cause.
+    /// ## Why this was 64 MB, and why it no longer is
     ///
-    /// Refusing above this ceiling trades a working feature for an honest error. The real fix is
-    /// streaming decryption, which would benefit the app equally and is out of scope here; see
-    /// "Materialization and the memory ceiling" in
-    /// `agent_docs/plans/feature-phase3-ios-ecosystem-integration.md`.
-    static let maxMaterializableBytes: Int64 = 64 * 1024 * 1024
+    /// This ceiling existed for one reason: `E2EEDownloader` decrypted whole-file in memory —
+    /// libsodium's secretstream opened over one buffer and pulled in a single call — so peak
+    /// usage was roughly two copies of the file. An app can absorb that. A File Provider
+    /// extension's memory budget cannot, and exceeding it means a jetsam kill, which the Files
+    /// app surfaces as an uninformative generic failure with no hint that size was the cause.
+    /// Refusing at 64 MB traded a working feature for an honest error.
+    ///
+    /// **That reason is gone.** Decryption now streams through
+    /// `SecretStreamCrypto.decrypt(fileAt:to:key:)` in 1 MiB chunks; peak memory is the chunk
+    /// size regardless of file size, and neither ciphertext nor plaintext is ever fully
+    /// resident. A 2 GB file costs the same memory as a 2 MB one.
+    ///
+    /// ## Why a limit survives at all
+    ///
+    /// The constraint that remains is **disk**, not memory: materializing a file writes the
+    /// ciphertext and then the plaintext, so it transiently needs about twice the file size
+    /// free, inside a container the user did not choose to fill.
+    ///
+    /// 2 GiB is deliberately a prudence guard rather than a measured ceiling. Nothing in the
+    /// test suite can drive a File Provider extension, so the value at which a real device
+    /// actually struggles is **unverified** — see the verification document. It is set far
+    /// above the media files that motivated the complaint (a 4K hour-long video is well under
+    /// it) while still refusing something pathological with a clear message instead of dying.
+    static let maxMaterializableBytes: Int64 = 2 * 1024 * 1024 * 1024
 
     /// Whether a file of this size may be materialized. An unknown size is permitted — the
     /// real ceiling is enforced again in `E2EEDownloader` against the actual transferred bytes,
@@ -149,7 +164,7 @@ final class FileProviderItem: NSObject, NSFileProviderItem {
     /// Resolve a UTType from the server's MIME type, falling back to the filename extension and
     /// finally to `.data`.
     ///
-    /// Neutrino's own `application/vnd.neutrino.*` types are not registered with the system.
+    /// Neutrino's own `application/x-neutrino-*` types are not registered with the system.
     ///
     /// The subtlety that cost a test: `UTType(mimeType:)` does **not** return nil for an
     /// unregistered MIME type — it synthesises a *dynamic* type (`dyn.a…`). A dynamic type is

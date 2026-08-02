@@ -132,21 +132,21 @@ final class FileProviderItemTests: XCTestCase {
     /// type, so a naive non-nil check would let a useless `dyn.a…` shadow the far better answer
     /// available from the filename extension.
     func test_contentType_fallsBackToFilenameExtension_whenMIMEUnknown() {
-        // Neutrino's own vnd.neutrino.* types are not registered with the system.
-        let type = FileProviderItem.contentType(forMIME: "application/vnd.neutrino.doc",
+        // Neutrino's own x-neutrino-* types are not registered with the system.
+        let type = FileProviderItem.contentType(forMIME: NeutrinoMIME.doc,
                                                 filename: "Notes.pdf")
         XCTAssertEqual(type, .pdf)
     }
 
     func test_contentType_neverReturnsADynamicType() {
-        let type = FileProviderItem.contentType(forMIME: "application/vnd.neutrino.sheet",
+        let type = FileProviderItem.contentType(forMIME: NeutrinoMIME.sheet,
                                                 filename: "Budget.neutrinosheet")
         XCTAssertFalse(type.isDynamic, "a dyn.* type is useless to the Files app")
         XCTAssertEqual(type, .data)
     }
 
     func test_contentType_fallsBackToData_whenNothingResolves() {
-        let type = FileProviderItem.contentType(forMIME: "application/vnd.neutrino.doc",
+        let type = FileProviderItem.contentType(forMIME: NeutrinoMIME.doc,
                                                 filename: "Notes")
         XCTAssertEqual(type, .data)
     }
