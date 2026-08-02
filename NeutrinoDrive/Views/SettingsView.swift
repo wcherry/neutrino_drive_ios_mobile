@@ -6,6 +6,7 @@ struct SettingsView: View {
     @EnvironmentObject var offlineService: OfflineService
     @EnvironmentObject var photoSyncService: PhotoSyncService
     @EnvironmentObject var biometricService: BiometricAuthService
+    @EnvironmentObject var spotlightService: SpotlightIndexService
 
     @StateObject private var quotaService = QuotaService()
 
@@ -99,6 +100,22 @@ struct SettingsView: View {
                             Label("Back Up My Photos", systemImage: "photo.badge.arrow.down")
                             Spacer()
                             Text(photoSyncSummary)
+                                .foregroundStyle(.secondary)
+                                .font(.footnote)
+                        }
+                    }
+                }
+            }
+
+            if FeatureFlags.spotlightSearch {
+                Section("Search") {
+                    NavigationLink {
+                        SpotlightSettingsView(spotlightService: spotlightService)
+                    } label: {
+                        HStack {
+                            Label("Spotlight Indexing", systemImage: "magnifyingglass")
+                            Spacer()
+                            Text(spotlightService.isEnabled ? "On" : "Off")
                                 .foregroundStyle(.secondary)
                                 .font(.footnote)
                         }

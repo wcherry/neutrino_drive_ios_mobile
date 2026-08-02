@@ -71,4 +71,33 @@ enum FeatureFlags {
     /// dropped from `DriveSection.visibleCases`, so neither the iPhone picker nor the iPad
     /// sidebar offers it.
     static let favorites: Bool = true
+
+    /// Set to true to register the Phase 3 File Provider domain, which is what makes
+    /// "Neutrino Drive" appear in the Files app and in every document picker.
+    ///
+    /// When false no domain is ever registered, so the location does not appear and the
+    /// extension is never invoked. The extension is still *present* in the bundle — an
+    /// extension's presence is a bundle property, not a runtime one, the same caveat already
+    /// recorded for `shareExtension` — but with no domain there is nothing to invoke it.
+    static let filesAppIntegration: Bool = true
+
+    /// Set to true to handle documents opened **in place** by other apps.
+    ///
+    /// Pairs with `LSSupportsOpeningDocumentsInPlace` in `project.yml`, which is the half that
+    /// actually decides what iOS hands over; this flag gates the app's handling. When false the
+    /// app still refuses to delete a document it did not copy — that safety is in
+    /// `IncomingDocument`, not in this flag, because a flag must never be the only thing
+    /// standing between a user and a deleted file.
+    static let openInPlace: Bool = true
+
+    /// Set to true to enable Phase 3 CoreSpotlight indexing of file and folder **metadata**.
+    ///
+    /// Note the two-level gate: this flag being true does **not** enable indexing. The
+    /// user-facing setting (`SpotlightIndexService.isEnabled`) is independently `false` until
+    /// somebody turns it on, because CoreSpotlight's index is not end-to-end encrypted and
+    /// filenames are frequently the most sensitive thing about a file. See the type
+    /// documentation on `SpotlightIndexService` for the full reasoning.
+    ///
+    /// When false: no index write, no de-index, and the Settings section is hidden.
+    static let spotlightSearch: Bool = true
 }
