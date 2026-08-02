@@ -13,56 +13,13 @@ struct FileRowView: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            iconView
+            FileTypeIcon(kind: item.kind)
             textStack
             Spacer()
             badgeIcons
         }
         .accessibilityElement(children: .combine)
         .accessibilityLabel(accessibilityDescription)
-    }
-
-    // MARK: - Icon
-
-    private var iconView: some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(iconBackgroundColor)
-                .frame(width: 40, height: 40)
-            Image(systemName: item.iconName)
-                .font(.system(size: 18, weight: .medium))
-                .foregroundStyle(iconForegroundColor)
-        }
-    }
-
-    private var iconBackgroundColor: Color {
-        switch item.type {
-        case .folder:
-            return Color.blue.opacity(0.15)
-        case .file:
-            return neutrinoAccentColor.map { $0.opacity(0.15) } ?? Color.secondary.opacity(0.12)
-        }
-    }
-
-    private var iconForegroundColor: Color {
-        switch item.type {
-        case .folder:
-            return .blue
-        case .file:
-            return neutrinoAccentColor ?? .secondary
-        }
-    }
-
-    private var neutrinoAccentColor: Color? {
-        guard item.isNeutrinoNativeFormat, let mime = item.mimeType else { return nil }
-        switch mime {
-        case DriveItem.NeutrinoMIME.doc:     return .blue
-        case DriveItem.NeutrinoMIME.sheet:   return .green
-        case DriveItem.NeutrinoMIME.slide:   return .orange
-        case DriveItem.NeutrinoMIME.diagram: return .purple
-        case DriveItem.NeutrinoMIME.drawing: return Color(red: 0.9, green: 0.25, blue: 0.45)
-        default:                             return nil
-        }
     }
 
     // MARK: - Text
@@ -116,10 +73,10 @@ struct FileRowView: View {
     // MARK: - Accessibility
 
     private var accessibilityDescription: String {
-        var components = [item.name]
-        if item.type == .folder {
-            components.append("Folder")
-        } else if let size = item.size {
+        // The type is spoken as well as drawn — the icon is the only thing distinguishing a
+        // Sheet from a Slide visually, and VoiceOver users get nothing from it.
+        var components = [item.name, item.kind.accessibilityDescription]
+        if item.type == .file, let size = item.size {
             components.append(formattedSize(size))
         }
         components.append("Modified \(formattedDate(item.modifiedAt))")
@@ -147,28 +104,37 @@ struct FileRowView: View {
 // MARK: - Preview
 
 #Preview {
-    List {
-        FileRowView(item: DriveItem(
-            id: "1",
-            name: "Q3 Report.pdf",
-            type: .file,
-            parentID: nil,
-            size: 1_024_512,
-            modifiedAt: Date().addingTimeInterval(-86400),
-            isTrashed: false,
-            isShared: true,
-            mimeType: "application/pdf"
-        ))
-        FileRowView(item: DriveItem(
-            id: "2",
-            name: "Photos",
-            type: .folder,
-            parentID: nil,
-            size: nil,
-            modifiedAt: Date().addingTimeInterval(-3600),
-            isTrashed: false,
-            isShared: false,
-            mimeType: nil
-        ))
+    // One row per icon treatment worth eyeballing: a folder, the six Neutrino natives, a
+    // couple of ordinary types, and a file the server could only describe as
+    // octet-stream — whose icon has to come from its extension.
+    let samples: [(String, String?)] = [
+        ("Photos", nil),
+        ("Product Plan", NeutrinoMIME.doc),
+        ("Q3 Budget", NeutrinoMIME.sheet),
+        ("Kickoff Deck", NeutrinoMIME.slide),
+        ("System Architecture", NeutrinoMIME.diagram),
+        ("Logo Sketch", NeutrinoMIME.drawing),
+        ("Standup Notes", NeutrinoMIME.note),
+        ("Q3 Report.pdf", "application/pdf"),
+        ("Sunset.heic", "image/heic"),
+        ("Keynote.mp4", "video/mp4"),
+        ("archive.zip", "application/zip"),
+        ("Contract.docx", "application/octet-stream"),
+        ("mystery.bin", "application/octet-stream"),
+    ]
+    return List {
+        ForEach(Array(samples.enumerated()), id: \.offset) { index, sample in
+            FileRowView(item: DriveItem(
+                id: "\(index)",
+                name: sample.0,
+                type: sample.1 == nil ? .folder : .file,
+                parentID: nil,
+                size: sample.1 == nil ? nil : 1_024_512,
+                modifiedAt: Date().addingTimeInterval(-86400),
+                isTrashed: false,
+                isShared: index == 1,
+                mimeType: sample.1
+            ))
+        }
     }
 }

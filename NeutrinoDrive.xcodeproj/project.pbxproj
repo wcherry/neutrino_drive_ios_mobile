@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		01DFFA7460638926FDC7C180 /* FileKind.swift in Sources */ = {isa = PBXBuildFile; fileRef = 353E423634A3CA9F584BC176 /* FileKind.swift */; };
 		024934D9C46EEEEF7C4B44EF /* KeychainService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7D43F66518BECD37AE74152A /* KeychainService.swift */; };
 		032E54B75378D36DE4FD2AF7 /* FileProviderItemTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F2D224B13367A618632AE95D /* FileProviderItemTests.swift */; };
 		05BB68A98F5538EC38E8C3DA /* VersionHistoryService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3204F85B044BBD53BB886983 /* VersionHistoryService.swift */; };
@@ -105,6 +106,7 @@
 		B14CB89618525A700600438C /* FileAccessTracker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 009A809C4CC61FE504654944 /* FileAccessTracker.swift */; };
 		B3EC28701836603C11A801C5 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 79A7A0E78EC06A9490BA2757 /* Assets.xcassets */; };
 		B54C0386D67645FEEFB8D70F /* SpotlightIndexServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A2EE1AE217905FA9DD213C5 /* SpotlightIndexServiceTests.swift */; };
+		B61476C944200666CF260009 /* FileTypeIcon.swift in Sources */ = {isa = PBXBuildFile; fileRef = 67E4E60AD80C078A44ED9252 /* FileTypeIcon.swift */; };
 		B621990872A6DC1B07DD3BEE /* SecretStreamCrypto.swift in Sources */ = {isa = PBXBuildFile; fileRef = 25539212C96D589615FF3C3A /* SecretStreamCrypto.swift */; };
 		B712ECD01D50298923D94BA6 /* DriveServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E75AF3C358204F5340F0827 /* DriveServiceTests.swift */; };
 		B88EBD4DA680E13365EC3C85 /* DownloadServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7D8E929ED50294D7EE256659 /* DownloadServiceTests.swift */; };
@@ -118,6 +120,7 @@
 		D2CF5F59EAF12FE048AA1C0A /* UploadService.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC3153FC8A0FDB182E99909E /* UploadService.swift */; };
 		D33381B0005BD3A30285FC38 /* SealedKeyCrypto.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9D218BBDBAB8CA89AA1DF5D3 /* SealedKeyCrypto.swift */; };
 		D6EEA87B8D67254543DE4CAB /* Clibsodium in Frameworks */ = {isa = PBXBuildFile; productRef = 780688E1424C81F4D6D645F3 /* Clibsodium */; };
+		D7018E2A559D474126CC84B9 /* FileKindTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 39FB13F36FE4A9DB1F158C18 /* FileKindTests.swift */; };
 		D94615342E0FEBC1BC74334B /* EncryptedMediaStreamTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF251DE0A8BEB8220CDDDC4A /* EncryptedMediaStreamTests.swift */; };
 		DA05F735AC7602A6B6AD36E7 /* SecretStreamCrypto.swift in Sources */ = {isa = PBXBuildFile; fileRef = 25539212C96D589615FF3C3A /* SecretStreamCrypto.swift */; };
 		DA5D08204C931BE6965C5D6B /* DriveItem.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F9EEBB608D849ADEBE786FB /* DriveItem.swift */; };
@@ -201,8 +204,10 @@
 		3164F8D62550277E7500FB6D /* KeyImportView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyImportView.swift; sourceTree = "<group>"; };
 		3204F85B044BBD53BB886983 /* VersionHistoryService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VersionHistoryService.swift; sourceTree = "<group>"; };
 		327677CD98415FF37039A2D0 /* SharingServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SharingServiceTests.swift; sourceTree = "<group>"; };
+		353E423634A3CA9F584BC176 /* FileKind.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileKind.swift; sourceTree = "<group>"; };
 		372C73E6E1ACB5CC044D4FD3 /* NeutrinoDriveShare.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = NeutrinoDriveShare.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		3848E2E1A8F52106B1ECEB94 /* BackgroundTransferServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackgroundTransferServiceTests.swift; sourceTree = "<group>"; };
+		39FB13F36FE4A9DB1F158C18 /* FileKindTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileKindTests.swift; sourceTree = "<group>"; };
 		3ADD7A2E9C27197434FE3A0A /* SharingService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SharingService.swift; sourceTree = "<group>"; };
 		3C6D8A297D25380ECD262C81 /* OfflineFile.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OfflineFile.swift; sourceTree = "<group>"; };
 		3F8A06339C7846B57CB2C88A /* FeatureFlags.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeatureFlags.swift; sourceTree = "<group>"; };
@@ -218,6 +223,7 @@
 		5DB41FE55A0945983D9AD56C /* DriveSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DriveSection.swift; sourceTree = "<group>"; };
 		5E221501A1796A0C7CB2C7C3 /* MoveSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MoveSheet.swift; sourceTree = "<group>"; };
 		630C730986B97FEBB32C20EE /* ShareUploadCoordinatorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareUploadCoordinatorTests.swift; sourceTree = "<group>"; };
+		67E4E60AD80C078A44ED9252 /* FileTypeIcon.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileTypeIcon.swift; sourceTree = "<group>"; };
 		69BA21EB1245B8848A89C2BF /* KeyQRDecryptServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyQRDecryptServiceTests.swift; sourceTree = "<group>"; };
 		6A582F8B0E924BC7F78C9733 /* PhotoSyncServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoSyncServiceTests.swift; sourceTree = "<group>"; };
 		6A8AAD2BF70A2317058FAE59 /* LockScreenView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LockScreenView.swift; sourceTree = "<group>"; };
@@ -342,6 +348,7 @@
 			children = (
 				4F9EEBB608D849ADEBE786FB /* DriveItem.swift */,
 				5DB41FE55A0945983D9AD56C /* DriveSection.swift */,
+				353E423634A3CA9F584BC176 /* FileKind.swift */,
 				3C6D8A297D25380ECD262C81 /* OfflineFile.swift */,
 			);
 			path = Models;
@@ -429,6 +436,7 @@
 				AFDC3F2E1EDDF4169DEA3706 /* FileBrowserView.swift */,
 				0FF01D7775E4236733FC909F /* FileRowView.swift */,
 				C03256BD9495BF647E1D621E /* FilesView.swift */,
+				67E4E60AD80C078A44ED9252 /* FileTypeIcon.swift */,
 				3164F8D62550277E7500FB6D /* KeyImportView.swift */,
 				F995FEAD8545B523E9E66C76 /* KeyQRImportView.swift */,
 				6A8AAD2BF70A2317058FAE59 /* LockScreenView.swift */,
@@ -466,6 +474,7 @@
 				476D22CD2F0DB6C8DBE3AD10 /* E2EEUploaderTests.swift */,
 				AF251DE0A8BEB8220CDDDC4A /* EncryptedMediaStreamTests.swift */,
 				FAFF80153F6588C47A7B5E10 /* FavoritesTests.swift */,
+				39FB13F36FE4A9DB1F158C18 /* FileKindTests.swift */,
 				51702688577668BC7E75E373 /* FileProviderIdentifierTests.swift */,
 				F2D224B13367A618632AE95D /* FileProviderItemTests.swift */,
 				21AC07E0D4EF58EE62A98127 /* IncomingDocumentTests.swift */,
@@ -696,10 +705,12 @@
 				5B4F29CF82E1C690CAE70CA8 /* FeatureFlags.swift in Sources */,
 				B14CB89618525A700600438C /* FileAccessTracker.swift in Sources */,
 				6B69A2B077D27029DD7924B9 /* FileBrowserView.swift in Sources */,
+				01DFFA7460638926FDC7C180 /* FileKind.swift in Sources */,
 				80D62FC6BF77932804DA8F40 /* FileProviderDomainService.swift in Sources */,
 				56F028A7E3D83B2CF24A8B27 /* FileProviderIdentifier.swift in Sources */,
 				AA125990DFAE6C152330ECB0 /* FileProviderItem.swift in Sources */,
 				6363B4D2DB17A9276F46B17A /* FileRowView.swift in Sources */,
+				B61476C944200666CF260009 /* FileTypeIcon.swift in Sources */,
 				3BD6B2A2583353EF5D435FE8 /* FilesView.swift in Sources */,
 				43124650E742EFF3B315C1D5 /* IncomingDocument.swift in Sources */,
 				FB16FF91527531E74E5469A6 /* KeyImportService.swift in Sources */,
@@ -779,6 +790,7 @@
 				20F7A9EAC6847F2638576420 /* E2EEUploaderTests.swift in Sources */,
 				D94615342E0FEBC1BC74334B /* EncryptedMediaStreamTests.swift in Sources */,
 				513BF32E8B0DB23D969F39E8 /* FavoritesTests.swift in Sources */,
+				D7018E2A559D474126CC84B9 /* FileKindTests.swift in Sources */,
 				AF1C1E3B0F58D75D7DFCF199 /* FileProviderIdentifierTests.swift in Sources */,
 				032E54B75378D36DE4FD2AF7 /* FileProviderItemTests.swift in Sources */,
 				7A3A1EC4026E1184ECF34B99 /* IncomingDocumentTests.swift in Sources */,
@@ -891,7 +903,7 @@
 			buildSettings = {
 				CODE_SIGN_ENTITLEMENTS = NeutrinoDriveShare/NeutrinoDriveShare.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 4;
 				DEVELOPMENT_TEAM = 46KWJJ63FU;
 				INFOPLIST_FILE = NeutrinoDriveShare/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
@@ -913,7 +925,7 @@
 			buildSettings = {
 				CODE_SIGN_ENTITLEMENTS = NeutrinoDriveFileProvider/NeutrinoDriveFileProvider.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 4;
 				DEVELOPMENT_TEAM = 46KWJJ63FU;
 				INFOPLIST_FILE = NeutrinoDriveFileProvider/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
@@ -935,7 +947,7 @@
 			buildSettings = {
 				CODE_SIGN_ENTITLEMENTS = NeutrinoDriveShare/NeutrinoDriveShare.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 4;
 				DEVELOPMENT_TEAM = 46KWJJ63FU;
 				INFOPLIST_FILE = NeutrinoDriveShare/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
@@ -959,7 +971,7 @@
 				CODE_SIGN_ENTITLEMENTS = NeutrinoDrive/NeutrinoDrive.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 4;
 				DEVELOPMENT_TEAM = 46KWJJ63FU;
 				INFOPLIST_FILE = NeutrinoDrive/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
@@ -1002,7 +1014,7 @@
 				CODE_SIGN_ENTITLEMENTS = NeutrinoDrive/NeutrinoDrive.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 4;
 				DEVELOPMENT_TEAM = 46KWJJ63FU;
 				INFOPLIST_FILE = NeutrinoDrive/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
@@ -1023,7 +1035,7 @@
 			buildSettings = {
 				CODE_SIGN_ENTITLEMENTS = NeutrinoDriveFileProvider/NeutrinoDriveFileProvider.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 4;
 				DEVELOPMENT_TEAM = 46KWJJ63FU;
 				INFOPLIST_FILE = NeutrinoDriveFileProvider/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 16.0;

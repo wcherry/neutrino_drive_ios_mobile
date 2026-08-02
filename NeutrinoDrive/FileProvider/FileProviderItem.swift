@@ -164,7 +164,7 @@ final class FileProviderItem: NSObject, NSFileProviderItem {
     /// Resolve a UTType from the server's MIME type, falling back to the filename extension and
     /// finally to `.data`.
     ///
-    /// Neutrino's own `application/vnd.neutrino.*` types are not registered with the system.
+    /// Neutrino's own `application/x-neutrino-*` types are not registered with the system.
     ///
     /// The subtlety that cost a test: `UTType(mimeType:)` does **not** return nil for an
     /// unregistered MIME type — it synthesises a *dynamic* type (`dyn.a…`). A dynamic type is

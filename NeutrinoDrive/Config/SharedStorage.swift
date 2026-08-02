@@ -40,7 +40,7 @@ enum SharedStorage {
         static let keyVersion = "nd.encryption.key_version"
     }
 
-    static let defaultHost = "http://localhost:8080"
+    static let defaultHost = "https://www.getneutrino.app"
 
     // MARK: - Defaults
 
