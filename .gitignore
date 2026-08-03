@@ -29,3 +29,6 @@ Podfile.lock
 # Swift Package Manager
 .build/
 .swiftpm/
+
+# App Store Connect credentials for scripts/deploy_testflight.sh
+scripts/.env

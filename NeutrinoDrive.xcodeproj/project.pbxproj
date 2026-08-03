@@ -67,6 +67,7 @@
 		9A19DF8556C44AD8D37D3695 /* CreateFolderSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = ACF13539E1CDAD54D5F123C8 /* CreateFolderSheet.swift */; };
 		A4309A73D2D6CB256BD96435 /* MoveSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5E221501A1796A0C7CB2C7C3 /* MoveSheet.swift */; };
 		AD889E27EDBC05A3A8D9767A /* SharedStorage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C34071C259B80445A15F5D3 /* SharedStorage.swift */; };
+		B3EC28701836603C11A801C5 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 79A7A0E78EC06A9490BA2757 /* Assets.xcassets */; };
 		B712ECD01D50298923D94BA6 /* DriveServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E75AF3C358204F5340F0827 /* DriveServiceTests.swift */; };
 		B88EBD4DA680E13365EC3C85 /* DownloadServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7D8E929ED50294D7EE256659 /* DownloadServiceTests.swift */; };
 		C05DBAA6ABC844B145C4CE8B /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E3985D05C9C065C11E2FAFB0 /* ContentView.swift */; };
@@ -155,6 +156,7 @@
 		6DA4F68F868089DB48832A1A /* RecentsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecentsView.swift; sourceTree = "<group>"; };
 		6E9DB7865AEED70BD34195A9 /* KeyImportServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyImportServiceTests.swift; sourceTree = "<group>"; };
 		70A49B80E184DD242C3F71F4 /* RenameSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RenameSheet.swift; sourceTree = "<group>"; };
+		79A7A0E78EC06A9490BA2757 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		7D43F66518BECD37AE74152A /* KeychainService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainService.swift; sourceTree = "<group>"; };
 		7D8E929ED50294D7EE256659 /* DownloadServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DownloadServiceTests.swift; sourceTree = "<group>"; };
 		8834B35CB52B70D4F1BA48A6 /* DriveItemTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DriveItemTests.swift; sourceTree = "<group>"; };
@@ -251,6 +253,7 @@
 		4F85FB0514347D724554EC6E /* NeutrinoDrive */ = {
 			isa = PBXGroup;
 			children = (
+				79A7A0E78EC06A9490BA2757 /* Assets.xcassets */,
 				E3985D05C9C065C11E2FAFB0 /* ContentView.swift */,
 				11242259008914C1DEF27482 /* Info.plist */,
 				11221E126AD26096B14DEDC6 /* NeutrinoDrive.entitlements */,
@@ -372,6 +375,7 @@
 			buildConfigurationList = BAD03B2A575713D6C368E4C1 /* Build configuration list for PBXNativeTarget "NeutrinoDrive" */;
 			buildPhases = (
 				75562A5E1732CF80E98DD6D0 /* Sources */,
+				03E17055ADD5D2651FD5E0B7 /* Resources */,
 				9A547FF706D284F727113223 /* Frameworks */,
 				0C3BF9770F7819AEDDF23A5A /* Embed Foundation Extensions */,
 			);
@@ -436,9 +440,11 @@
 				TargetAttributes = {
 					6D30D7DE8B2D3AB416758EC9 = {
 						DevelopmentTeam = 46KWJJ63FU;
+						ProvisioningStyle = Automatic;
 					};
 					F9CD7DB36FBFFF953E5A64CC = {
 						DevelopmentTeam = 46KWJJ63FU;
+						ProvisioningStyle = Automatic;
 					};
 				};
 			};
@@ -465,6 +471,17 @@
 			);
 		};
 /* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		03E17055ADD5D2651FD5E0B7 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				B3EC28701836603C11A801C5 /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		0D25B3852B7F0CF516848EB1 /* Sources */ = {
@@ -647,7 +664,8 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_ENTITLEMENTS = NeutrinoDriveShare/NeutrinoDriveShare.entitlements;
-				CURRENT_PROJECT_VERSION = 1;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 2;
 				DEVELOPMENT_TEAM = 46KWJJ63FU;
 				INFOPLIST_FILE = NeutrinoDriveShare/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
@@ -668,7 +686,8 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_ENTITLEMENTS = NeutrinoDriveShare/NeutrinoDriveShare.entitlements;
-				CURRENT_PROJECT_VERSION = 1;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 2;
 				DEVELOPMENT_TEAM = 46KWJJ63FU;
 				INFOPLIST_FILE = NeutrinoDriveShare/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
@@ -691,7 +710,8 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = NeutrinoDrive/NeutrinoDrive.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
-				CURRENT_PROJECT_VERSION = 1;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 2;
 				DEVELOPMENT_TEAM = 46KWJJ63FU;
 				INFOPLIST_FILE = NeutrinoDrive/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
@@ -733,7 +753,8 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = NeutrinoDrive/NeutrinoDrive.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
-				CURRENT_PROJECT_VERSION = 1;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 2;
 				DEVELOPMENT_TEAM = 46KWJJ63FU;
 				INFOPLIST_FILE = NeutrinoDrive/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
