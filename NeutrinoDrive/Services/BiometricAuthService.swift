@@ -316,6 +316,12 @@ final class BiometricAuthService: ObservableObject {
     func sceneDidEnterBackground() {
         guard FeatureFlags.biometricLock, isEnabled else { return }
         isObscured = true
+        // The Face ID system prompt itself drops the scene to `.background` and back while an
+        // unlock is already in flight. Recording that as a fresh backgrounding would hand
+        // `sceneDidBecomeActive()` a timestamp to re-lock against the instant the real unlock
+        // succeeds — an unlock-then-instantly-relock cycle that repeats forever. Only a background
+        // that starts from an *unlocked* app is a genuine backgrounding.
+        guard !isLocked else { return }
         lastBackgroundedAt = now()
     }
 
@@ -327,11 +333,16 @@ final class BiometricAuthService: ObservableObject {
             isLocked = false
             return
         }
-        if Self.shouldLock(lastBackgroundedAt: lastBackgroundedAt, now: now(), gracePeriod: gracePeriod) {
+        isObscured = false
+        // Mirrors the guard in `sceneDidEnterBackground()`: while already locked (including
+        // mid-authentication) there is no decision to make, and re-running `shouldLock` here is
+        // what turns the Face ID prompt's own scene transitions into an infinite re-lock loop.
+        guard !isLocked, let backgroundedAt = lastBackgroundedAt else { return }
+        if Self.shouldLock(lastBackgroundedAt: backgroundedAt, now: now(), gracePeriod: gracePeriod) {
             isLocked = true
             lastError = nil
         }
-        isObscured = false
+        lastBackgroundedAt = nil
     }
 
     /// True when the lock overlay should be on screen.
