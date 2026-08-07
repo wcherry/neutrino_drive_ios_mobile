@@ -2,15 +2,11 @@ import XCTest
 @testable import NeutrinoDrive
 
 /// Unit tests for SearchService.
-/// Network calls are not made — tests exercise the synchronous/in-process paths only.
 ///
-/// Response decoding (mapping the `/api/v1/drive/search` JSON payload's `items` into
-/// `DriveItem`) is NOT covered here. SearchService follows DriveService/DownloadService's
-/// convention of a private, file-scoped response DTO + private decoder with no public seam,
-/// and this repo's test convention (see DownloadServiceTests.swift) deliberately avoids
-/// stubbing URLSession/URLProtocol. That mapping is exercised indirectly via manual/
-/// integration testing against the live endpoint. What IS unit-testable without the network —
-/// the documented "empty query is a local no-op" behaviour — is covered below.
+/// Search runs entirely against the on-device `LocalSearchIndex` (see
+/// `SearchIndexSyncService` for how that index gets built and kept in sync) — no network call
+/// is made, so both the empty-query no-op and real query/result-mapping behaviour are
+/// unit-testable by injecting a seeded, non-shared `LocalSearchIndex`.
 @MainActor
 final class SearchServiceTests: XCTestCase {
 
@@ -20,6 +16,14 @@ final class SearchServiceTests: XCTestCase {
         DriveItem(id: id, name: name, type: .file, parentID: nil,
                   size: 1024, modifiedAt: Date(), isTrashed: false, isShared: false,
                   mimeType: "text/plain")
+    }
+
+    /// A `LocalSearchIndex` seeded with one file, independent of the `.shared` singleton.
+    private func seededIndex(id: String = "1", title: String = "Quarterly Report.pdf",
+                             mimeType: String? = "application/pdf") -> LocalSearchIndex {
+        let index = LocalSearchIndex(seedDocs: [])
+        index.upsertFile(id: id, title: title, updatedAt: 1_700_000_000_000, mimeType: mimeType, sizeBytes: 2048)
+        return index
     }
 
     // MARK: - SearchService initial state
@@ -76,5 +80,43 @@ final class SearchServiceTests: XCTestCase {
         await sut.search(query: "")
 
         XCTAssertTrue(sut.results.isEmpty)
+    }
+
+    // MARK: - search — non-empty query, against a seeded local index
+
+    func test_search_matchingQuery_returnsMappedDriveItem() async {
+        let sut = SearchService(localIndex: seededIndex())
+
+        await sut.search(query: "quarterly")
+
+        XCTAssertEqual(sut.results.map(\.id), ["1"])
+        XCTAssertEqual(sut.results.first?.name, "Quarterly Report.pdf")
+        XCTAssertEqual(sut.results.first?.type, .file)
+        XCTAssertEqual(sut.results.first?.mimeType, "application/pdf")
+        XCTAssertEqual(sut.results.first?.size, 2048)
+    }
+
+    func test_search_matchingQuery_leavesIsSearchingFalseAfterCompletion() async {
+        let sut = SearchService(localIndex: seededIndex())
+
+        await sut.search(query: "quarterly")
+
+        XCTAssertFalse(sut.isSearching)
+    }
+
+    func test_search_nonMatchingQuery_returnsNoResults() async {
+        let sut = SearchService(localIndex: seededIndex())
+
+        await sut.search(query: "nonexistent")
+
+        XCTAssertTrue(sut.results.isEmpty)
+    }
+
+    func test_search_trimsWhitespaceAroundQuery() async {
+        let sut = SearchService(localIndex: seededIndex())
+
+        await sut.search(query: "  quarterly  ")
+
+        XCTAssertEqual(sut.results.map(\.id), ["1"])
     }
 }
