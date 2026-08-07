@@ -107,7 +107,9 @@ struct FileBrowserView: View {
             await searchService.search(query: searchText)
         }
         .task {
-            searchService.authService = authService
+            guard FeatureFlags.search, section == .myDrive else { return }
+            SearchIndexSyncService.shared.attach(driveService: driveService, authService: authService)
+            await SearchIndexSyncService.shared.syncIfDue()
         }
         .alert("Error", isPresented: Binding(
             get: { driveService.error != nil },

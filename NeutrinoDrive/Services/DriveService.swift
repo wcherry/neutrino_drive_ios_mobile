@@ -489,6 +489,47 @@ final class DriveService: ObservableObject {
         logger.debug("fileWasUploaded: id=\(result.id, privacy: .public) name=\(result.name, privacy: .public)")
     }
 
+    // MARK: - Search Indexing
+
+    /// Every file across the whole My Drive tree, fetched fresh via a recursive walk of
+    /// `/api/v1/drive` and `/api/v1/drive/folders/{id}`.
+    ///
+    /// Deliberately independent of `allItems`/`loadedParentIDs`: those reflect only the
+    /// folders this session has browsed into, which is not enough to build a complete search
+    /// index. This does not touch either — it is a read for `SearchIndexSyncService`'s
+    /// periodic full reindex, not a substitute for the lazy per-folder loading the file
+    /// browser relies on.
+    ///
+    /// Returns `nil` if any branch of the walk fails (a transient network error, a
+    /// mid-walk sign-out, etc.) rather than the files collected so far. `SearchIndexSyncService`
+    /// uses this result to *delete* index entries that are no longer present — treating a
+    /// partial walk as if it were the whole tree would make one flaky request look like every
+    /// file in that branch was deleted, wrongly pruning entries a sync from another device may
+    /// have just pulled in.
+    func fetchAllFilesForIndexing() async -> [DriveItem]? {
+        await walkForIndexing(parentID: nil)
+    }
+
+    private func walkForIndexing(parentID: String?) async -> [DriveItem]? {
+        let response: APIFolderContentsResponse
+        do {
+            if let parentID {
+                response = try await get("/api/v1/drive/folders/\(parentID)")
+            } else {
+                response = try await get("/api/v1/drive")
+            }
+        } catch {
+            logger.error("fetchAllFilesForIndexing: failed at parent=\(parentID ?? "root", privacy: .public) error=\(error, privacy: .public)")
+            return nil
+        }
+        var result = response.files.map { DriveItem(file: $0) }
+        for folder in response.folders {
+            guard let children = await walkForIndexing(parentID: folder.id) else { return nil }
+            result.append(contentsOf: children)
+        }
+        return result
+    }
+
     // MARK: - Folder Resolution
 
     /// Find-or-create a folder named `name` under `parentID` (nil = root).

@@ -38,6 +38,11 @@ enum SharedStorage {
         static let publicKey  = "nd.encryption.public_key"
         static let privateKey = "nd.encryption.private_key"
         static let keyVersion = "nd.encryption.key_version"
+
+        /// The symmetric key that encrypts this account's search-index snapshot (base64url).
+        /// Device-local: not read by the share extension, so it lives in the default Keychain
+        /// group rather than the shared one. See `SearchIndexSyncService`.
+        static let searchIndexKey = "nd.search.index_key"
     }
 
     static let defaultHost = "http://localhost:8080"
