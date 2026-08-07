@@ -100,6 +100,8 @@ struct NeutrinoDriveApp: App {
 private struct RootContentView: View {
     @EnvironmentObject var authService: AuthService
 
+    @StateObject private var deepLinkRouter = DeepLinkRouter()
+
     @State private var showOpenInAlert = false
     @State private var openInAlertMessage = ""
 
@@ -113,7 +115,12 @@ private struct RootContentView: View {
                     .environmentObject(authService)
             }
         }
+        .presentingDeepLinkedFile(router: deepLinkRouter)
         .onOpenURL { url in
+            // Universal Links first: they are `https`, so they can never be confused with the
+            // key-file "Open In" flow below, which only ever sees `file://` URLs.
+            if FeatureFlags.companionAppLinks, deepLinkRouter.handle(url) { return }
+
             guard url.pathExtension == "json" else { return }
             Task { @MainActor in
                 do {
