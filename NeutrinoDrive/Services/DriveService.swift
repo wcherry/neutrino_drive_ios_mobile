@@ -148,6 +148,18 @@ final class DriveService: ObservableObject {
         }
     }
 
+    // MARK: - Single Item
+
+    /// Fetches one file's metadata straight from the server.
+    ///
+    /// Everything else in this service reads from a listing, which is enough while the user is
+    /// browsing. A Universal Link is not: it names a file that may sit in a folder this session has
+    /// never opened, so there is no listing to read it out of.
+    func fetchItem(id: String) async throws -> DriveItem {
+        let metadata: APIFileMetadataResponse = try await get("/api/v1/drive/files/\(id)/metadata")
+        return DriveItem(metadata: metadata)
+    }
+
     // MARK: - Load
 
     func loadSection(_ section: DriveSection, parentID: String?) async {

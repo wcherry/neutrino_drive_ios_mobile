@@ -66,6 +66,15 @@ enum FeatureFlags {
     /// gates only the listing and restore UI, not any separate crypto.
     static let versionHistory: Bool = true
 
+    /// Set to true to hand Neutrino-native files to their companion app (Notes, Docs) over a
+    /// Universal Link, and to accept inbound `https://www.getneutrino.app/open/…` links.
+    ///
+    /// When false, tapping a note or document falls back to the behaviour that shipped before —
+    /// the in-app web viewer or a download — and inbound links are ignored. Turning it off does not
+    /// remove the `applinks:` entitlement (that is a bundle property, not a runtime one), so iOS
+    /// will still hand the app the URL; `onOpenURL` simply drops it.
+    static let companionAppLinks: Bool = true
+
     /// Set to true to enable the Phase 5 favorites feature.
     /// When false, the star action is hidden from context menus and the "Starred" section is
     /// dropped from `DriveSection.visibleCases`, so neither the iPhone picker nor the iPad

@@ -41,6 +41,13 @@ targets:
         # token and the encryption-key material the app imported.
         keychain-access-groups:
           - $(AppIdentifierPrefix)com.neutrino.drive.shared
+        # Universal Links. Both spellings are claimed so a link pasted without the
+        # "www." still opens the app rather than Safari. Which *paths* reach Drive is
+        # decided by the apple-app-site-association document served from the domain —
+        # see deploy/apple-app-site-association — not by this list.
+        com.apple.developer.associated-domains:
+          - applinks:www.getneutrino.app
+          - applinks:getneutrino.app
     info:
       path: NeutrinoDrive/Info.plist
       properties:

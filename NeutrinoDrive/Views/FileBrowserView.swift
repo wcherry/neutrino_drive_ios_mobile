@@ -36,6 +36,22 @@ struct FileBrowserView: View {
     @StateObject private var searchService = SearchService()
     @State private var searchText = ""
 
+    /// Set when a companion app was asked for and is not installed — see `CompanionPrompt`.
+    @State private var companionPrompt: CompanionPrompt?
+
+    private let companionLauncher = CompanionAppLauncher()
+
+    // MARK: - CompanionPrompt
+
+    /// The "…isn't installed" alert's payload. Carries the item as well as the kind so the
+    /// "Open in Drive" button can fall through to the in-Drive path for the very file that was
+    /// tapped.
+    private struct CompanionPrompt: Identifiable {
+        let item: DriveItem
+        let kind: NeutrinoAppLink.Kind
+        var id: String { item.id }
+    }
+
     // MARK: - Computed
 
     private var currentItems: [DriveItem] {
@@ -134,6 +150,22 @@ struct FileBrowserView: View {
         .sheet(item: $nativeViewerItem) { item in
             NeutrinoFileViewer(item: item)
         }
+        .alert(
+            companionPrompt.map { "\($0.kind.appName) Isn\u{2019}t Installed" } ?? "",
+            isPresented: Binding(
+                get: { companionPrompt != nil },
+                set: { if !$0 { companionPrompt = nil } }
+            ),
+            presenting: companionPrompt
+        ) { prompt in
+            Button("Open in Drive") {
+                companionPrompt = nil
+                openInDrive(prompt.item)
+            }
+            Button("Cancel", role: .cancel) { companionPrompt = nil }
+        } message: { prompt in
+            Text("Install \(prompt.kind.appName) to edit \u{201C}\(prompt.item.name)\u{201D}, or open it here in Drive.")
+        }
         .alert("Download Failed", isPresented: Binding(
             get: { downloadError != nil },
             set: { if !$0 { downloadError = nil } }
@@ -227,6 +259,13 @@ struct FileBrowserView: View {
                 NavigationLink(value: item) {
                     FileRowView(item: item)
                 }
+            } else if companionKind(for: item) != nil {
+                Button {
+                    openInCompanionApp(item)
+                } label: {
+                    FileRowView(item: item)
+                }
+                .buttonStyle(.plain)
             } else if FeatureFlags.viewNeutrinoFiles && item.isNeutrinoNativeFormat {
                 Button {
                     nativeViewerItem = item
@@ -346,42 +385,42 @@ struct FileBrowserView: View {
         }
     }
 
+    /// The "how do I open this" actions, identical wherever a file is listed. Factored out so the
+    /// companion-app entry cannot end up on My Drive but missing from Starred, Shared, or Recents.
+    @ViewBuilder
+    private func openActions(for item: DriveItem) -> some View {
+        if item.type == .file, let kind = companionKind(for: item) {
+            Button {
+                openInCompanionApp(item)
+            } label: {
+                Label("Open in \(kind.appName)", systemImage: "arrow.up.forward.app")
+            }
+            Divider()
+        } else if item.type == .file && FeatureFlags.viewNeutrinoFiles && item.isNeutrinoNativeFormat {
+            Button {
+                nativeViewerItem = item
+            } label: {
+                Label("Open", systemImage: "doc.text.magnifyingglass")
+            }
+            Divider()
+        } else if item.type == .file && FeatureFlags.downloadFiles {
+            Button {
+                startDownload(for: item)
+            } label: {
+                Label("Download & Open", systemImage: "arrow.down.circle")
+            }
+            Divider()
+        }
+    }
+
     @ViewBuilder
     private func contextMenuItems(for item: DriveItem) -> some View {
         switch section {
         case .starred, .shared, .recents:
-            if item.type == .file && FeatureFlags.viewNeutrinoFiles && item.isNeutrinoNativeFormat {
-                Button {
-                    nativeViewerItem = item
-                } label: {
-                    Label("Open", systemImage: "doc.text.magnifyingglass")
-                }
-                Divider()
-            } else if item.type == .file && FeatureFlags.downloadFiles {
-                Button {
-                    startDownload(for: item)
-                } label: {
-                    Label("Download & Open", systemImage: "arrow.down.circle")
-                }
-                Divider()
-            }
+            openActions(for: item)
             sharedItemActions(for: item)
         case .myDrive:
-            if item.type == .file && FeatureFlags.viewNeutrinoFiles && item.isNeutrinoNativeFormat {
-                Button {
-                    nativeViewerItem = item
-                } label: {
-                    Label("Open", systemImage: "doc.text.magnifyingglass")
-                }
-                Divider()
-            } else if item.type == .file && FeatureFlags.downloadFiles {
-                Button {
-                    startDownload(for: item)
-                } label: {
-                    Label("Download & Open", systemImage: "arrow.down.circle")
-                }
-                Divider()
-            }
+            openActions(for: item)
             if item.type == .file && FeatureFlags.offlineFiles {
                 Button {
                     toggleOffline(for: item)
@@ -463,6 +502,43 @@ struct FileBrowserView: View {
                 }
                 .disabled(currentItems.isEmpty)
             }
+        }
+    }
+
+    // MARK: - Companion Apps
+
+    /// The sibling app that owns this file's format, or nil when Drive should open it itself.
+    ///
+    /// Kinds without a shipping iOS app (Sheets, Slides, …) return nil deliberately: offering to
+    /// open them elsewhere would always end in the "isn't installed" alert.
+    private func companionKind(for item: DriveItem) -> NeutrinoAppLink.Kind? {
+        guard FeatureFlags.companionAppLinks, item.type == .file else { return nil }
+        guard let kind = NeutrinoAppLink.kind(forMIME: item.mimeType), kind.hasCompanionApp else {
+            return nil
+        }
+        return kind
+    }
+
+    /// Hands the file to its companion app, falling back to a prompt when that app is missing.
+    ///
+    /// Only the file id crosses the boundary — the companion fetches the current version from the
+    /// server, so nothing is downloaded twice and the user never opens a stale copy.
+    private func openInCompanionApp(_ item: DriveItem) {
+        guard let kind = companionKind(for: item) else { return }
+        Task {
+            let outcome = await companionLauncher.open(fileID: item.id, mimeType: item.mimeType)
+            if outcome != .opened {
+                companionPrompt = CompanionPrompt(item: item, kind: kind)
+            }
+        }
+    }
+
+    /// The pre-companion-app behaviour, used as the fallback when the sibling app is missing.
+    private func openInDrive(_ item: DriveItem) {
+        if FeatureFlags.viewNeutrinoFiles && item.isNeutrinoNativeFormat {
+            nativeViewerItem = item
+        } else if FeatureFlags.downloadFiles {
+            startDownload(for: item)
         }
     }
 
