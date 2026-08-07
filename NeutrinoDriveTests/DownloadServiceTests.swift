@@ -47,10 +47,12 @@ final class DownloadServiceTests: XCTestCase {
         // Store a fake key pair so the keys check passes.
         KeychainService.save("fake-public-key", forKey: KeyImportService.publicKeyKeychainKey)
         KeychainService.save("fake-private-key", forKey: KeyImportService.privateKeyKeychainKey)
+        KeychainService.save("1", forKey: KeyImportService.keyVersionKeychainKey)
         KeychainService.delete(forKey: AuthService.accessTokenKey)
         defer {
             KeychainService.delete(forKey: KeyImportService.publicKeyKeychainKey)
             KeychainService.delete(forKey: KeyImportService.privateKeyKeychainKey)
+            KeychainService.delete(forKey: KeyImportService.keyVersionKeychainKey)
         }
 
         let sut = DownloadService()

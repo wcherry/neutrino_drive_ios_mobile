@@ -61,7 +61,9 @@ enum KeyImportService {
         else {
             throw KeyImportError.missingFields
         }
-        let keyVersionString = dict["key_version"] ?? dict["v"] ?? "1"
+        guard let keyVersionString = dict["key_version"] ?? dict["v"] else {
+            throw KeyImportError.missingFields
+        }
 
         // Step 3: Reject PEM-encoded keys
         if publicKeyString.hasPrefix("-----BEGIN") || privateKeyString.hasPrefix("-----BEGIN") {
@@ -119,12 +121,18 @@ enum KeyImportService {
     /// Tries Curve25519 key agreement (X25519), Curve25519 signing (Ed25519), and P-256 in order.
     private static func validateKeyPair(pubData: Data, privData: Data) -> Bool {
         // X25519: derive public key from private and compare directly.
-        if let priv = try? Curve25519.KeyAgreement.PrivateKey(rawRepresentation: privData) {
-            return priv.publicKey.rawRepresentation == pubData
+        // Note: raw 32-byte data will parse as a valid X25519 key almost regardless of its
+        // actual origin, so a parse success here does not confirm the pair is actually X25519 —
+        // only a matching public key does. On mismatch, fall through to the other formats
+        // instead of returning early.
+        if let priv = try? Curve25519.KeyAgreement.PrivateKey(rawRepresentation: privData),
+           priv.publicKey.rawRepresentation == pubData {
+            return true
         }
         // Ed25519: same approach.
-        if let priv = try? Curve25519.Signing.PrivateKey(rawRepresentation: privData) {
-            return priv.publicKey.rawRepresentation == pubData
+        if let priv = try? Curve25519.Signing.PrivateKey(rawRepresentation: privData),
+           priv.publicKey.rawRepresentation == pubData {
+            return true
         }
         // P-256: sign a test payload and verify with the public key.
         let p256priv = (try? P256.Signing.PrivateKey(rawRepresentation: privData))
