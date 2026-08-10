@@ -11,6 +11,7 @@ struct SettingsView: View {
 
     @State private var hasKeys = KeyImportService.hasStoredKeys()
     @State private var showKeyImport = false
+    @State private var showVaultUnlock = false
     @State private var showRemoveConfirmation = false
     @State private var showClearCacheConfirmation = false
     @State private var keyAccessDenied: String?
@@ -61,10 +62,28 @@ struct SettingsView: View {
                         Text("This will delete your stored encryption keys. You will need to re-import them to access encrypted files.")
                     }
                 } else {
+                    // Preferred path: the key is already on the server, wrapped.
+                    // Unlocking with the encryption password fetches it here, so
+                    // no file has to be moved between devices.
+                    Button {
+                        showVaultUnlock = true
+                    } label: {
+                        Label("Unlock with Password", systemImage: "lock.open")
+                    }
+                    .sheet(isPresented: $showVaultUnlock) {
+                        hasKeys = KeyImportService.hasStoredKeys()
+                    } content: {
+                        VaultUnlockView(isPresented: $showVaultUnlock) {
+                            hasKeys = KeyImportService.hasStoredKeys()
+                        }
+                    }
+
+                    // Manual import stays for accounts created before the vault,
+                    // and for moving a key between accounts.
                     Button {
                         showKeyImport = true
                     } label: {
-                        Label("Import Encryption Key", systemImage: "key")
+                        Label("Import Key File", systemImage: "key")
                     }
                     .sheet(isPresented: $showKeyImport) {
                         hasKeys = KeyImportService.hasStoredKeys()
