@@ -31,7 +31,7 @@ final class FavoritesTests: XCTestCase {
 
     override func setUp() {
         super.setUp()
-        KeychainService.save("test-token", forKey: AuthService.accessTokenKey)
+        KeychainService.save(TestJWT.make(), forKey: AuthService.accessTokenKey)
     }
 
     override func tearDown() {

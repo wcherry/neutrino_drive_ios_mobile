@@ -13,15 +13,14 @@
 		07F648E2CD3255BFBB976CE2 /* PhotoSyncServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6A582F8B0E924BC7F78C9733 /* PhotoSyncServiceTests.swift */; };
 		0845C6477B280EBC8940B4FC /* SharedStorage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C34071C259B80445A15F5D3 /* SharedStorage.swift */; };
 		091C7DB3F9F6513A761DEF25 /* SearchService.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC32FE0D6BB9D7C94882BB8F /* SearchService.swift */; };
-		0A2B16FB4764762227C597A1 /* KeyVaultCrypto.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5CBB5299C64195F8ED11C712 /* KeyVaultCrypto.swift */; };
 		0AE91FA43DA3EE24FE3B1B99 /* BiometricAuthService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1AED111A1DFA3864B2AE787 /* BiometricAuthService.swift */; };
 		0D0AE2A91CF6C64E477B9666 /* QRScannerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9B9EC0F713F068F7C8A12EDD /* QRScannerView.swift */; };
 		0D8546209C37EA2B1F178E91 /* OfflineView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 90469D5CC989E615DE795823 /* OfflineView.swift */; };
 		0FB655E0D63182E33C64FE54 /* DeepLinkFilePresenter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 60C9162A7030D91E58F8E01C /* DeepLinkFilePresenter.swift */; };
+		107D71FEA1B2C652FF9ACEB9 /* RecoveryKit.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9B6A68F503777C7EA0DE23ED /* RecoveryKit.swift */; };
 		141F4B2FB7C98FCE44A97FE2 /* NeutrinoAppLinkTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3EB651419CBEB1C389962E4A /* NeutrinoAppLinkTests.swift */; };
 		18E8F2192FDC05BBC327CBAE /* KeyImportView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3164F8D62550277E7500FB6D /* KeyImportView.swift */; };
 		1F786DEF7714CD8067ADC7F8 /* PhotoSyncQueue.swift in Sources */ = {isa = PBXBuildFile; fileRef = C77587DE1135BBDE2F75E650 /* PhotoSyncQueue.swift */; };
-		1F8B33856C758AE8CCCEF216 /* KeyVaultService.swift in Sources */ = {isa = PBXBuildFile; fileRef = C5DACCCECFE0749DA9E8778C /* KeyVaultService.swift */; };
 		20F7A9EAC6847F2638576420 /* E2EEUploaderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 476D22CD2F0DB6C8DBE3AD10 /* E2EEUploaderTests.swift */; };
 		20FCC32606F17E69E397EF25 /* BackgroundTransferService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9839D82A96C528D359452A8C /* BackgroundTransferService.swift */; };
 		225CA1446F97EE07D72D350C /* BackgroundTransferService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9839D82A96C528D359452A8C /* BackgroundTransferService.swift */; };
@@ -51,9 +50,11 @@
 		6374DA2E9C607DC50AE5B422 /* KeyQRImportView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F995FEAD8545B523E9E66C76 /* KeyQRImportView.swift */; };
 		6544A610BB9F4EEE9D896EDE /* RenameSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 70A49B80E184DD242C3F71F4 /* RenameSheet.swift */; };
 		65879C3FC4AB6E23CE34C75B /* PhotoSyncQueueTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9F7CBDF1179B0B4EFACCB2C3 /* PhotoSyncQueueTests.swift */; };
+		67946B0EEBBBDB5B54C80E4B /* AuthServiceTwoFactorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A8D2A6AC1A08A9C3B93BA3F /* AuthServiceTwoFactorTests.swift */; };
 		67A59774AAC56E1CADC2ECFD /* ShareUploadCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = F374ECD6F62965B1D404D98A /* ShareUploadCoordinator.swift */; };
 		67FE7B95DCE2398E17E38339 /* ShareViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2D5320FC68012C09A76FD3F8 /* ShareViewController.swift */; };
 		690F26E747D4DA457D331F5F /* NeutrinoDriveApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 25F1F0EE30A126A464CB4744 /* NeutrinoDriveApp.swift */; };
+		6A9DA270EA79CC822AE5C681 /* RecoveryKitTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F32393495CDF0C0093EC96A /* RecoveryKitTests.swift */; };
 		6B69A2B077D27029DD7924B9 /* FileBrowserView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AFDC3F2E1EDDF4169DEA3706 /* FileBrowserView.swift */; };
 		6DD2BE430D4F4DF066AC20E2 /* AuthService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 284FD49BE7C7F07B2470DE24 /* AuthService.swift */; };
 		6E8DF5EFFB894C828257E7C2 /* DeepLinkRouter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0C7474ED19040AE6B6E20DFC /* DeepLinkRouter.swift */; };
@@ -64,12 +65,15 @@
 		740D22FDE24B0348BEFE11ED /* AuthServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2BE879B8C0E1B1F29A9FACFB /* AuthServiceTests.swift */; };
 		752C8A571CEFD432124CE0FA /* CompanionAppLauncherTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF3B71550E5FBA5DB9F3D836 /* CompanionAppLauncherTests.swift */; };
 		7B51774A66E6E2B6B36084D0 /* MockURLProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = 965E54926CB9E957E39C2117 /* MockURLProtocol.swift */; };
+		7B7ABA2DB2D94E5FB5F6EB41 /* AccessToken.swift in Sources */ = {isa = PBXBuildFile; fileRef = D845BA90304B03921740ABC6 /* AccessToken.swift */; };
 		7D6814BFC193B17976568C7D /* E2EEUploader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 92DB4C10254E37F3C8B82159 /* E2EEUploader.swift */; };
 		80359F913466643E0C14FB69 /* OfflineServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9D327F0E614DA668C3FFD6D /* OfflineServiceTests.swift */; };
 		83030D70D1FD82CA51BFA7C6 /* LoginView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA5181A063C7F11A804B0869 /* LoginView.swift */; };
 		830511757B1008B7376FC29F /* PhotoSyncService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A90FA64FCE70A0413A10B207 /* PhotoSyncService.swift */; };
 		837CB944498C1C88AC2965E6 /* Sodium in Frameworks */ = {isa = PBXBuildFile; productRef = B29E803B3FC632AE6E6F402F /* Sodium */; };
 		86B76EE3D6E6ED8E09FD3DD2 /* SharingService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3ADD7A2E9C27197434FE3A0A /* SharingService.swift */; };
+		870A3E2179DB356D13045EFF /* RecoveryKitImportView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A8F4CBC773779BD43A28A172 /* RecoveryKitImportView.swift */; };
+		8F6466131DF02117A3F1555B /* TestJWT.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6CA160AA5CFEE2D7364DE6B8 /* TestJWT.swift */; };
 		98A677398FA74C9534C8CBB6 /* VersionHistorySheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD20A690770D70A67B5BDD4E /* VersionHistorySheet.swift */; };
 		99EF38075C56FB5F28A0AD2A /* KeyQRDecryptServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 69BA21EB1245B8848A89C2BF /* KeyQRDecryptServiceTests.swift */; };
 		9A19DF8556C44AD8D37D3695 /* CreateFolderSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = ACF13539E1CDAD54D5F123C8 /* CreateFolderSheet.swift */; };
@@ -79,6 +83,7 @@
 		AD889E27EDBC05A3A8D9767A /* SharedStorage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C34071C259B80445A15F5D3 /* SharedStorage.swift */; };
 		AEA15EFACB7D68F443B8DFC8 /* KeyFileService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 95CA07CA2DC9D070F2DF169B /* KeyFileService.swift */; };
 		AFDC33DC6CB9F4366E9D9E04 /* LocalSearchIndexTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A42B78170F8B9D6672E183A7 /* LocalSearchIndexTests.swift */; };
+		B36F6D387F7E8D86D1D2C0B7 /* AccessTokenTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C093A1709A1926A84CDF833B /* AccessTokenTests.swift */; };
 		B3EC28701836603C11A801C5 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 79A7A0E78EC06A9490BA2757 /* Assets.xcassets */; };
 		B712ECD01D50298923D94BA6 /* DriveServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E75AF3C358204F5340F0827 /* DriveServiceTests.swift */; };
 		B88EBD4DA680E13365EC3C85 /* DownloadServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7D8E929ED50294D7EE256659 /* DownloadServiceTests.swift */; };
@@ -86,9 +91,7 @@
 		C1C0FD03CF16FB5E9E1A3166 /* VersionHistoryServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F7F1554986712BAA1146EC5 /* VersionHistoryServiceTests.swift */; };
 		C72847BAAA67973088BB0CCE /* SearchIndexSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = 67D7E829CE355529FD788F3A /* SearchIndexSnapshot.swift */; };
 		C823CEBBB11E783512FE5286 /* KeyImportServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6E9DB7865AEED70BD34195A9 /* KeyImportServiceTests.swift */; };
-		CD9A11DE4CECB7EED115F93F /* VaultUnlockView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 865F0DC7D9836002FECDF1E1 /* VaultUnlockView.swift */; };
 		CE253EA5C208A2BAFA023848 /* OfflineFile.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C6D8A297D25380ECD262C81 /* OfflineFile.swift */; };
-		D1B8AB3D017A375380400804 /* KeyVaultCryptoTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 725022C15C89B297DBD01F42 /* KeyVaultCryptoTests.swift */; };
 		D2CF5F59EAF12FE048AA1C0A /* UploadService.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC3153FC8A0FDB182E99909E /* UploadService.swift */; };
 		D33381B0005BD3A30285FC38 /* SealedKeyCrypto.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9D218BBDBAB8CA89AA1DF5D3 /* SealedKeyCrypto.swift */; };
 		D67BD06F704794253DEF7EC0 /* CompanionAppLauncher.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8216DBB3C23F98046D4153A3 /* CompanionAppLauncher.swift */; };
@@ -156,6 +159,7 @@
 		1F7F1554986712BAA1146EC5 /* VersionHistoryServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VersionHistoryServiceTests.swift; sourceTree = "<group>"; };
 		25F1F0EE30A126A464CB4744 /* NeutrinoDriveApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NeutrinoDriveApp.swift; sourceTree = "<group>"; };
 		284FD49BE7C7F07B2470DE24 /* AuthService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthService.swift; sourceTree = "<group>"; };
+		2A8D2A6AC1A08A9C3B93BA3F /* AuthServiceTwoFactorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthServiceTwoFactorTests.swift; sourceTree = "<group>"; };
 		2BE879B8C0E1B1F29A9FACFB /* AuthServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthServiceTests.swift; sourceTree = "<group>"; };
 		2D5320FC68012C09A76FD3F8 /* ShareViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareViewController.swift; sourceTree = "<group>"; };
 		3164F8D62550277E7500FB6D /* KeyImportView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyImportView.swift; sourceTree = "<group>"; };
@@ -167,6 +171,7 @@
 		3ADD7A2E9C27197434FE3A0A /* SharingService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SharingService.swift; sourceTree = "<group>"; };
 		3C6D8A297D25380ECD262C81 /* OfflineFile.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OfflineFile.swift; sourceTree = "<group>"; };
 		3EB651419CBEB1C389962E4A /* NeutrinoAppLinkTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NeutrinoAppLinkTests.swift; sourceTree = "<group>"; };
+		3F32393495CDF0C0093EC96A /* RecoveryKitTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecoveryKitTests.swift; sourceTree = "<group>"; };
 		3F8A06339C7846B57CB2C88A /* FeatureFlags.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeatureFlags.swift; sourceTree = "<group>"; };
 		44DC6CCE3927256F0843DE3F /* KeyFileServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyFileServiceTests.swift; sourceTree = "<group>"; };
 		476D22CD2F0DB6C8DBE3AD10 /* E2EEUploaderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = E2EEUploaderTests.swift; sourceTree = "<group>"; };
@@ -175,7 +180,6 @@
 		4E75AF3C358204F5340F0827 /* DriveServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DriveServiceTests.swift; sourceTree = "<group>"; };
 		4F9EEBB608D849ADEBE786FB /* DriveItem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DriveItem.swift; sourceTree = "<group>"; };
 		590E72C929910D24827A0391 /* NeutrinoFileViewer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NeutrinoFileViewer.swift; sourceTree = "<group>"; };
-		5CBB5299C64195F8ED11C712 /* KeyVaultCrypto.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyVaultCrypto.swift; sourceTree = "<group>"; };
 		5DB41FE55A0945983D9AD56C /* DriveSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DriveSection.swift; sourceTree = "<group>"; };
 		5E221501A1796A0C7CB2C7C3 /* MoveSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MoveSheet.swift; sourceTree = "<group>"; };
 		60C9162A7030D91E58F8E01C /* DeepLinkFilePresenter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeepLinkFilePresenter.swift; sourceTree = "<group>"; };
@@ -184,17 +188,16 @@
 		69BA21EB1245B8848A89C2BF /* KeyQRDecryptServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyQRDecryptServiceTests.swift; sourceTree = "<group>"; };
 		6A582F8B0E924BC7F78C9733 /* PhotoSyncServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoSyncServiceTests.swift; sourceTree = "<group>"; };
 		6A8AAD2BF70A2317058FAE59 /* LockScreenView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LockScreenView.swift; sourceTree = "<group>"; };
+		6CA160AA5CFEE2D7364DE6B8 /* TestJWT.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TestJWT.swift; sourceTree = "<group>"; };
 		6DA4F68F868089DB48832A1A /* RecentsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecentsView.swift; sourceTree = "<group>"; };
 		6E9DB7865AEED70BD34195A9 /* KeyImportServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyImportServiceTests.swift; sourceTree = "<group>"; };
 		70A49B80E184DD242C3F71F4 /* RenameSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RenameSheet.swift; sourceTree = "<group>"; };
-		725022C15C89B297DBD01F42 /* KeyVaultCryptoTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyVaultCryptoTests.swift; sourceTree = "<group>"; };
 		74F9C38EED9E75403B0F5C65 /* KeyArchive.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyArchive.swift; sourceTree = "<group>"; };
 		79A7A0E78EC06A9490BA2757 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		7D43F66518BECD37AE74152A /* KeychainService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainService.swift; sourceTree = "<group>"; };
 		7D8E929ED50294D7EE256659 /* DownloadServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DownloadServiceTests.swift; sourceTree = "<group>"; };
 		8216DBB3C23F98046D4153A3 /* CompanionAppLauncher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompanionAppLauncher.swift; sourceTree = "<group>"; };
 		85258692147558E2CC47B4E4 /* DeepLinkRouterTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeepLinkRouterTests.swift; sourceTree = "<group>"; };
-		865F0DC7D9836002FECDF1E1 /* VaultUnlockView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VaultUnlockView.swift; sourceTree = "<group>"; };
 		8834B35CB52B70D4F1BA48A6 /* DriveItemTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DriveItemTests.swift; sourceTree = "<group>"; };
 		8C34071C259B80445A15F5D3 /* SharedStorage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SharedStorage.swift; sourceTree = "<group>"; };
 		90469D5CC989E615DE795823 /* OfflineView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OfflineView.swift; sourceTree = "<group>"; };
@@ -203,11 +206,13 @@
 		95CA07CA2DC9D070F2DF169B /* KeyFileService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyFileService.swift; sourceTree = "<group>"; };
 		965E54926CB9E957E39C2117 /* MockURLProtocol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MockURLProtocol.swift; sourceTree = "<group>"; };
 		9839D82A96C528D359452A8C /* BackgroundTransferService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackgroundTransferService.swift; sourceTree = "<group>"; };
+		9B6A68F503777C7EA0DE23ED /* RecoveryKit.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecoveryKit.swift; sourceTree = "<group>"; };
 		9B9EC0F713F068F7C8A12EDD /* QRScannerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QRScannerView.swift; sourceTree = "<group>"; };
 		9D218BBDBAB8CA89AA1DF5D3 /* SealedKeyCrypto.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SealedKeyCrypto.swift; sourceTree = "<group>"; };
 		9F7CBDF1179B0B4EFACCB2C3 /* PhotoSyncQueueTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoSyncQueueTests.swift; sourceTree = "<group>"; };
 		A1AED111A1DFA3864B2AE787 /* BiometricAuthService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BiometricAuthService.swift; sourceTree = "<group>"; };
 		A42B78170F8B9D6672E183A7 /* LocalSearchIndexTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalSearchIndexTests.swift; sourceTree = "<group>"; };
+		A8F4CBC773779BD43A28A172 /* RecoveryKitImportView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecoveryKitImportView.swift; sourceTree = "<group>"; };
 		A90FA64FCE70A0413A10B207 /* PhotoSyncService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoSyncService.swift; sourceTree = "<group>"; };
 		A9D327F0E614DA668C3FFD6D /* OfflineServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OfflineServiceTests.swift; sourceTree = "<group>"; };
 		AC32FE0D6BB9D7C94882BB8F /* SearchService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SearchService.swift; sourceTree = "<group>"; };
@@ -220,9 +225,10 @@
 		BE36F23B5D81EEC1E84E1A77 /* UploadSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UploadSheet.swift; sourceTree = "<group>"; };
 		BF3B71550E5FBA5DB9F3D836 /* CompanionAppLauncherTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompanionAppLauncherTests.swift; sourceTree = "<group>"; };
 		C03256BD9495BF647E1D621E /* FilesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FilesView.swift; sourceTree = "<group>"; };
+		C093A1709A1926A84CDF833B /* AccessTokenTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessTokenTests.swift; sourceTree = "<group>"; };
 		C346B842F6CCF727D2F047C7 /* QuotaService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuotaService.swift; sourceTree = "<group>"; };
-		C5DACCCECFE0749DA9E8778C /* KeyVaultService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyVaultService.swift; sourceTree = "<group>"; };
 		C77587DE1135BBDE2F75E650 /* PhotoSyncQueue.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoSyncQueue.swift; sourceTree = "<group>"; };
+		D845BA90304B03921740ABC6 /* AccessToken.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessToken.swift; sourceTree = "<group>"; };
 		DAD2E88A47B7F76FBB347769 /* KeyQRDecryptService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyQRDecryptService.swift; sourceTree = "<group>"; };
 		E057910348FA5DD56CAF3BA2 /* UploadServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UploadServiceTests.swift; sourceTree = "<group>"; };
 		E1CEFB784C6C8B218A6C30BC /* KeyImportService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyImportService.swift; sourceTree = "<group>"; };
@@ -314,6 +320,7 @@
 		9291959B3C23CC6DEEC3D8E3 /* Services */ = {
 			isa = PBXGroup;
 			children = (
+				D845BA90304B03921740ABC6 /* AccessToken.swift */,
 				284FD49BE7C7F07B2470DE24 /* AuthService.swift */,
 				9839D82A96C528D359452A8C /* BackgroundTransferService.swift */,
 				A1AED111A1DFA3864B2AE787 /* BiometricAuthService.swift */,
@@ -327,13 +334,12 @@
 				95CA07CA2DC9D070F2DF169B /* KeyFileService.swift */,
 				E1CEFB784C6C8B218A6C30BC /* KeyImportService.swift */,
 				DAD2E88A47B7F76FBB347769 /* KeyQRDecryptService.swift */,
-				5CBB5299C64195F8ED11C712 /* KeyVaultCrypto.swift */,
-				C5DACCCECFE0749DA9E8778C /* KeyVaultService.swift */,
 				36307D854C329925CE489930 /* LocalSearchIndex.swift */,
 				133D81CEFB2A25FC07B29499 /* OfflineService.swift */,
 				C77587DE1135BBDE2F75E650 /* PhotoSyncQueue.swift */,
 				A90FA64FCE70A0413A10B207 /* PhotoSyncService.swift */,
 				C346B842F6CCF727D2F047C7 /* QuotaService.swift */,
+				9B6A68F503777C7EA0DE23ED /* RecoveryKit.swift */,
 				9D218BBDBAB8CA89AA1DF5D3 /* SealedKeyCrypto.swift */,
 				EC412D2F519A0B34BA41651E /* SearchIndexSyncService.swift */,
 				124D0F2836AA1C4105FD8F6C /* SearchIndexTokenizer.swift */,
@@ -375,11 +381,11 @@
 				4B514FE69A64EC64CE2EE893 /* PhotoSyncSettingsView.swift */,
 				9B9EC0F713F068F7C8A12EDD /* QRScannerView.swift */,
 				6DA4F68F868089DB48832A1A /* RecentsView.swift */,
+				A8F4CBC773779BD43A28A172 /* RecoveryKitImportView.swift */,
 				70A49B80E184DD242C3F71F4 /* RenameSheet.swift */,
 				F98AAC9AEF267C276800A5AA /* SettingsView.swift */,
 				E9E380C43E2F17633F9BE953 /* ShareSheet.swift */,
 				BE36F23B5D81EEC1E84E1A77 /* UploadSheet.swift */,
-				865F0DC7D9836002FECDF1E1 /* VaultUnlockView.swift */,
 				FD20A690770D70A67B5BDD4E /* VersionHistorySheet.swift */,
 			);
 			path = Views;
@@ -388,7 +394,9 @@
 		C7F517A4BD12BFBF2F8E5445 /* NeutrinoDriveTests */ = {
 			isa = PBXGroup;
 			children = (
+				C093A1709A1926A84CDF833B /* AccessTokenTests.swift */,
 				2BE879B8C0E1B1F29A9FACFB /* AuthServiceTests.swift */,
+				2A8D2A6AC1A08A9C3B93BA3F /* AuthServiceTwoFactorTests.swift */,
 				3848E2E1A8F52106B1ECEB94 /* BackgroundTransferServiceTests.swift */,
 				0ED22D285A40B505185DC5F3 /* BiometricAuthServiceTests.swift */,
 				BF3B71550E5FBA5DB9F3D836 /* CompanionAppLauncherTests.swift */,
@@ -402,7 +410,6 @@
 				44DC6CCE3927256F0843DE3F /* KeyFileServiceTests.swift */,
 				6E9DB7865AEED70BD34195A9 /* KeyImportServiceTests.swift */,
 				69BA21EB1245B8848A89C2BF /* KeyQRDecryptServiceTests.swift */,
-				725022C15C89B297DBD01F42 /* KeyVaultCryptoTests.swift */,
 				A42B78170F8B9D6672E183A7 /* LocalSearchIndexTests.swift */,
 				965E54926CB9E957E39C2117 /* MockURLProtocol.swift */,
 				3EB651419CBEB1C389962E4A /* NeutrinoAppLinkTests.swift */,
@@ -410,11 +417,13 @@
 				9F7CBDF1179B0B4EFACCB2C3 /* PhotoSyncQueueTests.swift */,
 				6A582F8B0E924BC7F78C9733 /* PhotoSyncServiceTests.swift */,
 				92A6A5039A254CCFF5EF859B /* QuotaServiceTests.swift */,
+				3F32393495CDF0C0093EC96A /* RecoveryKitTests.swift */,
 				0BC10848134DEC435F1F7763 /* SealedKeyCryptoTests.swift */,
 				AD973C245B7E24568C8EFD3C /* SearchIndexTokenizerTests.swift */,
 				F89DB4C4E5203C9B985669D8 /* SearchServiceTests.swift */,
 				630C730986B97FEBB32C20EE /* ShareUploadCoordinatorTests.swift */,
 				327677CD98415FF37039A2D0 /* SharingServiceTests.swift */,
+				6CA160AA5CFEE2D7364DE6B8 /* TestJWT.swift */,
 				E057910348FA5DD56CAF3BA2 /* UploadServiceTests.swift */,
 				1F7F1554986712BAA1146EC5 /* VersionHistoryServiceTests.swift */,
 			);
@@ -568,6 +577,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				7B7ABA2DB2D94E5FB5F6EB41 /* AccessToken.swift in Sources */,
 				6DD2BE430D4F4DF066AC20E2 /* AuthService.swift in Sources */,
 				225CA1446F97EE07D72D350C /* BackgroundTransferService.swift in Sources */,
 				0AE91FA43DA3EE24FE3B1B99 /* BiometricAuthService.swift in Sources */,
@@ -592,8 +602,6 @@
 				18E8F2192FDC05BBC327CBAE /* KeyImportView.swift in Sources */,
 				73C4B9E7A14BEBE5550E8CD0 /* KeyQRDecryptService.swift in Sources */,
 				6374DA2E9C607DC50AE5B422 /* KeyQRImportView.swift in Sources */,
-				0A2B16FB4764762227C597A1 /* KeyVaultCrypto.swift in Sources */,
-				1F8B33856C758AE8CCCEF216 /* KeyVaultService.swift in Sources */,
 				E75D0175C7B415D9BB299056 /* KeychainService.swift in Sources */,
 				F72D32E65C948E5D0F5F584B /* LocalSearchIndex.swift in Sources */,
 				4354509529BAB0170D262425 /* LockScreenView.swift in Sources */,
@@ -611,6 +619,8 @@
 				0D0AE2A91CF6C64E477B9666 /* QRScannerView.swift in Sources */,
 				71628740A2133116DD9C6CFB /* QuotaService.swift in Sources */,
 				EAE5682B2200BC87C4559F48 /* RecentsView.swift in Sources */,
+				107D71FEA1B2C652FF9ACEB9 /* RecoveryKit.swift in Sources */,
+				870A3E2179DB356D13045EFF /* RecoveryKitImportView.swift in Sources */,
 				6544A610BB9F4EEE9D896EDE /* RenameSheet.swift in Sources */,
 				FD7CD39C75002E56CFD48806 /* SealedKeyCrypto.swift in Sources */,
 				C72847BAAA67973088BB0CCE /* SearchIndexSnapshot.swift in Sources */,
@@ -625,7 +635,6 @@
 				86B76EE3D6E6ED8E09FD3DD2 /* SharingService.swift in Sources */,
 				D2CF5F59EAF12FE048AA1C0A /* UploadService.swift in Sources */,
 				2AD383230B2EFD9ACF52D84F /* UploadSheet.swift in Sources */,
-				CD9A11DE4CECB7EED115F93F /* VaultUnlockView.swift in Sources */,
 				05BB68A98F5538EC38E8C3DA /* VersionHistoryService.swift in Sources */,
 				98A677398FA74C9534C8CBB6 /* VersionHistorySheet.swift in Sources */,
 			);
@@ -635,7 +644,9 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				B36F6D387F7E8D86D1D2C0B7 /* AccessTokenTests.swift in Sources */,
 				740D22FDE24B0348BEFE11ED /* AuthServiceTests.swift in Sources */,
+				67946B0EEBBBDB5B54C80E4B /* AuthServiceTwoFactorTests.swift in Sources */,
 				73594E9C32767E462481C066 /* BackgroundTransferServiceTests.swift in Sources */,
 				28FBB92B6226CFD82A3B4D89 /* BiometricAuthServiceTests.swift in Sources */,
 				752C8A571CEFD432124CE0FA /* CompanionAppLauncherTests.swift in Sources */,
@@ -648,7 +659,6 @@
 				73FBD3982AB37C975C4F7A71 /* KeyFileServiceTests.swift in Sources */,
 				C823CEBBB11E783512FE5286 /* KeyImportServiceTests.swift in Sources */,
 				99EF38075C56FB5F28A0AD2A /* KeyQRDecryptServiceTests.swift in Sources */,
-				D1B8AB3D017A375380400804 /* KeyVaultCryptoTests.swift in Sources */,
 				47335AA514E3DF49C3867543 /* KeychainServiceTests.swift in Sources */,
 				AFDC33DC6CB9F4366E9D9E04 /* LocalSearchIndexTests.swift in Sources */,
 				7B51774A66E6E2B6B36084D0 /* MockURLProtocol.swift in Sources */,
@@ -657,11 +667,13 @@
 				65879C3FC4AB6E23CE34C75B /* PhotoSyncQueueTests.swift in Sources */,
 				07F648E2CD3255BFBB976CE2 /* PhotoSyncServiceTests.swift in Sources */,
 				FCD16281A07596302DA0FA13 /* QuotaServiceTests.swift in Sources */,
+				6A9DA270EA79CC822AE5C681 /* RecoveryKitTests.swift in Sources */,
 				F7889A9C8B773AE5D43BA085 /* SealedKeyCryptoTests.swift in Sources */,
 				E823501628D4A7664F42035D /* SearchIndexTokenizerTests.swift in Sources */,
 				F5A3194F7AC59E856D828A8E /* SearchServiceTests.swift in Sources */,
 				6012EA629004AC1E165C1643 /* ShareUploadCoordinatorTests.swift in Sources */,
 				25F64EB08808A6C78ECD470B /* SharingServiceTests.swift in Sources */,
+				8F6466131DF02117A3F1555B /* TestJWT.swift in Sources */,
 				EC06929650A4ECF52EABF5FC /* UploadServiceTests.swift in Sources */,
 				C1C0FD03CF16FB5E9E1A3166 /* VersionHistoryServiceTests.swift in Sources */,
 			);

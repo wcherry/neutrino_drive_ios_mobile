@@ -89,4 +89,50 @@ final class KeychainServiceTests: XCTestCase {
         XCTAssertEqual(KeychainService.load(forKey: testKey), "value-A")
         XCTAssertEqual(KeychainService.load(forKey: testKey2), "value-B")
     }
+
+    // MARK: - Protection class
+
+    /// The stored accessibility of `key`, read straight back out of the Keychain.
+    private func accessibility(forKey key: String) -> String? {
+        let query: [CFString: Any] = [
+            kSecClass: kSecClassGenericPassword,
+            kSecAttrAccount: key,
+            kSecReturnAttributes: true,
+            kSecMatchLimit: kSecMatchLimitOne,
+        ]
+        var result: CFTypeRef?
+        guard SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess,
+              let attributes = result as? [CFString: Any] else { return nil }
+        return attributes[kSecAttrAccessible] as? String
+    }
+
+    /// What this service stores is the E2EE identity and the session tokens. `ThisDeviceOnly` is
+    /// what keeps them out of iCloud and encrypted iTunes backups; items previously carried no
+    /// `kSecAttrAccessible` at all, which defaults to `WhenUnlocked` — device-unlocked, but
+    /// backed up.
+    func test_save_writesItemsThatCannotLeaveTheDevice() {
+        XCTAssertTrue(KeychainService.save("secret-value", forKey: testKey))
+
+        XCTAssertEqual(accessibility(forKey: testKey),
+                       kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly as String)
+    }
+
+    /// Rewriting only the value would leave an item written by an older build backed up for good,
+    /// which is the whole reason accessibility is re-stated on update.
+    func test_save_upgradesAnItemLeftBehindByAnOlderBuild() {
+        // Exactly what an older build wrote: no accessibility, so `WhenUnlocked` by default.
+        let legacy: [CFString: Any] = [
+            kSecClass: kSecClassGenericPassword,
+            kSecAttrAccount: testKey,
+            kSecValueData: Data("old-value".utf8),
+        ]
+        XCTAssertEqual(SecItemAdd(legacy as CFDictionary, nil), errSecSuccess)
+        XCTAssertEqual(accessibility(forKey: testKey), kSecAttrAccessibleWhenUnlocked as String)
+
+        XCTAssertTrue(KeychainService.save("new-value", forKey: testKey))
+
+        XCTAssertEqual(KeychainService.load(forKey: testKey), "new-value")
+        XCTAssertEqual(accessibility(forKey: testKey),
+                       kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly as String)
+    }
 }

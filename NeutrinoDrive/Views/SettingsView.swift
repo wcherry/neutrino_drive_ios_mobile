@@ -11,7 +11,7 @@ struct SettingsView: View {
 
     @State private var hasKeys = KeyImportService.hasStoredKeys()
     @State private var showKeyImport = false
-    @State private var showVaultUnlock = false
+    @State private var showRecoveryKit = false
     @State private var showRemoveConfirmation = false
     @State private var showClearCacheConfirmation = false
     @State private var keyAccessDenied: String?
@@ -62,28 +62,29 @@ struct SettingsView: View {
                         Text("This will delete your stored encryption keys. You will need to re-import them to access encrypted files.")
                     }
                 } else {
-                    // Preferred path: the key is already on the server, wrapped.
-                    // Unlocking with the encryption password fetches it here, so
-                    // no file has to be moved between devices.
+                    // Preferred path: the recovery kit printed when encryption was
+                    // set up. There is no server-side key vault to unlock any more —
+                    // the web app creates the key on the device and never transmits
+                    // it — so the kit and the mobile key code are the two ways in.
                     Button {
-                        showVaultUnlock = true
+                        showRecoveryKit = true
                     } label: {
-                        Label("Unlock with Password", systemImage: "lock.open")
+                        Label("Enter Recovery Kit", systemImage: "doc.text")
                     }
-                    .sheet(isPresented: $showVaultUnlock) {
+                    .sheet(isPresented: $showRecoveryKit) {
                         hasKeys = KeyImportService.hasStoredKeys()
                     } content: {
-                        VaultUnlockView(isPresented: $showVaultUnlock) {
+                        RecoveryKitImportView(isPresented: $showRecoveryKit) {
                             hasKeys = KeyImportService.hasStoredKeys()
                         }
                     }
 
-                    // Manual import stays for accounts created before the vault,
-                    // and for moving a key between accounts.
+                    // The mobile key code lives behind this, alongside the exported
+                    // key file that older accounts may still have.
                     Button {
                         showKeyImport = true
                     } label: {
-                        Label("Import Key File", systemImage: "key")
+                        Label("Scan Key Code", systemImage: "key")
                     }
                     .sheet(isPresented: $showKeyImport) {
                         hasKeys = KeyImportService.hasStoredKeys()
