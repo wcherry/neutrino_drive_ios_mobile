@@ -268,7 +268,14 @@ struct E2EEUploader {
         req.httpMethod = "PUT"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        req.httpBody = try JSONEncoder().encode(["encryptedFileKey": encryptedFileKey])
+        // `keyVersion` is sent, not left to the server's default of 1. The DEK above was sealed to
+        // whichever key this device holds as active; filing it under 1 on a rotated account means
+        // every client — this one included — later reaches for the wrong key and cannot open a file
+        // that is perfectly intact.
+        req.httpBody = try JSONEncoder().encode(
+            SetFileKeyBody(encryptedFileKey: encryptedFileKey,
+                           keyVersion: SealedKeyCrypto.activeKeyVersion())
+        )
 
         logger.debug("--> PUT /api/v1/drive/files/\(fileID, privacy: .public)/key")
 
@@ -356,6 +363,15 @@ private struct APIUploadResponse: Decodable {
     let sizeBytes: Int64
     let mimeType: String
     let updatedAt: Date
+}
+
+// MARK: - Wire types
+
+/// `PUT /drive/files/{id}/key`. `keyVersion` says which entry of the caller's keyring the sealed
+/// DEK belongs to, so a later read reaches for the right one.
+private struct SetFileKeyBody: Encodable {
+    let encryptedFileKey: String
+    let keyVersion: Int
 }
 
 // MARK: - Data + Base64URL

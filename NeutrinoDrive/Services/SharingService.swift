@@ -273,12 +273,16 @@ final class SharingService: ObservableObject {
             return .server(statusCode: statusCode(of: error))
         }
 
-        // Step 4 — unseal with our keypair.
-        guard SealedKeyCrypto.storedKeyPair() != nil else {
+        // Step 4 — unseal with the keypair the ref names. A file sealed before a rotation needs
+        // the retired key, which this device holds only if the account's key file has been pulled
+        // down (`KeyFileService`); without it, sharing an older file fails here rather than
+        // producing something the recipient cannot open.
+        guard case .found = SealedKeyCrypto.storedKeyPair(forVersion: ourKey.keyVersion ?? 1) else {
             return .cannotUnsealOwnKey
         }
         guard let dek: Bytes = SealedKeyCrypto.openDEKWithStoredKeys(
-            sealedBase64URL: ourKey.encryptedFileKey
+            sealedBase64URL: ourKey.encryptedFileKey,
+            keyVersion: ourKey.keyVersion ?? 1
         ) else {
             return .cannotUnsealOwnKey
         }
@@ -300,9 +304,13 @@ final class SharingService: ObservableObject {
             return .recipientPublicKeyInvalid
         }
 
-        // Step 7 — store it for the recipient.
+        // Step 7 — store it for the recipient, against *their* key version. Recording our own
+        // there, or letting the server default it to 1, is how a recipient who has rotated ends up
+        // reaching for a key that never opened this DEK.
         do {
-            let body = APIShareFileKeyRequest(recipientId: recipient.id, encryptedFileKey: resealed)
+            let body = APIShareFileKeyRequest(recipientId: recipient.id,
+                                              encryptedFileKey: resealed,
+                                              keyVersion: recipientKey.version ?? 1)
             let _: APIFileKeyResponse = try await post("/api/v1/drive/files/\(fileID)/key/share",
                                                        body: body)
             logger.debug("shareFileKey: DEK re-wrapped for \(recipient.id, privacy: .public)")
@@ -534,16 +542,25 @@ private struct APIFileKeyResponse: Decodable {
     let fileId: String
     let userId: String
     let encryptedFileKey: String
+    /// Which of *our* identity versions the DEK is sealed to. Optional so a server that predates
+    /// versioning still decodes; read as 1, matching the column's own default.
+    let keyVersion: Int?
 }
 
 private struct APIShareFileKeyRequest: Encodable {
     let recipientId: String
     let encryptedFileKey: String
+    /// The *recipient's* key version, not ours — it is what they resolve the sealed DEK against.
+    let keyVersion: Int
 }
 
 private struct APIPublicKeyResponse: Decodable {
     let userId: String
     let publicKey: String
+    /// Which entry of the user's keyring this is. The field is `version` on the wire, not
+    /// `keyVersion` — see `PublicKeyResponse` in `src/auth/dto.rs`. Optional: a server that
+    /// predates versioning omits it, and those published exactly one key, which is version 1.
+    let version: Int?
 }
 
 private struct APIUpsertShareLinkRequest: Encodable {

@@ -74,6 +74,16 @@ struct NeutrinoDriveApp: App {
                 photoSyncService.configure(driveService: driveService, uploadService: uploadService)
                 photoSyncService.start()
                 biometricService.lockOnLaunch()
+
+                // Top up this device's retired keys from the account's key file. Enrolment already
+                // does this, so on a healthy install it finds nothing; it is here for the device
+                // enrolled before the key file existed, and for the one that was offline when its
+                // key arrived. One request, and a failure is not worth surfacing — the next launch
+                // tries again.
+                KeyFileService.shared.authService = authService
+                if authService.isAuthenticated && KeyImportService.hasStoredKeys() {
+                    try? await KeyFileService.shared.restoreArchivedKeys()
+                }
             }
         }
         .onChange(of: scenePhase) { newPhase in

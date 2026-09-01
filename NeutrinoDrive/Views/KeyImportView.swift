@@ -116,6 +116,12 @@ struct KeyImportView: View {
             importedVersion = bundle.keyVersion
             showSuccess = true
 
+            // The key file holds the account's *retired* keys, sealed to the key just imported.
+            // Without this a device joining a rotated account opens everything uploaded since the
+            // last rotation and nothing before it. A failure is not fatal — the next launch
+            // retries — so the import is not held open waiting for it.
+            Task { try? await KeyFileService.shared.restoreArchivedKeys() }
+
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
                 isPresented = false
             }

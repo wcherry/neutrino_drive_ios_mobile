@@ -3,6 +3,15 @@ import VisionKit
 
 // MARK: - KeyQRImportView
 
+/// Imports the encryption key from the PIN-protected key code the Neutrino web app shows under
+/// Settings → Encryption → "Key code for mobile".
+///
+/// Four steps: scan, enter the PIN beside the code, hand the decrypted JSON to `KeyImportService`,
+/// and then pull the account's **retired** keys with `KeyFileService`.
+///
+/// That last step is not optional dressing. The code carries one keypair, the account's active one,
+/// so without the pull a device joining a rotated account opens everything uploaded since the last
+/// rotation and nothing before it: the files list, download, and refuse to decrypt.
 struct KeyQRImportView: View {
     @Binding var isPresented: Bool
 
@@ -18,8 +27,8 @@ struct KeyQRImportView: View {
                     scanningView
                 case .enterPin(let qrString):
                     pinEntryView(qrString: qrString)
-                case .success(let keyVersion):
-                    successView(keyVersion: keyVersion)
+                case .success(let keyVersion, let note):
+                    successView(keyVersion: keyVersion, note: note)
                 case .error(let message):
                     errorView(message: message)
                 }
@@ -127,7 +136,7 @@ struct KeyQRImportView: View {
         }
     }
 
-    private func successView(keyVersion: String) -> some View {
+    private func successView(keyVersion: String, note: String?) -> some View {
         VStack(spacing: 16) {
             Spacer()
             Image(systemName: "checkmark.circle.fill")
@@ -137,6 +146,15 @@ struct KeyQRImportView: View {
                 .font(.headline)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 32)
+            // Whether the older files open is decided by the key-file pull, so its result is
+            // stated here rather than left to be found one unreadable download at a time.
+            if let note {
+                Text(note)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 32)
+            }
             Spacer()
         }
     }
@@ -176,6 +194,49 @@ struct KeyQRImportView: View {
         }
     }
 
+    // MARK: - Key file
+
+    /// Pull the account's retired keys and describe what came back, or nil when there is nothing
+    /// the user needs to know.
+    ///
+    /// The stale case is worth its own message: it means the *page* that produced this code was
+    /// built before a rotation it has not caught up with, and the fix is a fresh code rather than
+    /// anything the user can do on the phone.
+    @MainActor
+    private static func pullKeyFile(activeVersion: Int) async -> String? {
+        do {
+            let outcome = try await KeyFileService.shared.restoreArchivedKeys()
+
+            // A rotated account with no key file at all. The retired keys were never backed up
+            // from the browser that rotated, so they are not reachable from here by any means —
+            // and saying "scan again" would send the user round a loop that cannot terminate.
+            if outcome.serverHasNoKeyFile && activeVersion > 1 {
+                return "Your account has \(activeVersion - 1) earlier key"
+                     + (activeVersion == 2 ? "" : "s")
+                     + ", but they have not been backed up to your account yet, so "
+                     + "files encrypted before your last key change will not open here. "
+                     + "On the computer that holds your key, open Settings \u{203A} Encryption and "
+                     + "back up your older keys, then reopen this app."
+            }
+            if outcome.activeIsStale {
+                return "This code was made by a key that has since been replaced. Generate a new "
+                     + "one on the web and scan it again, or recent files will not open here."
+            }
+            if outcome.unopenable > 0 {
+                return "\(outcome.unopenable) of your earlier keys could not be recovered, so files "
+                     + "encrypted with them will not open here."
+            }
+            if outcome.recovered > 0 {
+                let plural = outcome.recovered == 1 ? "key" : "keys"
+                return "\(outcome.recovered) earlier \(plural) recovered from your account, so "
+                     + "files encrypted before your last key change open here too."
+            }
+            return nil
+        } catch {
+            return "Your earlier keys could not be fetched: \(error.localizedDescription)"
+        }
+    }
+
     // MARK: - Decrypt & Import
 
     private func decryptAndImport(qrString: String) {
@@ -188,14 +249,20 @@ struct KeyQRImportView: View {
                     try KeyQRDecryptService.decrypt(qrString: qrString, pin: capturedPin)
                 }.value
 
-                print("[QRImport] Decrypted payload: \(String(data: keyData, encoding: .utf8) ?? "(not valid UTF-8)")")
-
+                // The decrypted payload is the private key. It is never printed or logged:
+                // `os.log` and the console both outlive the process that wrote to them.
                 let bundle = try KeyImportService.importKey(from: keyData)
                 KeyImportService.storeKeys(bundle)
 
+                // The active key is in place, which is the only thing that opens the key file. A
+                // failure here is reported but must not undo the import — a device with the current
+                // key and no archive still reads everything uploaded since the last rotation, and
+                // the next launch retries the pull.
+                let note = await Self.pullKeyFile(activeVersion: Int(bundle.keyVersion) ?? 1)
+
                 await MainActor.run {
                     isDecrypting = false
-                    step = .success(keyVersion: bundle.keyVersion)
+                    step = .success(keyVersion: bundle.keyVersion, note: note)
                 }
 
                 try? await Task.sleep(nanoseconds: 1_500_000_000)
@@ -218,6 +285,6 @@ struct KeyQRImportView: View {
 private enum ImportStep {
     case scanning
     case enterPin(qrString: String)
-    case success(keyVersion: String)
+    case success(keyVersion: String, note: String?)
     case error(message: String)
 }

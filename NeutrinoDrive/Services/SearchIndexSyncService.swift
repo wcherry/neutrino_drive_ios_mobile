@@ -270,7 +270,11 @@ final class SearchIndexSyncService {
         } else {
             wrappedKey = (try? await fetchMeta())?.wrappedKey
         }
-        if let wrappedKey, let unsealed = SealedKeyCrypto.openDEKWithStoredKeys(sealedBase64URL: wrappedKey) {
+        // The snapshot key carries no version of its own, so every version this device holds is
+        // tried, newest first. A snapshot sealed before a rotation opens with the retired key —
+        // and giving up after the active one would mint a *fresh* index key below, silently
+        // orphaning the snapshot every other device is still reading.
+        if let wrappedKey, let unsealed = unsealIndexKey(wrappedKey) {
             persistIndexKey(unsealed)
             return unsealed
         }
@@ -280,6 +284,19 @@ final class SearchIndexSyncService {
         let fresh = SearchSnapshotCrypto.generateKey()
         persistIndexKey(fresh)
         return fresh
+    }
+
+    /// Open the account's wrapped index key with whichever identity version still opens it.
+    private func unsealIndexKey(_ wrappedKey: String) -> Bytes? {
+        let versions = [SealedKeyCrypto.activeKeyVersion()]
+            + KeyArchive.load().map(\.version).sorted(by: >)
+        for version in versions {
+            if let unsealed = SealedKeyCrypto.openDEKWithStoredKeys(sealedBase64URL: wrappedKey,
+                                                                    keyVersion: version) {
+                return unsealed
+            }
+        }
+        return nil
     }
 
     private func persistIndexKey(_ key: Bytes) {
