@@ -7,6 +7,10 @@ import os.log
 
 enum DownloadError: LocalizedError {
     case noEncryptionKey
+    /// This device holds an identity, but not the version this file's DEK was sealed to. Named
+    /// separately from `noEncryptionKey` because it sends the user somewhere else: not "import your
+    /// key" but "this account rotated and this device is missing a version".
+    case missingKeyVersion(Int)
     case decryptionFailed
     case notAuthenticated
     case networkError(underlying: Error)
@@ -17,6 +21,8 @@ enum DownloadError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .noEncryptionKey:          return "No encryption key found. Please import a key before downloading."
+        case .missingKeyVersion(let version):
+            return "This file needs encryption key version \(version), which this device does not have. Scanning the key code again will not help \u{2014} it carries one key. On the computer that holds your key, open Settings \u{203A} Encryption and back up your older keys, then reopen this app."
         case .decryptionFailed:         return "Failed to decrypt the file."
         case .notAuthenticated:         return "You are not signed in."
         case .networkError:             return "A network error occurred. Please check your connection."
@@ -102,7 +108,7 @@ final class DownloadService: ObservableObject {
         //
         // Mirrors the web's GET /api/v1/drive/files/{id}/key.
 
-        let encryptedFileKey = try await fetchSealedDEK(fileID: fileID, token: token)
+        let sealedFileKey = try await fetchSealedDEK(fileID: fileID, token: token)
         progress = 0.2
 
         // MARK: Step 2 — Unseal DEK with private key (crypto_box_seal_open)
@@ -110,12 +116,21 @@ final class DownloadService: ObservableObject {
         // Mirrors the web's decryptFileKey(encryptedFileKey, kp.privateKey).
 
         // Unsealing runs through `SealedKeyCrypto`, the same primitive `SharingService` uses to
-        // read a DEK before re-wrapping it for a recipient.
-        guard SealedKeyCrypto.storedKeyPair() != nil else {
+        // read a DEK before re-wrapping it for a recipient. The version comes off the key ref: a
+        // file sealed before a rotation needs the retired key, which this device holds only if the
+        // account's key file has been pulled down (`KeyFileService`).
+        switch SealedKeyCrypto.storedKeyPair(forVersion: sealedFileKey.keyVersion) {
+        case .found:
+            break
+        case .noKey:
             throw DownloadError.noEncryptionKey
+        case .missingVersion(let version):
+            logger.error("download: no key for version \(version, privacy: .public)")
+            throw DownloadError.missingKeyVersion(version)
         }
         guard let dek: Bytes = SealedKeyCrypto.openDEKWithStoredKeys(
-            sealedBase64URL: encryptedFileKey
+            sealedBase64URL: sealedFileKey.sealed,
+            keyVersion: sealedFileKey.keyVersion
         ) else {
             logger.error("download: failed to unseal DEK for \(fileID, privacy: .public)")
             throw DownloadError.decryptionFailed
@@ -175,7 +190,7 @@ final class DownloadService: ObservableObject {
 
     // MARK: - Private Helpers
 
-    private func fetchSealedDEK(fileID: String, token: String) async throws -> String {
+    private func fetchSealedDEK(fileID: String, token: String) async throws -> SealedFileKey {
         guard let url = URL(string: baseURL + "/api/v1/drive/files/\(fileID)/key") else {
             throw DownloadError.serverError(statusCode: 0)
         }
@@ -205,7 +220,9 @@ final class DownloadService: ObservableObject {
             let decoder = JSONDecoder()
             decoder.keyDecodingStrategy = .convertFromSnakeCase
             let body = try decoder.decode(APIKeyResponse.self, from: data)
-            return body.encryptedFileKey
+            // A ref written before versioning carries no version. Read as 1, which is what the
+            // server defaults `file_key_refs.key_version` to for the same rows.
+            return SealedFileKey(sealed: body.encryptedFileKey, keyVersion: body.keyVersion ?? 1)
         } catch {
             throw DownloadError.decodingError(underlying: error)
         }
@@ -285,4 +302,7 @@ final class DownloadService: ObservableObject {
 
 private struct APIKeyResponse: Decodable {
     let encryptedFileKey: String
+    /// Which of the caller's identity versions the DEK is sealed to. Optional so a server that
+    /// predates versioning still decodes.
+    let keyVersion: Int?
 }

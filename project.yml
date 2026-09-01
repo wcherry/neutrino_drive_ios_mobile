@@ -24,7 +24,7 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.neutrino.drive
         MARKETING_VERSION: "1.0.0"
-        CURRENT_PROJECT_VERSION: "2"
+        CURRENT_PROJECT_VERSION: "8"
         SWIFT_VERSION: "5.0"
         IPHONEOS_DEPLOYMENT_TARGET: "16.0"
         DEVELOPMENT_TEAM: "46KWJJ63FU"
@@ -118,6 +118,10 @@ targets:
       # Same rationale as the rest of this list: compiling the identical source is what
       # guarantees the extension's key wrap matches the app's.
       - path: NeutrinoDrive/Services/SealedKeyCrypto.swift
+      # SealedKeyCrypto resolves a file's key version against the retired keys held here, so the
+      # extension needs it for the same reason: compiling the identical source is what guarantees
+      # it reaches for the same key the app would.
+      - path: NeutrinoDrive/Services/KeyArchive.swift
       - path: NeutrinoDrive/Services/E2EEUploader.swift
       - path: NeutrinoDrive/Services/BackgroundTransferService.swift
       - path: NeutrinoDrive/Services/ShareUploadCoordinator.swift
@@ -128,7 +132,7 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.neutrino.drive.share
         MARKETING_VERSION: "1.0.0"
-        CURRENT_PROJECT_VERSION: "2"
+        CURRENT_PROJECT_VERSION: "8"
         SWIFT_VERSION: "5.0"
         IPHONEOS_DEPLOYMENT_TARGET: "16.0"
         DEVELOPMENT_TEAM: "46KWJJ63FU"

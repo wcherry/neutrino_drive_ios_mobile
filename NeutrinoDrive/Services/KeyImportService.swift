@@ -108,11 +108,14 @@ enum KeyImportService {
 
     // MARK: - removeKeys
 
-    /// Deletes all three Keychain entries.
+    /// Deletes all three Keychain entries, and the retired keys beside them.
     static func removeKeys() {
         KeychainService.delete(forKey: publicKeyKeychainKey)
         KeychainService.delete(forKey: privateKeyKeychainKey)
         KeychainService.delete(forKey: keyVersionKeychainKey)
+        // The retired keys are worth no less than the active one and are opened by the same
+        // person; forgetting the identity has to forget all of it.
+        KeyArchive.clear()
     }
 
     // MARK: - Private helpers

@@ -39,6 +39,11 @@ enum SharedStorage {
         static let privateKey = "nd.encryption.private_key"
         static let keyVersion = "nd.encryption.key_version"
 
+        /// The account's *retired* identity keys, as one JSON array — see `KeyArchive`. In the
+        /// shared group with the active key: the share extension uploads, and an upload seals to
+        /// the active key, but a download it triggers can need an older one.
+        static let archivedKeys = "nd.encryption.archived_keys"
+
         /// The symmetric key that encrypts this account's search-index snapshot (base64url).
         /// Device-local: not read by the share extension, so it lives in the default Keychain
         /// group rather than the shared one. See `SearchIndexSyncService`.

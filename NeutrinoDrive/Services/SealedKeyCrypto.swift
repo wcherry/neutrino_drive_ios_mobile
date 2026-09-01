@@ -29,6 +29,25 @@ import Sodium
 ///
 /// The web client's `encryptFileKey`/`decryptFileKey` (`packages/e2e-crypto/src/crypto.ts`) are
 /// the same two calls, so keys wrapped here open there and vice versa.
+/// The result of resolving a file's key version against this device. See
+/// `SealedKeyCrypto.storedKeyPair(forVersion:)`.
+enum KeyVersionLookup: Equatable {
+    case found(publicKey: String, privateKey: String)
+    case noKey
+    case missingVersion(Int)
+}
+
+/// A file's DEK as the server holds it: the sealed blob, and which of the caller's identity
+/// versions it was sealed to.
+///
+/// The two travel together because they are only meaningful together. Passing the blob alone is
+/// what let a rotated account's older files fail to open — the caller had no way to know which key
+/// to reach for, so it always reached for the newest.
+struct SealedFileKey: Equatable {
+    let sealed: String
+    let keyVersion: Int
+}
+
 enum SealedKeyCrypto {
 
     private static let sodium = Sodium()
@@ -77,7 +96,7 @@ enum SealedKeyCrypto {
 
     // MARK: - Stored Keypair
 
-    /// The signed-in user's own keypair, as stored by `KeyImportService`.
+    /// The signed-in user's **active** keypair, as stored by `KeyImportService`.
     ///
     /// Lives here rather than at each call site so "which Keychain entries hold the keypair"
     /// is answered once. Returns `nil` when either half is missing — callers treat that as
@@ -90,12 +109,49 @@ enum SealedKeyCrypto {
         return (publicKey, privateKey)
     }
 
-    /// Convenience: unseal using the stored keypair.
-    static func openDEKWithStoredKeys(sealedBase64URL sealed: String) -> Bytes? {
-        guard let keyPair = storedKeyPair() else { return nil }
+    /// The identity version new work is sealed to.
+    ///
+    /// Defaults to 1 for a key stored before the field meant anything — which is also what the
+    /// server defaults `file_key_refs.key_version` to, so the two agree about a pre-rotation
+    /// account.
+    static func activeKeyVersion() -> Int {
+        Int(KeychainService.load(forKey: SharedStorage.Keys.keyVersion) ?? "") ?? 1
+    }
+
+    /// The keypair that opens a DEK sealed to `version`.
+    ///
+    /// Checks the active key first — it is the one nearly every read wants — then the retired
+    /// keys `KeyFileService` pulled down into `KeyArchive`. Resolution lives here, beside the
+    /// primitives, rather than in `KeyImportService`, because the share extension compiles this
+    /// file and not that one: an upload it triggers seals to the active key, but anything it
+    /// reads back can want an older one.
+    ///
+    /// Three outcomes, not two. "This device has no key" and "this device has a key but not
+    /// *that* one" send the user to different places — import a key, versus this account rotated
+    /// and this device is missing a version — and collapsing them into a nil is how a rotation
+    /// becomes an unexplained decrypt failure.
+    static func storedKeyPair(forVersion version: Int) -> KeyVersionLookup {
+        guard let active = storedKeyPair() else { return .noKey }
+        if activeKeyVersion() == version {
+            return .found(publicKey: active.publicKey, privateKey: active.privateKey)
+        }
+        if let archived = KeyArchive.keyPair(forVersion: version) {
+            return .found(publicKey: archived.publicKey, privateKey: archived.privateKey)
+        }
+        return .missingVersion(version)
+    }
+
+    /// Convenience: unseal with whichever stored key `keyVersion` names.
+    ///
+    /// `keyVersion` defaults to 1 because key refs written before rotation existed carry no
+    /// version, and the server defaults the column to 1 for the same reason.
+    static func openDEKWithStoredKeys(sealedBase64URL sealed: String, keyVersion: Int = 1) -> Bytes? {
+        guard case .found(let publicKey, let privateKey) = storedKeyPair(forVersion: keyVersion) else {
+            return nil
+        }
         return openDEK(sealedBase64URL: sealed,
-                       publicKeyBase64URL: keyPair.publicKey,
-                       privateKeyBase64URL: keyPair.privateKey)
+                       publicKeyBase64URL: publicKey,
+                       privateKeyBase64URL: privateKey)
     }
 
     // MARK: - Encoding
