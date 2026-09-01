@@ -6,9 +6,14 @@ struct LoginView: View {
     @State private var serverHost: String = UserDefaults.standard.string(forKey: AuthService.serverHostKey) ?? AuthService.defaultHost
     @State private var email: String = ""
     @State private var password: String = ""
+    @State private var totpCode: String = ""
     @State private var isLoading = false
 
-    private var canSubmit: Bool { !email.isEmpty && !password.isEmpty && !serverHost.isEmpty }
+    private var canSubmit: Bool {
+        guard !email.isEmpty, !password.isEmpty, !serverHost.isEmpty else { return false }
+        // Once the server has asked for the second factor, a code is part of the credentials.
+        return !authService.requiresTwoFactorCode || !totpCode.isEmpty
+    }
 
     var body: some View {
         ScrollView {
@@ -90,6 +95,26 @@ struct LoginView: View {
                         .padding()
                         .background(Color(.secondarySystemBackground))
                         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+
+                    // Shown only once the server has said this account has two-factor enabled —
+                    // asking every account for a code it does not have would be worse than not
+                    // asking at all.
+                    if authService.requiresTwoFactorCode {
+                        HStack(spacing: 8) {
+                            Image(systemName: "lock.shield")
+                                .foregroundStyle(Color(.secondaryLabel))
+                                .frame(width: 20)
+                            TextField("Authentication code", text: $totpCode)
+                                .keyboardType(.numberPad)
+                                .textContentType(.oneTimeCode)
+                                .textInputAutocapitalization(.never)
+                                .autocorrectionDisabled()
+                        }
+                        .padding()
+                        .background(Color(.secondarySystemBackground))
+                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        .transition(.opacity)
+                    }
                 }
                 .padding(.horizontal, 32)
 
@@ -157,13 +182,17 @@ struct LoginView: View {
         .scrollDismissesKeyboard(.interactively)
         .animation(.easeInOut(duration: 0.2), value: isLoading)
         .animation(.easeInOut(duration: 0.2), value: authService.loginError != nil)
+        .animation(.easeInOut(duration: 0.2), value: authService.requiresTwoFactorCode)
         .onChange(of: authService.isAuthenticated) { _ in isLoading = false }
         .onChange(of: authService.loginError) { _ in if authService.loginError != nil { isLoading = false } }
+        // The prompt itself ends the spinner: the first pass of a 2FA sign-in comes back without
+        // tokens and without an error, so neither of the two above would fire.
+        .onChange(of: authService.requiresTwoFactorCode) { _ in isLoading = false }
     }
 
     private func handleSignIn() {
         isLoading = true
-        Task { await authService.login(email: email, password: password) }
+        Task { await authService.login(email: email, password: password, totpCode: totpCode) }
     }
 }
 

@@ -21,8 +21,8 @@ import os
 // One Keychain item rather than three per version: the set is read together, on
 // the same access-control terms, and the alternative is inventing a naming
 // scheme and a separate index to enumerate it. `KeychainService` applies
-// `WhenUnlockedThisDeviceOnly`, so this is out of device backups like the active
-// key beside it.
+// `AfterFirstUnlockThisDeviceOnly`, so this is out of device backups like the
+// active key beside it.
 
 /// One identity keypair, base64url, as stored on this device.
 struct StoredKeyPair: Codable, Equatable {

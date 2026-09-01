@@ -169,12 +169,9 @@ final class DriveService: ObservableObject {
         do {
             switch section {
             case .myDrive:
-                let response: APIFolderContentsResponse
-                if let id = parentID {
-                    response = try await get("/api/v1/drive/folders/\(id)")
-                } else {
-                    response = try await get("/api/v1/drive")
-                }
+                let response: APIFolderContentsResponse = try await get(
+                    folderContentsPath(parentID: parentID)
+                )
                 let folders = response.folders.map { DriveItem(folder: $0) }
                 let files   = response.files.map   { DriveItem(file: $0) }
                 // Replace cached items for this parent to avoid stale duplicates.
@@ -513,11 +510,7 @@ final class DriveService: ObservableObject {
     private func walkForIndexing(parentID: String?) async -> [DriveItem]? {
         let response: APIFolderContentsResponse
         do {
-            if let parentID {
-                response = try await get("/api/v1/drive/folders/\(parentID)")
-            } else {
-                response = try await get("/api/v1/drive")
-            }
+            response = try await get(folderContentsPath(parentID: parentID))
         } catch {
             logger.error("fetchAllFilesForIndexing: failed at parent=\(parentID ?? "root", privacy: .public) error=\(error, privacy: .public)")
             return nil
@@ -538,12 +531,7 @@ final class DriveService: ObservableObject {
     /// its ID is returned (adopted) rather than creating a duplicate — so a pre-existing
     /// "iPhone photos" is reused instead of producing a second "iPhone Photos" folder.
     func ensureFolder(named name: String, parentID: String?) async throws -> String {
-        let response: APIFolderContentsResponse
-        if let parentID {
-            response = try await get("/api/v1/drive/folders/\(parentID)")
-        } else {
-            response = try await get("/api/v1/drive")
-        }
+        let response: APIFolderContentsResponse = try await get(folderContentsPath(parentID: parentID))
         if let match = response.folders.first(where: { $0.name.caseInsensitiveCompare(name) == .orderedSame }) {
             logger.debug("ensureFolder: adopted existing folder id=\(match.id, privacy: .public) name=\(match.name, privacy: .public)")
             return match.id
@@ -572,6 +560,22 @@ final class DriveService: ObservableObject {
     }
 
     // MARK: - HTTP
+
+    /// The listing path for `parentID`'s contents — or for the drive root when it is nil.
+    ///
+    /// A user's root folder has no id of its own: the server takes the caller's own user id in its
+    /// place. The bare `GET /api/v1/drive` this used to call for the root was folded into
+    /// `/drive/folders/{id}` server-side and no longer exists, so a root listing has to name the
+    /// user. The id comes off the access token rather than `/api/v1/auth/me`, which spends no round
+    /// trip on a claim the server has already signed.
+    ///
+    /// Not private, so a test can pin the two shapes without a network stub — getting this wrong is
+    /// silent, and it browses an empty drive rather than failing loudly.
+    func folderContentsPath(parentID: String?) throws -> String {
+        if let parentID { return "/api/v1/drive/folders/\(parentID)" }
+        guard let rootID = AccessToken.currentUserID() else { throw DriveError.notAuthenticated }
+        return "/api/v1/drive/folders/\(rootID)"
+    }
 
     /// Builds a URLRequest without an Authorization header; `perform` injects it after refresh.
     private func request(method: String, path: String, body: (any Encodable)? = nil) throws -> URLRequest {
