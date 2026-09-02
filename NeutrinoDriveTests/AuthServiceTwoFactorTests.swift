@@ -1,4 +1,6 @@
 import XCTest
+import NeutrinoCore
+import NeutrinoAuth
 @testable import NeutrinoDrive
 
 /// Tests for the two-factor branch of sign-in.
@@ -25,7 +27,7 @@ final class AuthServiceTwoFactorTests: XCTestCase {
 
     private func makeSUT(_ handler: @escaping (URLRequest) throws -> (HTTPURLResponse, Data)) -> AuthService {
         MockURLProtocol.requestHandler = handler
-        return AuthService(session: MockURLProtocol.makeSession())
+        return AuthService(configuration: MockURLProtocol.configuration())
     }
 
     private func respond(_ request: URLRequest, _ json: String, status: Int = 200) -> (HTTPURLResponse, Data) {

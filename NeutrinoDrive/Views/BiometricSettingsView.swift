@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import NeutrinoAuth
 
 /// Settings detail screen for the biometric lock (mvp.md Phase 2 — "Face ID / Touch ID").
 struct BiometricSettingsView: View {

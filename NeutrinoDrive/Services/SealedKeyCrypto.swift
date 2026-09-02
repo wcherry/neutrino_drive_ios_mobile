@@ -1,5 +1,7 @@
 import Foundation
 import Sodium
+import NeutrinoCore
+import NeutrinoCrypto
 
 // MARK: - SealedKeyCrypto
 

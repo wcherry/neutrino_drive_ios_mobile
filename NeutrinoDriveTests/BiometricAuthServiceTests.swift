@@ -1,5 +1,6 @@
 import XCTest
 import LocalAuthentication
+import NeutrinoAuth
 @testable import NeutrinoDrive
 
 // MARK: - FakeBiometricEvaluator

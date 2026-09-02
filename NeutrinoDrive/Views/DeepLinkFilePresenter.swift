@@ -1,5 +1,7 @@
 import SwiftUI
 import QuickLook
+import NeutrinoCore
+import NeutrinoAuth
 
 // MARK: - DeepLinkFilePresenter
 

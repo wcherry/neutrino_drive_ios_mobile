@@ -1,4 +1,6 @@
 import XCTest
+import NeutrinoCore
+import NeutrinoCrypto
 @testable import NeutrinoDrive
 
 /// Unit tests for OfflineService and the OfflineFile model.
