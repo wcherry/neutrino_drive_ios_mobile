@@ -1,4 +1,7 @@
 import XCTest
+import NeutrinoCore
+import NeutrinoAuth
+import NeutrinoCrypto
 @testable import NeutrinoDrive
 
 // MARK: - Helpers

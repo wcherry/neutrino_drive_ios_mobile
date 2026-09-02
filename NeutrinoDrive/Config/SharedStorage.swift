@@ -1,97 +1,86 @@
 import Foundation
+import NeutrinoCore
 
 // MARK: - SharedStorage
 
-/// Storage identifiers and accessors shared between the host app and the share extension.
+/// Storage identifiers shared between the host app and the share extension.
 ///
-/// These constants used to live on `AuthService` / `KeyImportService`, which are *not*
-/// compiled into the share extension (they pull in `DriveService`, SwiftUI view models, and
-/// the whole object graph). Extracting them here keeps the extension's shared-source set
-/// small — see "Code-sharing strategy" in
-/// `agent_docs/plans/feature-phase2-biometrics-share-background.md`.
+/// Most of what used to live here is now `NeutrinoCore` — `NeutrinoAppConfig` owns the App Group,
+/// the Keychain access group and the `nd.*` key names, and `NeutrinoStorage` owns the dual-suite
+/// server-host read that lets the extension see the host the login screen configured.
 ///
-/// The original names are preserved as aliases on their old owners, so every existing call
-/// site and test continues to compile unchanged.
+/// What remains is the Drive-only half plus the aliases every existing call site uses. The type is
+/// kept rather than deleted for the reason it was created: the extension needs these identifiers
+/// without compiling `DriveService`, the view models and the rest of the object graph, and every
+/// name below still resolves without any of that.
 enum SharedStorage {
 
     // MARK: - Group identifiers
 
-    /// App Group shared by the app and the share extension. Used for the server-host
-    /// override and the extension's staging directory.
-    static let appGroupIdentifier = "group.com.neutrino.drive"
+    /// App Group shared by the app and the share extension. Used for the server-host override and
+    /// the extension's staging directory.
+    static var appGroupIdentifier: String {
+        NeutrinoApp.current.appGroupIdentifier ?? "group.com.neutrino.drive"
+    }
 
-    /// Keychain access group, so the extension can read the access token and the
-    /// encryption-key material the app imported.
-    ///
-    /// The `$(AppIdentifierPrefix)` placeholder is substituted by the entitlements system at
-    /// build time; the Security framework resolves the bare form below against the app's
-    /// `keychain-access-groups` entitlement.
-    static let keychainAccessGroup = "com.neutrino.drive.shared"
+    /// Keychain access group, so the extension can read the access token and the encryption-key
+    /// material the app imported.
+    static var keychainAccessGroup: String {
+        NeutrinoApp.current.keychainAccessGroup ?? "com.neutrino.drive.shared"
+    }
 
     // MARK: - Keys
 
+    /// The `nd.*` account strings. Derived from `NeutrinoAppConfig` rather than spelled out, so
+    /// there is one definition of the namespace and the package's tests pin it.
     enum Keys {
-        static let accessToken  = "nd.access_token"
-        static let refreshToken = "nd.refresh_token"
-        static let serverHost   = "nd.server_host"
+        static var accessToken:  String { NeutrinoApp.current.accessTokenKey }
+        static var refreshToken: String { NeutrinoApp.current.refreshTokenKey }
+        static var serverHost:   String { NeutrinoApp.current.serverHostKey }
 
-        static let publicKey  = "nd.encryption.public_key"
-        static let privateKey = "nd.encryption.private_key"
-        static let keyVersion = "nd.encryption.key_version"
+        static var publicKey:  String { NeutrinoApp.current.publicKeyKey }
+        static var privateKey: String { NeutrinoApp.current.privateKeyKey }
+        static var keyVersion: String { NeutrinoApp.current.keyVersionKey }
 
         /// The account's *retired* identity keys, as one JSON array — see `KeyArchive`. In the
         /// shared group with the active key: the share extension uploads, and an upload seals to
         /// the active key, but a download it triggers can need an older one.
-        static let archivedKeys = "nd.encryption.archived_keys"
+        static var archivedKeys: String { NeutrinoApp.current.archivedKeysKey }
 
         /// The symmetric key that encrypts this account's search-index snapshot (base64url).
-        /// Device-local: not read by the share extension, so it lives in the default Keychain
-        /// group rather than the shared one. See `SearchIndexSyncService`.
+        ///
+        /// Drive-only, and the reason this type still exists: search is not a Neutrino-wide
+        /// concept, so the key stays here rather than in the shared config. Device-local — not read
+        /// by the share extension, so it lives in the default Keychain group rather than the shared
+        /// one. See `SearchIndexSyncService`.
         static let searchIndexKey = "nd.search.index_key"
     }
 
-    static let defaultHost = "http://localhost:8080"
+    static var defaultHost: String { NeutrinoApp.current.defaultHost }
 
     // MARK: - Defaults
 
-    /// `UserDefaults` visible to both the app and the extension. Falls back to
-    /// `.standard` when the App Group entitlement is missing (unit tests, or a build without
-    /// the capability), so nothing ever crashes on a nil suite.
-    static let defaults: UserDefaults = {
-        UserDefaults(suiteName: appGroupIdentifier) ?? .standard
-    }()
+    /// `UserDefaults` visible to both the app and the extension.
+    static var defaults: UserDefaults { NeutrinoStorage.defaults }
 
-    /// Server host override. Reads the App Group suite first so the extension sees whatever
-    /// host the user configured in the app's login screen, falling back to `.standard` for
-    /// installs that predate the App Group, then to `defaultHost`.
-    static var serverHost: String {
-        if let shared = defaults.string(forKey: Keys.serverHost) { return shared }
-        if let local = UserDefaults.standard.string(forKey: Keys.serverHost) { return local }
-        return defaultHost
-    }
+    /// Server host override, reading the App Group suite first and falling back to `.standard` for
+    /// installs that predate the group.
+    static var serverHost: String { NeutrinoStorage.serverHost }
 
-    /// Writes the host to both suites, so a host set before this build shipped and a host set
+    /// Writes the host to both suites, so a host set before the App Group shipped and a host set
     /// after it agree.
     static func setServerHost(_ host: String) {
-        defaults.set(host, forKey: Keys.serverHost)
-        UserDefaults.standard.set(host, forKey: Keys.serverHost)
+        NeutrinoStorage.setServerHost(host)
     }
 
     // MARK: - Preconditions
 
     /// True when all three key-material entries are present in the Keychain.
-    ///
-    /// Duplicates `KeyImportService.hasStoredKeys()` deliberately: the extension needs this
-    /// check but must not compile `KeyImportService` (which drags in CryptoKit validation and
-    /// the import UI's error surface). `KeyImportService.hasStoredKeys()` now delegates here,
-    /// so there is exactly one implementation despite the two entry points.
     static func hasStoredKeys() -> Bool {
-        KeychainService.load(forKey: Keys.publicKey)  != nil &&
-        KeychainService.load(forKey: Keys.privateKey) != nil &&
-        KeychainService.load(forKey: Keys.keyVersion) != nil
+        NeutrinoStorage.hasStoredKeys()
     }
 
     static func accessToken() -> String? {
-        KeychainService.load(forKey: Keys.accessToken)
+        NeutrinoStorage.accessToken()
     }
 }

@@ -1,5 +1,7 @@
 import SwiftUI
 import QuickLook
+import NeutrinoCore
+import NeutrinoAuth
 
 // MARK: - FileBrowserView
 
@@ -160,13 +162,19 @@ struct FileBrowserView: View {
             ),
             presenting: companionPrompt
         ) { prompt in
+            if CompanionAppStore.hasListing(for: prompt.kind) {
+                Button("Get \(prompt.kind.appName)") {
+                    companionPrompt = nil
+                    installCompanionApp(prompt.kind)
+                }
+            }
             Button("Open in Drive") {
                 companionPrompt = nil
                 openInDrive(prompt.item)
             }
             Button("Cancel", role: .cancel) { companionPrompt = nil }
         } message: { prompt in
-            Text("Install \(prompt.kind.appName) to edit \u{201C}\(prompt.item.name)\u{201D}, or open it here in Drive.")
+            Text(companionPromptMessage(for: prompt))
         }
         .alert("Download Failed", isPresented: Binding(
             get: { downloadError != nil },
@@ -511,8 +519,10 @@ struct FileBrowserView: View {
 
     /// The sibling app that owns this file's format, or nil when Drive should open it itself.
     ///
-    /// Kinds without a shipping iOS app (Sheets, Slides, …) return nil deliberately: offering to
-    /// open them elsewhere would always end in the "isn't installed" alert.
+    /// This is what routes a `.docx`, `.xlsx`, or `.pptx` out of Drive: those are the formats Docs,
+    /// Sheets, and Slides store their files in, so an Office file here is a Neutrino document that
+    /// happens to also open in Word — not an attachment to download. Diagrams and Drawings are
+    /// web-only and return nil, as does every ordinary upload.
     private func companionKind(for item: DriveItem) -> NeutrinoAppLink.Kind? {
         guard FeatureFlags.companionAppLinks, item.type == .file else { return nil }
         guard let kind = NeutrinoAppLink.kind(forMIME: item.mimeType), kind.hasCompanionApp else {
@@ -533,6 +543,29 @@ struct FileBrowserView: View {
                 companionPrompt = CompanionPrompt(item: item, kind: kind)
             }
         }
+    }
+
+    /// Sends the user to the App Store listing for the app they are missing.
+    ///
+    /// Only reachable when `CompanionAppStore` has an id for the kind — the button is not shown
+    /// otherwise — so there is no failure to report back to the user here.
+    private func installCompanionApp(_ kind: NeutrinoAppLink.Kind) {
+        Task {
+            await companionLauncher.openAppStore(for: kind)
+        }
+    }
+
+    /// What the "isn't installed" alert says, which depends on whether the app can be installed.
+    ///
+    /// An app with no App Store listing yet gets no "Get …" button, so promising one ("Install X
+    /// to edit this") would name a step the alert does not offer. That wording is kept for the
+    /// case where the button is actually there.
+    private func companionPromptMessage(for prompt: CompanionPrompt) -> String {
+        let fileName = "\u{201C}\(prompt.item.name)\u{201D}"
+        guard CompanionAppStore.hasListing(for: prompt.kind) else {
+            return "\(prompt.kind.appName) isn\u{2019}t available on this device yet. You can open \(fileName) here in Drive."
+        }
+        return "Get \(prompt.kind.appName) from the App Store to edit \(fileName), or open it here in Drive."
     }
 
     /// The pre-companion-app behaviour, used as the fallback when the sibling app is missing.

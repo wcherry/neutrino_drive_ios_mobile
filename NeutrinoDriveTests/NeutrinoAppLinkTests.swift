@@ -1,4 +1,5 @@
 import XCTest
+import NeutrinoCore
 @testable import NeutrinoDrive
 
 /// Tests for the Universal Link format shared by Drive, Notes, and Docs.
@@ -152,6 +153,41 @@ final class NeutrinoAppLinkTests: XCTestCase {
         XCTAssertEqual(NeutrinoAppLink.kind(forMIME: "APPLICATION/X-NEUTRINO-NOTE"), .note)
     }
 
+    // MARK: - MIME routing: OOXML
+
+    /// A Neutrino document *is* a `.docx` (issue #127), so an Office file in Drive routes to the
+    /// editor that owns it rather than down the download-and-Quick-Look path.
+    func test_kindForMIME_routesDocxToDocs() {
+        XCTAssertEqual(NeutrinoAppLink.kind(forMIME: NeutrinoAppLink.OOXML.docx), .doc)
+    }
+
+    func test_kindForMIME_routesXlsxToSheets() {
+        XCTAssertEqual(NeutrinoAppLink.kind(forMIME: NeutrinoAppLink.OOXML.xlsx), .sheet)
+    }
+
+    func test_kindForMIME_routesPptxToSlides() {
+        XCTAssertEqual(NeutrinoAppLink.kind(forMIME: NeutrinoAppLink.OOXML.pptx), .slide)
+    }
+
+    /// Pins the exact wire strings: these are matched against what the backend wrote, so a typo
+    /// here would silently stop routing every Office file rather than fail to compile.
+    func test_ooxmlTypes_matchTheServersSpelling() {
+        XCTAssertEqual(NeutrinoAppLink.OOXML.docx,
+                       "application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+        XCTAssertEqual(NeutrinoAppLink.OOXML.xlsx,
+                       "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+        XCTAssertEqual(NeutrinoAppLink.OOXML.pptx,
+                       "application/vnd.openxmlformats-officedocument.presentationml.presentation")
+    }
+
+    /// The pre-OOXML Office formats are foreign files Neutrino cannot open. Routing one to an
+    /// editor that would fail to parse it is worse than the download it gets today.
+    func test_kindForMIME_doesNotClaimLegacyOfficeTypes() {
+        XCTAssertNil(NeutrinoAppLink.kind(forMIME: "application/msword"))
+        XCTAssertNil(NeutrinoAppLink.kind(forMIME: "application/vnd.ms-excel"))
+        XCTAssertNil(NeutrinoAppLink.kind(forMIME: "application/vnd.ms-powerpoint"))
+    }
+
     func test_kindForMIME_returnsNilForOrdinaryFile() {
         XCTAssertNil(NeutrinoAppLink.kind(forMIME: "application/pdf"))
     }
@@ -181,14 +217,32 @@ final class NeutrinoAppLinkTests: XCTestCase {
 
     // MARK: - Companion apps
 
-    func test_hasCompanionApp_isTrueForShippingApps() {
+    /// Every format an iOS app exists (or is being built) for is offered. Sheets and Slides are
+    /// included ahead of their releases on purpose: a miss falls through to the Drive viewer, which
+    /// is what tapping the file did anyway, and the route needs no change when they ship.
+    func test_hasCompanionApp_isTrueForEveryEditorApp() {
         XCTAssertTrue(NeutrinoAppLink.Kind.note.hasCompanionApp)
         XCTAssertTrue(NeutrinoAppLink.Kind.doc.hasCompanionApp)
+        XCTAssertTrue(NeutrinoAppLink.Kind.sheet.hasCompanionApp)
+        XCTAssertTrue(NeutrinoAppLink.Kind.slide.hasCompanionApp)
     }
 
+    /// Diagrams and Drawings are web-only, and `.file` means Drive itself.
     func test_hasCompanionApp_isFalseWhereNoIOSAppExists() {
-        XCTAssertFalse(NeutrinoAppLink.Kind.sheet.hasCompanionApp)
-        XCTAssertFalse(NeutrinoAppLink.Kind.slide.hasCompanionApp)
+        XCTAssertFalse(NeutrinoAppLink.Kind.diagram.hasCompanionApp)
+        XCTAssertFalse(NeutrinoAppLink.Kind.drawing.hasCompanionApp)
         XCTAssertFalse(NeutrinoAppLink.Kind.file.hasCompanionApp)
+    }
+
+    /// The three Office formats the user can tap must each reach an app, or the hand-off this all
+    /// exists for silently does nothing for the file types it was built around.
+    func test_hasCompanionApp_coversEveryOOXMLFormat() {
+        for mime in [NeutrinoAppLink.OOXML.docx,
+                     NeutrinoAppLink.OOXML.xlsx,
+                     NeutrinoAppLink.OOXML.pptx] {
+            let kind = NeutrinoAppLink.kind(forMIME: mime)
+            XCTAssertNotNil(kind, "\(mime) routes nowhere")
+            XCTAssertEqual(kind?.hasCompanionApp, true, "\(mime) is not offered a companion app")
+        }
     }
 }

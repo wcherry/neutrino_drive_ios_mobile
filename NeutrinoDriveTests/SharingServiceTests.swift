@@ -1,5 +1,8 @@
 import XCTest
 import Sodium
+import NeutrinoCore
+import NeutrinoAuth
+import NeutrinoCrypto
 @testable import NeutrinoDrive
 
 /// Unit tests for `SharingService`, covering the permission/key-share sequence, the E2EE

@@ -1,5 +1,6 @@
 import XCTest
 import Sodium
+import NeutrinoCrypto
 @testable import NeutrinoDrive
 
 // MARK: - KeyFileServiceTests

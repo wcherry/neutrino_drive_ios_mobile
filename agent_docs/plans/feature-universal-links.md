@@ -48,14 +48,29 @@ link degrades to a working web page when the app is absent — which is the enti
 ## Shared code
 
 `NeutrinoAppLink.swift` — the URL vocabulary and the MIME → app routing table — is **duplicated
-verbatim** in all three repositories. It is a wire format between three separately shipped binaries:
-an app built last month must still open a link minted today. The copies must stay identical, and
-each repository has the same `NeutrinoAppLinkTests` suite pinning them.
+verbatim** in all four repositories (Drive, Notes, Docs, and Sheets). It is a wire format between
+separately shipped binaries: an app built last month must still open a link minted today. The copies
+must stay identical, and Drive, Notes, and Docs each have the same `NeutrinoAppLinkTests` suite
+pinning them.
 
-The MIME table matches both the `application/x-neutrino-*` spelling the backend writes today
-(`src/notes/service.rs`, `src/docs/docs/service.rs`) and the older `application/vnd.neutrino.*` form
-still found in `DriveItem.NeutrinoMIME` and in old records, so routing does not depend on which
-vintage of the server wrote the row.
+The MIME table matches three vintages, because one Drive listing routinely holds all of them:
+
+| Spelling | Written by |
+| --- | --- |
+| `application/vnd.openxmlformats-…` (`.docx`, `.xlsx`, `.pptx`) | Docs, Sheets, and Slides today |
+| `application/x-neutrino-*` | the bespoke JSON that predates OOXML, still read and written |
+| `application/vnd.neutrino.*` | the oldest form, still in old records and `DriveItem.NeutrinoMIME` |
+
+The OOXML row is the one that matters most in practice. A Neutrino document **is** a real `.docx`, a
+spreadsheet a real `.xlsx`, a deck a real `.pptx` (issue #127 — `src/drive/storage/native_types.rs`,
+`api-core/src/ooxml.ts`). Before those types were in the table, tapping a `.docx` in Drive fell all
+the way through to download-and-Quick-Look, so the app's own primary format was the one thing the
+hand-off did not handle. Legacy `.doc`/`.xls`/`.ppt` are deliberately *not* claimed: Neutrino cannot
+parse them, and routing one to an editor that fails on it is worse than the download it gets today.
+
+Because Docs and Sheets validate an inbound link's MIME on the way in (`DocsDriveService.fetchItem`
+rejects anything `kind(forMIME:)` does not call a `.doc`), the OOXML entries are load-bearing in the
+*receiving* copies too — a Drive-only change would open Docs and show an error.
 
 ## Outbound (Drive)
 
@@ -65,13 +80,34 @@ app is installed (`canOpenURL` says yes to every `https` URL, because Safari can
 With `universalLinksOnly`, iOS either routes to the installed app or reports failure — it never
 drops the user into Safari behind Drive's back, which is what makes the fallback possible.
 
-On failure `FileBrowserView` offers **Open in Drive**, which is exactly the pre-existing behaviour
-(the in-app web viewer, or download + Quick Look).
+On failure `FileBrowserView` prompts, offering **Get \<app\>** and **Open in Drive**. The second is
+exactly the pre-existing behaviour (the in-app web viewer, or download + Quick Look).
 
-Only `.note` and `.doc` are offered (`Kind.hasCompanionApp`). Sheets, Slides, Diagrams and Drawings
-have no iOS app yet, so offering to open them elsewhere would always end in the "isn't installed"
-alert. Their links are still well-formed — when those apps ship, flip the flag and move the path in
-the AASA document; nothing else changes.
+`.note`, `.doc`, `.sheet`, and `.slide` are all offered (`Kind.hasCompanionApp`). Diagrams and
+Drawings are excluded because they exist only on the web — an offer could never resolve into
+anything but the Drive viewer the user already had.
+
+Sheets and Slides are offered *ahead of their releases*. A miss there is not a dead end: the prompt
+still opens the file in Drive, which is what tapping it did anyway, so one route covers every Office
+file instead of two that diverge on release dates. When those apps ship, move their paths in the
+AASA document and flip `FeatureFlags.appLinks` in their repositories; nothing here changes.
+
+### The install offer
+
+`CompanionAppStore` maps a `Kind` to its App Store item id and builds an `itms-apps://` link (rather
+than `https://apps.apple.com/…`, which can bounce through Safari first — a browser flashing up on
+the way to an install reads as the link having failed).
+
+**The table is empty.** App Store Connect mints product ids at first submission, so they cannot be
+derived from anything in these repositories; each entry carries a `TODO` to be filled in as the app
+is published. That is why the empty state has to be inert rather than broken: `url(for:)` returns
+nil, `hasListing(for:)` is false, the prompt omits its button and reworks its message, and the user
+still gets "Open in Drive". A missing button is a much smaller failure than a button that opens a
+404 on the App Store — and it is what lets Sheets and Slides be routed today.
+
+`CompanionAppLauncher.Opener` therefore takes `universalLinksOnly` as a parameter: a companion app
+is reached by Universal Link and must fail rather than fall into Safari, while `itms-apps:` is
+claimed by *scheme* and demanding a universal link would reject it outright.
 
 ## Inbound (all three)
 

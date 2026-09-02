@@ -1,6 +1,7 @@
 import Foundation
 import Sodium
 import os.log
+import NeutrinoCore
 
 // MARK: - UploadError
 

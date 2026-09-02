@@ -1,6 +1,7 @@
 import UIKit
 import UniformTypeIdentifiers
 import os.log
+import NeutrinoCore
 
 /// Host view controller for the "Share → Neutrino Drive" extension.
 ///
@@ -19,6 +20,14 @@ import os.log
 ///   any `URLSession` with it, so uploads run inline while the sheet is on screen and the sheet
 ///   stays up until they finish.
 final class ShareViewController: UIViewController {
+
+    /// The extension is a separate process with its own launch, so it configures the shared
+    /// package itself — the app's `init()` never runs here. Same `nd.*` namespace and same App
+    /// Group, which is exactly what lets it read the token and key the app imported.
+    private static let configured: Void = {
+        NeutrinoApp.configure(.drive)
+    }()
+
 
     private let coordinator = ShareUploadCoordinator()
     private let logger = Logger(subsystem: "com.neutrino.drive.share", category: "ShareViewController")
