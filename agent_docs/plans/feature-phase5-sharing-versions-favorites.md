@@ -7,7 +7,7 @@ Three of the five Phase 5 items in `agent_docs/mvp.md` land here: **Sharing**,
 Streaming stay out of scope.
 
 All three compose endpoints that already exist in the Rust backend at
-`/Users/williamcherry/Playground/neutrino` — **no backend changes**. Every
+`/Users/williamcherry/Playground/getneutrino.app/neutrino` — **no backend changes**. Every
 request/response shape below was read out of the actual handler source, not
 inferred from the endpoint list, because two of them differ from the brief:
 
