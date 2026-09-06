@@ -1,4 +1,5 @@
 import SwiftUI
+import NeutrinoCrypto
 
 // MARK: - RecoveryKitImportView
 //

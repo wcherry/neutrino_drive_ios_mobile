@@ -1,5 +1,6 @@
 import XCTest
 import CryptoKit
+import NeutrinoCrypto
 @testable import NeutrinoDrive
 
 /// Tests for `RecoveryKit`.

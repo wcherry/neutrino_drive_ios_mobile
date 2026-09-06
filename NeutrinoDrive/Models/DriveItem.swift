@@ -1,4 +1,5 @@
 import Foundation
+import NeutrinoCore
 
 // MARK: - DriveItem
 
@@ -39,9 +40,20 @@ struct DriveItem: Identifiable, Hashable {
 
     // MARK: - Computed
 
+    /// The Neutrino app that owns this file's format, or nil for an ordinary upload.
+    var neutrinoKind: NeutrinoAppLink.Kind? {
+        NeutrinoAppLink.kind(forMIME: mimeType)
+    }
+
+    /// True for files Neutrino edits itself, in any of the formats it has stored them in.
+    ///
+    /// Asks the routing table rather than matching a prefix. `application/vnd.neutrino.` is the
+    /// oldest of three spellings; the backend writes `application/x-neutrino-*` and, for Docs,
+    /// Sheets, and Slides, a real `.docx`/`.xlsx`/`.pptx` — so a prefix test answered false for
+    /// nearly every native file the server creates today, sending each one down the download path
+    /// instead of into the viewer that can open it.
     var isNeutrinoNativeFormat: Bool {
-        guard let mime = mimeType else { return false }
-        return mime.hasPrefix("application/vnd.neutrino.")
+        neutrinoKind != nil
     }
 
     /// Returns the appropriate SF Symbol name for this item.
@@ -51,11 +63,7 @@ struct DriveItem: Identifiable, Hashable {
             return "folder.fill"
         case .file:
             guard let mime = mimeType else { return "doc" }
-            if mime == NeutrinoMIME.doc      { return "doc.text.fill" }
-            if mime == NeutrinoMIME.sheet    { return "tablecells" }
-            if mime == NeutrinoMIME.slide    { return "rectangle.stack.fill" }
-            if mime == NeutrinoMIME.diagram  { return "flowchart" }
-            if mime == NeutrinoMIME.drawing  { return "paintbrush.fill" }
+            if let kind = neutrinoKind, let symbol = Self.symbolName(for: kind) { return symbol }
             if mime.hasPrefix("image/")      { return "photo" }
             if mime == "application/pdf"     { return "doc.richtext" }
             if mime.hasPrefix("video/")      { return "film" }
@@ -66,6 +74,23 @@ struct DriveItem: Identifiable, Hashable {
                 || mime == "application/x-gzip" { return "archivebox" }
             if mime.hasPrefix("text/")       { return "doc.text" }
             return "doc"
+        }
+    }
+
+    /// The SF Symbol for a Neutrino-owned format, or nil to fall through to the generic rules.
+    ///
+    /// Keyed on the app rather than the mime type so a `.docx` and the legacy `x-neutrino-doc`
+    /// beside it in the same folder show the same icon — they are both documents, and which
+    /// vintage of the server wrote them is not something a user should be able to see.
+    private static func symbolName(for kind: NeutrinoAppLink.Kind) -> String? {
+        switch kind {
+        case .doc:              return "doc.text.fill"
+        case .sheet:            return "tablecells"
+        case .slide:            return "rectangle.stack.fill"
+        case .diagram:          return "flowchart"
+        case .drawing:          return "paintbrush.fill"
+        // Notes have never had an icon of their own here, and `.file` is not a format.
+        case .note, .file:      return nil
         }
     }
 }

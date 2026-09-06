@@ -1,4 +1,6 @@
 import XCTest
+import NeutrinoCore
+import NeutrinoAuth
 @testable import NeutrinoDrive
 
 /// Unit tests for `VersionHistoryService` — listing, ordering, date decoding, and restore.

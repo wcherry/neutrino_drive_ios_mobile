@@ -1,4 +1,8 @@
 import SwiftUI
+import NeutrinoCore
+import NeutrinoAuth
+import NeutrinoCrypto
+import NeutrinoUI
 import UIKit
 
 // MARK: - AppDelegate
@@ -31,21 +35,44 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
 struct NeutrinoDriveApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
 
-    @StateObject private var authService = AuthService()
-    @StateObject private var driveService = DriveService()
-    @StateObject private var offlineService = OfflineService()
-    @StateObject private var uploadService = UploadService()
-    @StateObject private var photoSyncService = PhotoSyncService()
-    @StateObject private var biometricService = BiometricAuthService()
+    // Built in `init()` rather than given default values here: defaults are evaluated before the
+    // initializer body runs, and the shared services resolve their Keychain namespace through
+    // `NeutrinoApp.current` the moment they are constructed.
+    @StateObject private var authService: AuthService
+    @StateObject private var driveService: DriveService
+    @StateObject private var offlineService: OfflineService
+    @StateObject private var uploadService: UploadService
+    @StateObject private var photoSyncService: PhotoSyncService
+    @StateObject private var biometricService: BiometricAuthService
 
     @Environment(\.scenePhase) private var scenePhase
 
     init() {
+        // Before anything else, and before the Keychain migration below reads the App Group out of
+        // it. `nd.*` is what previous builds wrote, so this reads the existing session and the
+        // already-imported encryption key rather than starting cold.
+        NeutrinoApp.configure(.drive)
+        NeutrinoBrand.use(.drive)
+
+        _authService = StateObject(wrappedValue: AuthService())
+        _driveService = StateObject(wrappedValue: DriveService())
+        _offlineService = StateObject(wrappedValue: OfflineService())
+        _uploadService = StateObject(wrappedValue: UploadService())
+        _photoSyncService = StateObject(wrappedValue: PhotoSyncService())
+        _biometricService = StateObject(wrappedValue: BiometricAuthService(
+            isFeatureEnabled: FeatureFlags.biometricLock,
+            unlockReason: "Unlock Neutrino Drive to access your encrypted files."
+        ))
+
         // Must be registered before the app finishes launching. No-ops when
         // FeatureFlags.photoAutoSync is false. Accessing the StateObject's storage
         // directly (rather than the `photoSyncService` property) is safe here — this
         // only invokes a plain method, it doesn't participate in view invalidation.
         _photoSyncService.wrappedValue.registerBackgroundTask()
+
+        // The App Group is only resolvable once the config is installed, so re-probe before
+        // relocating: `KeychainService` computes its access group at first touch.
+        KeychainService.reloadAccessGroup()
 
         // Relocates existing Keychain items into the shared access group so the share
         // extension can read them. No-op when the App Group entitlement is absent.

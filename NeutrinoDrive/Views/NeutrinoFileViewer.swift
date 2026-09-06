@@ -1,5 +1,7 @@
 import SwiftUI
 import WebKit
+import NeutrinoCore
+import NeutrinoAuth
 
 // MARK: - NeutrinoFileViewer
 

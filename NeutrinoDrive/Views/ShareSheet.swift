@@ -1,4 +1,5 @@
 import SwiftUI
+import NeutrinoAuth
 
 // MARK: - ShareSheet
 

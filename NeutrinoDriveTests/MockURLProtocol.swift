@@ -27,9 +27,15 @@ final class MockURLProtocol: URLProtocol {
     private(set) static var lastRequestBody: Data?
 
     static func makeSession() -> URLSession {
+        URLSession(configuration: configuration())
+    }
+
+    /// `AuthService` takes a configuration rather than a session — it builds two, one of which
+    /// suppresses redirects — so the stub has to be installed a level down.
+    static func configuration() -> URLSessionConfiguration {
         let config = URLSessionConfiguration.ephemeral
         config.protocolClasses = [MockURLProtocol.self]
-        return URLSession(configuration: config)
+        return config
     }
 
     static func reset() {

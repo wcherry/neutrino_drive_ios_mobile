@@ -1,4 +1,7 @@
 import SwiftUI
+import NeutrinoAuth
+import NeutrinoCrypto
+import NeutrinoUI
 
 struct SettingsView: View {
     @EnvironmentObject var authService: AuthService

@@ -2,6 +2,9 @@ import Foundation
 import Combine
 import Sodium
 import os.log
+import NeutrinoCore
+import NeutrinoAuth
+import NeutrinoCrypto
 
 // MARK: - SearchIndexSyncService
 

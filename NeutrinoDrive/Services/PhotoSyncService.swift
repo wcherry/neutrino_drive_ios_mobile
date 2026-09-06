@@ -5,6 +5,9 @@ import Network
 import BackgroundTasks
 import UniformTypeIdentifiers
 import os.log
+import NeutrinoCore
+import NeutrinoAuth
+import NeutrinoCrypto
 
 // MARK: - PhotoAssetProviding
 

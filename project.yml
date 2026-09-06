@@ -3,6 +3,13 @@ packages:
   swift-sodium:
     url: https://github.com/jedisct1/swift-sodium
     from: "0.9.1"
+  # The code shared with Docs, Sheets, Notes and Photos: account identity, the
+  # OAuth/PKCE flow, the E2EE key lifecycle and the sign-in screens.
+  #
+  # A local path, so the two repositories have to sit side by side. Swap this for
+  # `url:` + `from:` once neutrino_shared_ios is pushed and tagged.
+  NeutrinoShared:
+    path: ../neutrino_shared_ios
 options:
   bundleIdPrefix: com.neutrino
   deploymentTarget:
@@ -18,6 +25,14 @@ targets:
     dependencies:
       - package: swift-sodium
         product: Sodium
+      - package: NeutrinoShared
+        product: NeutrinoCore
+      - package: NeutrinoShared
+        product: NeutrinoAuth
+      - package: NeutrinoShared
+        product: NeutrinoCrypto
+      - package: NeutrinoShared
+        product: NeutrinoUI
       - target: NeutrinoDriveShare
         embed: true
     settings:
@@ -113,21 +128,23 @@ targets:
       - path: NeutrinoDriveShare
       - path: NeutrinoDrive/Config/FeatureFlags.swift
       - path: NeutrinoDrive/Config/SharedStorage.swift
-      - path: NeutrinoDrive/Services/KeychainService.swift
+      # KeychainService and KeyArchive used to be listed here and compiled twice. They are
+      # NeutrinoCore and NeutrinoCrypto now, linked below — which serves the same purpose this
+      # list always did, only enforced by the linker rather than by remembering to add the file.
       # E2EEUploader seals the DEK via SealedKeyCrypto, so the extension needs it too.
       # Same rationale as the rest of this list: compiling the identical source is what
       # guarantees the extension's key wrap matches the app's.
       - path: NeutrinoDrive/Services/SealedKeyCrypto.swift
-      # SealedKeyCrypto resolves a file's key version against the retired keys held here, so the
-      # extension needs it for the same reason: compiling the identical source is what guarantees
-      # it reaches for the same key the app would.
-      - path: NeutrinoDrive/Services/KeyArchive.swift
       - path: NeutrinoDrive/Services/E2EEUploader.swift
       - path: NeutrinoDrive/Services/BackgroundTransferService.swift
       - path: NeutrinoDrive/Services/ShareUploadCoordinator.swift
     dependencies:
       - package: swift-sodium
         product: Sodium
+      - package: NeutrinoShared
+        product: NeutrinoCore
+      - package: NeutrinoShared
+        product: NeutrinoCrypto
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.neutrino.drive.share

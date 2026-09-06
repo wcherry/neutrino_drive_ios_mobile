@@ -1,5 +1,6 @@
 import Foundation
 import CryptoKit
+import NeutrinoCrypto
 
 // MARK: - RecoveryKit
 //

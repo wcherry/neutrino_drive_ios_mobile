@@ -1,6 +1,8 @@
 import XCTest
 import CryptoKit
 import Foundation
+import NeutrinoCore
+import NeutrinoCrypto
 @testable import NeutrinoDrive
 
 /// Tests for KeyImportService.
@@ -134,17 +136,18 @@ final class KeyImportServiceTests: XCTestCase {
         }
     }
 
-    /// A JSON payload that lacks the `key_version` field must throw
-    /// KeyImportError.missingFields.
-    func test_importKey_withMissingKeyVersion_throwsMissingFields() {
+    /// A payload that lacks `key_version` imports as version 1 rather than being refused.
+    ///
+    /// Drive used to throw `missingFields` here; the other four apps defaulted to 1, and the
+    /// shared `KeyImportService` keeps that. The default is the correct reading: an export that
+    /// predates the field is from an account that had never rotated, and the server defaults
+    /// `file_key_refs.key_version` to 1 for exactly the same reason — so the two agree. Refusing
+    /// it only stopped a user with an older key file from enrolling at all.
+    func test_importKey_withMissingKeyVersion_defaultsToVersionOne() throws {
         let (pubB64, privB64) = makeRealKeyPair()
         let data = makeJSON(publicKey: pubB64, privateKey: privB64, keyVersion: nil)
 
-        XCTAssertThrowsError(try KeyImportService.importKey(from: data)) { error in
-            guard case KeyImportError.missingFields = error else {
-                return XCTFail("Expected KeyImportError.missingFields, got \(error)")
-            }
-        }
+        XCTAssertEqual(try KeyImportService.importKey(from: data).keyVersion, "1")
     }
 
     // MARK: - Invalid Base64

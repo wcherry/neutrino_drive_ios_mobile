@@ -53,15 +53,17 @@ struct FileRowView: View {
         }
     }
 
+    /// Keyed on the owning app, so a `.docx` is tinted like the document it is rather than falling
+    /// back to the grey every non-Neutrino upload gets.
     private var neutrinoAccentColor: Color? {
-        guard item.isNeutrinoNativeFormat, let mime = item.mimeType else { return nil }
-        switch mime {
-        case DriveItem.NeutrinoMIME.doc:     return .blue
-        case DriveItem.NeutrinoMIME.sheet:   return .green
-        case DriveItem.NeutrinoMIME.slide:   return .orange
-        case DriveItem.NeutrinoMIME.diagram: return .purple
-        case DriveItem.NeutrinoMIME.drawing: return Color(red: 0.9, green: 0.25, blue: 0.45)
-        default:                             return nil
+        guard let kind = item.neutrinoKind else { return nil }
+        switch kind {
+        case .doc:         return .blue
+        case .sheet:       return .green
+        case .slide:       return .orange
+        case .diagram:     return .purple
+        case .drawing:     return Color(red: 0.9, green: 0.25, blue: 0.45)
+        case .note, .file: return nil
         }
     }
 
