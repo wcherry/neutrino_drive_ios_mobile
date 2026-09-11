@@ -44,6 +44,7 @@ struct NeutrinoDriveApp: App {
     @StateObject private var uploadService: UploadService
     @StateObject private var photoSyncService: PhotoSyncService
     @StateObject private var biometricService: BiometricAuthService
+    @StateObject private var keyProvisioningService = KeyProvisioningService()
 
     @Environment(\.scenePhase) private var scenePhase
 
@@ -88,6 +89,7 @@ struct NeutrinoDriveApp: App {
                     .environmentObject(offlineService)
                     .environmentObject(photoSyncService)
                     .environmentObject(biometricService)
+                    .environmentObject(keyProvisioningService)
 
                 if biometricService.shouldPresentOverlay {
                     LockScreenView(biometricService: biometricService)
@@ -108,6 +110,9 @@ struct NeutrinoDriveApp: App {
                 // key arrived. One request, and a failure is not worth surfacing — the next launch
                 // tries again.
                 KeyFileService.shared.authService = authService
+                // Minting a key talks to the account's key directory, so it needs the same token
+                // refresher as everything else.
+                keyProvisioningService.authService = authService
                 if authService.isAuthenticated && KeyImportService.hasStoredKeys() {
                     try? await KeyFileService.shared.restoreArchivedKeys()
                 }
