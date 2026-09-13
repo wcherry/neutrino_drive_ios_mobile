@@ -3,6 +3,12 @@ import CryptoKit
 import NeutrinoCrypto
 @testable import NeutrinoDrive
 
+// Both this app and `NeutrinoCrypto` define a `RecoveryKit`: Drive's installs a keyring straight
+// into its own store, the shared one is the keyring value type the editors restore through. They
+// encode the same bytes but are not the same API, so this file names Drive's explicitly.
+private typealias RecoveryKit = NeutrinoDrive.RecoveryKit
+private typealias RecoveryKitError = NeutrinoDrive.RecoveryKitError
+
 /// Tests for `RecoveryKit`.
 ///
 /// As with the key code, the thing worth proving is agreement with the *other* implementation:

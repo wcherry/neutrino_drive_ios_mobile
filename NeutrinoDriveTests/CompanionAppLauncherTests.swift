@@ -87,7 +87,7 @@ final class CompanionAppLauncherTests: XCTestCase {
         let spy = OpenerSpy()
         let sut = CompanionAppLauncher(opener: spy.opener())
 
-        let outcome = await sut.open(fileID: "f1", mimeType: "application/x-neutrino-note")
+        let outcome = await sut.open(fileID: "f1", mimeType: "text/markdown")
 
         XCTAssertEqual(outcome, .opened)
         XCTAssertEqual(spy.openedURLs.first?.path, "/open/note/f1")
