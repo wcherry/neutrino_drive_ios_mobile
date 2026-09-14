@@ -3,6 +3,13 @@ import CryptoKit
 import NeutrinoCrypto
 @testable import NeutrinoDrive
 
+// `NeutrinoCrypto` carries a `RecoveryKit`/`RecoveryKitError` pair of its own, so every
+// unqualified mention below is ambiguous the moment both modules are imported. These pin the
+// file to the app's copy — which is the one this file was written to test. The duplication
+// itself is the real defect and wants resolving in favour of the shared package.
+private typealias RecoveryKit = NeutrinoDrive.RecoveryKit
+private typealias RecoveryKitError = NeutrinoDrive.RecoveryKitError
+
 /// Tests for `RecoveryKit`.
 ///
 /// As with the key code, the thing worth proving is agreement with the *other* implementation:
