@@ -9,12 +9,15 @@ struct SettingsView: View {
     @EnvironmentObject var offlineService: OfflineService
     @EnvironmentObject var photoSyncService: PhotoSyncService
     @EnvironmentObject var biometricService: BiometricAuthService
+    @EnvironmentObject var keyProvisioningService: KeyProvisioningService
 
     @StateObject private var quotaService = QuotaService()
 
     @State private var hasKeys = KeyImportService.hasStoredKeys()
     @State private var showKeyImport = false
     @State private var showRecoveryKit = false
+    @State private var showEncryptionSetup = false
+    @State private var canProvisionKey = false
     @State private var showRemoveConfirmation = false
     @State private var showClearCacheConfirmation = false
     @State private var keyAccessDenied: String?
@@ -65,6 +68,27 @@ struct SettingsView: View {
                         Text("This will delete your stored encryption keys. You will need to re-import them to access encrypted files.")
                     }
                 } else {
+                    // Offered only to an account with nothing published — a new one, or one whose
+                    // first-run setup was skipped. Without it an account that has never had a key
+                    // cannot get one from this app at all; the two routes below both assume an
+                    // identity that already exists.
+                    if canProvisionKey {
+                        Button {
+                            showEncryptionSetup = true
+                        } label: {
+                            Label("Set Up Encryption Key", systemImage: "checkmark.shield")
+                        }
+                        .fullScreenCover(isPresented: $showEncryptionSetup) {
+                            EncryptionSetupView(service: keyProvisioningService) {
+                                showEncryptionSetup = false
+                                hasKeys = KeyImportService.hasStoredKeys()
+                                Task {
+                                    canProvisionKey = await keyProvisioningService.canProvision()
+                                }
+                            }
+                        }
+                    }
+
                     // Preferred path: the recovery kit printed when encryption was
                     // set up. There is no server-side key vault to unlock any more —
                     // the web app creates the key on the device and never transmits
@@ -176,6 +200,9 @@ struct SettingsView: View {
         .task {
             quotaService.authService = authService
             await quotaService.refresh()
+            // One request, and only while this device has no key — an account that publishes one
+            // never sees the button, so there is nothing to re-check.
+            if !hasKeys { canProvisionKey = await keyProvisioningService.canProvision() }
         }
         .alert("Authentication Required", isPresented: Binding(
             get: { keyAccessDenied != nil },

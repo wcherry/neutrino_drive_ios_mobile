@@ -750,7 +750,7 @@
 			buildSettings = {
 				CODE_SIGN_ENTITLEMENTS = NeutrinoDriveShare/NeutrinoDriveShare.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 9;
+				CURRENT_PROJECT_VERSION = 11;
 				DEVELOPMENT_TEAM = 46KWJJ63FU;
 				INFOPLIST_FILE = NeutrinoDriveShare/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
@@ -772,7 +772,7 @@
 			buildSettings = {
 				CODE_SIGN_ENTITLEMENTS = NeutrinoDriveShare/NeutrinoDriveShare.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 9;
+				CURRENT_PROJECT_VERSION = 11;
 				DEVELOPMENT_TEAM = 46KWJJ63FU;
 				INFOPLIST_FILE = NeutrinoDriveShare/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
@@ -796,7 +796,7 @@
 				CODE_SIGN_ENTITLEMENTS = NeutrinoDrive/NeutrinoDrive.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 9;
+				CURRENT_PROJECT_VERSION = 11;
 				DEVELOPMENT_TEAM = 46KWJJ63FU;
 				INFOPLIST_FILE = NeutrinoDrive/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
@@ -839,7 +839,7 @@
 				CODE_SIGN_ENTITLEMENTS = NeutrinoDrive/NeutrinoDrive.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 9;
+				CURRENT_PROJECT_VERSION = 11;
 				DEVELOPMENT_TEAM = 46KWJJ63FU;
 				INFOPLIST_FILE = NeutrinoDrive/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 16.0;

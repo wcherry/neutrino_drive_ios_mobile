@@ -56,7 +56,7 @@ One path segment per app is what lets all three share the domain:
 
 | Path              | App             | Notes                                       |
 | ----------------- | --------------- | ------------------------------------------- |
-| `/open/note/*`    | Neutrino Notes  | `application/x-neutrino-note`                |
+| `/open/note/*`    | Neutrino Notes  | `text/markdown`                              |
 | `/open/doc/*`     | Neutrino Docs   | `application/x-neutrino-doc`                 |
 | `/open/file/*`    | Neutrino Drive  | anything else                                |
 | `/open/sheet/*`   | Neutrino Drive  | reassign when the Sheets iOS app ships       |
