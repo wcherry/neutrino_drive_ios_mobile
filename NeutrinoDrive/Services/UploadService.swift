@@ -87,8 +87,11 @@ final class UploadService: ObservableObject {
     ///   flow), this call publishes `isUploading`/`progress` for that sheet's UI. Background
     ///   photo-sync uploads pass `false` so they don't hijack that sheet's state; callers that
     ///   want their own progress UI should observe their own state instead.
+    /// - Parameter thumbnailBase64: a cover the caller already has; `nil` derives one from
+    ///   `data`. See ``E2EEUploader/upload(data:fileName:mimeType:parentFolderID:thumbnailBase64:progress:)``.
     func upload(data: Data, fileName: String, mimeType: String, parentFolderID: String?,
-               reportsProgress: Bool = true) async throws -> UploadResult {
+               reportsProgress: Bool = true,
+               thumbnailBase64: String? = nil) async throws -> UploadResult {
 
         if reportsProgress {
             isUploading = true
@@ -116,6 +119,7 @@ final class UploadService: ObservableObject {
             fileName: fileName,
             mimeType: mimeType,
             parentFolderID: parentFolderID,
+            thumbnailBase64: thumbnailBase64,
             progress: progressHandler
         )
 

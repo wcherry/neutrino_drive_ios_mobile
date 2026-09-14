@@ -28,8 +28,10 @@ plaintext photos.
 - Sync status surfaced in Settings (queued / uploading / synced / failed counts).
 
 **Out of scope (follow-up work)**
-- Backfilling the entire existing library (see "Initial baseline" — MVP syncs
-  only assets created *after* the feature is enabled).
+- ~~Backfilling the entire existing library (see "Initial baseline" — MVP syncs
+  only assets created *after* the feature is enabled).~~ **Delivered later** as
+  the opt-in "Include Older Photos" window; see "Backfill window" below. The
+  default is still no backfill.
 - ~~True background `URLSession` transfers (`.background` configuration).~~
   **Delivered later** by the Phase 2 background-transfers work; see "Known
   risks" below.
@@ -108,6 +110,8 @@ re-resolve on the next upload. Already-uploaded photos are **not** moved.
 | `photoSync.wifiOnly` | `Bool` | `true` | Suspend the queue on cellular. |
 | `photoSync.whileChargingOnly` | `Bool` | `false` | Suspend unless plugged in. |
 | `photoSync.anchorDate` | `Date?` | `nil` | Assets created before this are ignored. |
+| `photoSync.backfillDays` | `Int` | `0` | How far *before* the anchor to reach. `0` off, `-1` the whole library. |
+| `photoSync.backfillScannedFrom` | `Date?` | `nil` | Earliest creation date a backfill scan has already swept. |
 | `photoSync.changeToken` | `Data?` | `nil` | Archived `PHPersistentChangeToken`. |
 
 ## Change detection
@@ -136,6 +140,18 @@ dedupe makes this fallback safe to run at any time.
 in the library is uploaded. The Settings screen states this plainly ("Photos
 taken from now on will be backed up"), because silently uploading a 40 GB
 library over the user's data plan is the worst possible default.
+
+**Backfill window (delivered later).** "Include Older Photos" in Settings widens
+the cutoff to `min(anchorDate, now − backfillDays)` — presets of 7 / 30 / 90 /
+365 days and "All Photos", off by default so the baseline above is still what a
+user who never touches the picker gets. Widening it schedules
+`runBackfillScanIfNeeded()`: one bounded `PHAsset.fetchAssets` over the window,
+enqueued through the same dedupe, with the swept cutoff recorded in
+`photoSync.backfillScannedFrom` so launches after the first are a no-op. The
+recorded date is cleared whenever the anchor is reset (i.e. on every enable), so
+a disable/re-enable cycle sweeps again. `PhotoSyncQueue.drainable(newerThan:)`
+sorts pre-anchor entries behind post-anchor ones, so a year-long backlog never
+delays the photo the user just took.
 
 ## Upload queue
 
@@ -340,6 +356,103 @@ invisible in the permission prompts.
 
 ## Known risks / edge cases
 
+- **~~Nothing uploaded unless the app was on screen.~~ — FIXED.**
+
+  **The cause was the choice of background task.** The app registered and
+  scheduled only a `BGProcessingTask`. That is Apple's mechanism for *deferrable
+  maintenance*: iOS runs it when the device is charging and idle, typically
+  overnight, and never at all for an app the user force-quit from the switcher.
+  Nothing woke the app in between, so the queue simply sat — every entry still
+  `pending`, none `failed`, all of it draining the moment the app was opened.
+  That signature (pending, not failed) is what distinguishes this from the
+  defects below, which would all have left evidence in `failed` instead.
+
+  The fix is to schedule a `BGAppRefreshTask` alongside it
+  (`com.neutrino.drive.photosync.refresh`, plus `fetch` in `UIBackgroundModes`).
+  iOS schedules those from actual usage patterns, requiring neither charging nor
+  idle. `scheduleBackgroundTask()` now submits both: the refresh task for "the
+  phone is in a pocket", the processing task for clearing a large backlog later.
+  `registerBackgroundTask()` also stopped discarding `BGTaskScheduler.register`'s
+  `Bool` — a refused identifier made every later `submit` throw while looking
+  perfectly healthy from the outside.
+
+  Also newly observable: `Keys.lastBackgroundRun` is stamped on every wake and
+  surfaced in Settings as "Last Background Run". "Never" means iOS is not running
+  the tasks at all, which is a completely different problem from a drain that
+  runs and fails, and previously nothing in the app could tell the two apart.
+
+  **Expectation worth writing down:** there is no iOS API that wakes an app when
+  a photo is taken. `PHPhotoLibraryChangeObserver` only delivers to a running
+  process. Background upload is therefore always *eventually*, on iOS's schedule
+  — minutes to hours — not moments after capture. Apps that appear to do better
+  hold an "Always" location authorisation and use significant-change updates as a
+  wake source, which is a product and App Review decision, not a bug fix.
+
+  The remaining three were real defects found along the way. Each would have
+  broken background sync on its own, and each is still worth having fixed — but
+  note that none of them was the observed cause, since the background run they
+  would have corrupted was not happening in the first place:
+
+  0. **The upload path never renewed the access token.** Tokens last 900s
+     (`JWT_ACCESS_EXPIRY_SECS`, `neutrino/src/config.rs`). Every other caller
+     reaches the server through `DriveService`/`QuotaService`/etc., which call
+     `authService.refreshTokenIfNeeded()` on the way past — but `E2EEUploader`
+     deliberately reads its bearer token straight from the Keychain, because the
+     share extension has to upload without an `AuthService`. The one call that
+     *would* have refreshed on photo sync's behalf is `ensureFolder`, and
+     `resolveDestinationFolder` skips it entirely once `photoSync.folderID` is
+     cached — which it is after the very first upload.
+
+     So a drain that ran with the app off screen used a token that had been dead
+     for hours. The server answered 401, and `isPermanent` classified *all* 4xx
+     except 408/429 as fatal, so every photo went to `failed` on its **first**
+     attempt — no backoff, no retry, reachable only by tapping "Retry Failed" in
+     Settings. In the foreground none of this shows, because the user browsing
+     Drive is constantly issuing `DriveService` calls that keep the token fresh.
+
+     Fixed three ways: `PhotoSyncService.tokenRefresher` (wired to
+     `refreshTokenIfNeeded` in `configure`) runs before a drain that has work;
+     `uploadWithFolderRetry` refreshes and retries once on a 401, for a token that
+     expires *mid*-drain; and `isPermanent` now treats 401 as retryable.
+
+     **Note for anyone diagnosing a report of this:** photos stranded in `failed`
+     by the old behaviour are not migrated. They need one manual "Retry Failed".
+
+  1. **The service was wired in the scene's `.task`.** `driveService.authService`,
+     `uploadService.driveService` and `photoSyncService.configure(…)` all ran from
+     the `.task` modifier on the root view. iOS launches this process *with no
+     scene* to run the `BGProcessingTask`, and again to deliver finished background
+     transfers — no scene means no view body, so `.task` never fired and the
+     service had neither `uploadHandler` nor `folderResolver`. Every background
+     upload threw `notAuthenticated`, and because that is not a permanent error it
+     consumed an attempt; after five the photo landed in `failed`, reachable only
+     via "Retry Failed" in Settings. The wiring now lives in `NeutrinoDriveApp.init()`
+     alongside `registerBackgroundTask()`, which runs on every launch, scene or not.
+  2. **The drain loop held no `UIApplication` background-task assertion.**
+     `photoLibraryDidChange` fires the moment a photo is taken, so a drain nearly
+     always *starts* in the foreground and is still running when the user locks the
+     screen — at which point the process was suspended mid-export. `BGProcessingTask`
+     does not help here: it schedules a later run, it does not protect one already
+     under way, and `BackgroundTransferService` carries only the blob POST, not the
+     PhotoKit export or the sealed-key `PUT` around it. `drain()` now brackets
+     itself in `beginBackgroundTask`/`endBackgroundTask` and stops cleanly on expiry.
+  3. **The catch-up scan ran once per process.** `start()` was called only from
+     `.task`, so returning from a long suspension never replayed the PhotoKit
+     persistent-change catch-up. It is now also called on `scenePhase == .active`;
+     `start()` is idempotent (`startNetworkMonitoring` gained the guard it needed,
+     since `NWPathMonitor.start` must not be called twice on one monitor).
+
+  Also fixed alongside: `handleDisabled()` cancelled the `NWPathMonitor` without
+  replacing it, and a cancelled monitor cannot be restarted — so toggling photo
+  sync off and on left `isOnWiFi` frozen for the rest of the session.
+
+  **Still open:** `E2EEUploader` does not pass a stable `transferID` to
+  `BackgroundTransferService.upload`, so it defaults to a fresh `UUID` per call and
+  `orphanedResults` can never be claimed. If the app is terminated while a blob POST
+  is in flight, the relaunched process re-uploads those bytes rather than claiming
+  the completed transfer — a duplicate file, not a lost one. Threading a stable ID
+  (keyed on `PHAsset.localIdentifier`) through `uploadHandler` is the fix, and it
+  changes that closure's signature and the tests that inject it.
 - **~~`URLSession.shared` is not a background session.~~ — RETIRED.**
   *Original risk:* if the OS suspended the app mid-upload, that transfer died and
   the entry retried from scratch; for large videos on a slow link this could loop

@@ -106,6 +106,11 @@ struct E2EEUploader {
     /// Encrypt `data` locally, upload the ciphertext, and store the sealed DEK.
     /// Mirrors the web's `uploadEncryptedFile` flow exactly.
     ///
+    /// - Parameter thumbnailBase64: a cover the caller has already made. Left `nil` — as every
+    ///   caller but photo sync does — the cover is derived from `data` here. The override exists
+    ///   for callers that hold a cheaper source than the bytes they are uploading:
+    ///   `PHKitAssetExporter` has the video already on disk, and deriving it here would mean
+    ///   writing a second copy of the whole clip out to spill it back to a file.
     /// - Parameter progress: called with 0…1 as the request body is sent. Invoked on the
     ///   transfer session's delegate queue, **not** the main queue — callers that publish to
     ///   SwiftUI must hop themselves.
@@ -113,6 +118,7 @@ struct E2EEUploader {
                 fileName: String,
                 mimeType plainMimeType: String,
                 parentFolderID: String?,
+                thumbnailBase64: String? = nil,
                 progress: ((Double) -> Void)? = nil) async throws -> UploadResult {
 
         logger.debug("upload: \(data.count) bytes name=\(fileName, privacy: .public) folder=\(parentFolderID ?? "root", privacy: .public)")
@@ -125,6 +131,23 @@ struct E2EEUploader {
         }
 
         let plainData = data
+
+        // MARK: Step 1 — Cover thumbnail, from the plaintext
+        //
+        // Must happen here, before the bytes are encrypted: the server stores ciphertext and
+        // cannot make a preview of it, so an upload that omits this leaves the file with a blank
+        // tile in every client that renders covers. Mirrors the web's `uploadEncryptedFile`,
+        // which generates one for image uploads the same way.
+        //
+        // `??` is not an option here: its right-hand side is a non-async autoclosure, and the
+        // derivation is async.
+        let coverThumbnail: String?
+        if let thumbnailBase64 {
+            coverThumbnail = thumbnailBase64
+        } else {
+            coverThumbnail = await ThumbnailGenerator.coverThumbnailBase64(for: plainData,
+                                                                           mimeType: plainMimeType)
+        }
 
         // MARK: Step 2 — Generate DEK and encrypt file (XChaCha20-Poly1305 secretstream)
         //
@@ -183,7 +206,7 @@ struct E2EEUploader {
             throw UploadError.encryptionFailed
         }
 
-        // MARK: Step 5 — POST multipart (folder_id?, encrypted_metadata, file blob)
+        // MARK: Step 5 — POST multipart (folder_id?, encrypted_metadata, thumbnail_b64?, file blob)
         //
         // The body is written to a temp file rather than held as `Data`, because a background
         // URLSession only accepts `uploadTask(with:fromFile:)` — `Data` and stream bodies are
@@ -200,6 +223,7 @@ struct E2EEUploader {
             mimeType: plainMimeType,
             parentFolderID: parentFolderID,
             encryptedMetadata: encryptedMetadata,
+            thumbnailBase64: coverThumbnail,
             boundary: boundary
         )
 
@@ -309,12 +333,19 @@ struct E2EEUploader {
         return fileURL
     }
 
+    /// Builds the upload request body.
+    ///
+    /// Part order is not cosmetic. The server reads the scalar fields into locals as it walks the
+    /// multipart stream and **returns as soon as it has consumed the file part**, so anything
+    /// sent after the blob is never parsed. Every scalar — `thumbnail_b64` included — therefore
+    /// has to precede it.
     static func buildMultipartBody(
         encryptedData: Data,
         fileName: String,
         mimeType: String,
         parentFolderID: String?,
         encryptedMetadata: String,
+        thumbnailBase64: String?,
         boundary: String
     ) -> Data {
         var body = Data()
@@ -338,6 +369,17 @@ struct E2EEUploader {
             append("Content-Disposition: form-data; name=\"folder_id\"\(crlf)")
             append(crlf)
             append(folderID)
+            append(crlf)
+        }
+
+        // thumbnail_b64 (optional) — the cover image, in the clear. Plaintext by design and by
+        // precedent: the web client posts the same field unencrypted, and the server has to be
+        // able to serve the tile to a browser that has not yet unlocked a key.
+        if let thumbnailBase64 {
+            append("\(dash)\(boundary)\(crlf)")
+            append("Content-Disposition: form-data; name=\"thumbnail_b64\"\(crlf)")
+            append(crlf)
+            append(thumbnailBase64)
             append(crlf)
         }
 
