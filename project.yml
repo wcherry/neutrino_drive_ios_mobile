@@ -66,8 +66,8 @@ targets:
     info:
       path: NeutrinoDrive/Info.plist
       properties:
-        CFBundleName: Neutrino Drive
-        CFBundleDisplayName: Neutrino Drive
+        CFBundleName: Drive
+        CFBundleDisplayName: Drive
         # Without these, xcodegen writes literal "1.0"/"1" into Info.plist and the
         # MARKETING_VERSION / CURRENT_PROJECT_VERSION build settings are ignored — the
         # archive then ships whatever build number App Store Connect last saw.
@@ -164,8 +164,8 @@ targets:
     info:
       path: NeutrinoDriveShare/Info.plist
       properties:
-        CFBundleName: Neutrino Drive
-        CFBundleDisplayName: Neutrino Drive
+        CFBundleName: Drive
+        CFBundleDisplayName: Drive
         # An embedded extension whose CFBundleVersion / CFBundleShortVersionString differ
         # from the container app's is rejected at upload ("bundle version does not match").
         # Reading them from the build settings keeps both bundles in lockstep, which is
