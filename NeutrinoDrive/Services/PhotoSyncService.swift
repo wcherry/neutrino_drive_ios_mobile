@@ -35,6 +35,16 @@ struct PhotoExport {
     let data: Data
     let fileName: String
     let mimeType: String
+    /// A cover thumbnail the exporter was able to make more cheaply than the uploader could.
+    ///
+    /// Only videos set it. An image's cover comes from the same bytes being uploaded, so
+    /// `E2EEUploader` derives it and nothing is saved by doing it earlier; a video's has to come
+    /// from a file on disk, and the exporter is the one place in the pipeline that already has
+    /// one — deriving it downstream would mean writing a second copy of the whole clip.
+    ///
+    /// Declared last with a default so the memberwise initialiser stays source-compatible with
+    /// the fakes in `PhotoSyncServiceTests`.
+    var thumbnailBase64: String? = nil
 }
 
 enum PhotoExportError: LocalizedError {
@@ -133,8 +143,14 @@ final class PHKitAssetExporter: PhotoAssetExporting {
         }
 
         defer { try? FileManager.default.removeItem(at: tempURL) }
+        // Taken here, while the clip is still on disk and before the `defer` above reclaims it.
+        // `AVFoundation` reads poster frames from files, so the alternative is spilling the whole
+        // video back out to a second temp file downstream — up to half a gigabyte of extra writes
+        // (see `maxAssetSizeBytes`), in a background drain that is racing an expiry.
+        let thumbnailBase64 = await ThumbnailGenerator.coverThumbnailBase64(forVideoAt: tempURL)
         let data = try Data(contentsOf: tempURL)
-        return PhotoExport(data: data, fileName: fileName, mimeType: mimeType)
+        return PhotoExport(data: data, fileName: fileName, mimeType: mimeType,
+                           thumbnailBase64: thumbnailBase64)
     }
 
     // MARK: - Naming
@@ -178,6 +194,80 @@ enum PhotoSyncStatus: Equatable {
     }
 }
 
+// MARK: - PhotoBackfillWindow
+
+/// How far back into the *existing* photo library automatic backup reaches.
+///
+/// The raw value is the number of days, which is what `PhotoSyncService.backfillDays`
+/// persists: `0` means the shipped behaviour (only assets created after the feature was
+/// switched on) and `-1` means the whole library, however old.
+enum PhotoBackfillWindow: Int, CaseIterable, Identifiable {
+    case off     = 0
+    case week    = 7
+    case month   = 30
+    case quarter = 90
+    case year    = 365
+    case all     = -1
+
+    var id: Int { rawValue }
+    var days: Int { rawValue }
+
+    /// The window a stored day count belongs to. An exact match wins; anything else rounds
+    /// *up* to the next widest preset, so a value written by an older or newer build is never
+    /// narrowed silently into re-uploading less than the user asked for.
+    init(days: Int) {
+        if days < 0 { self = .all; return }
+        if days == 0 { self = .off; return }
+        self = Self.allCases
+            .filter { $0.rawValue > 0 }
+            .sorted { $0.rawValue < $1.rawValue }
+            .first { $0.rawValue >= days } ?? .all
+    }
+
+    var label: String {
+        switch self {
+        case .off:     return "Off"
+        case .week:    return "Last 7 Days"
+        case .month:   return "Last 30 Days"
+        case .quarter: return "Last 90 Days"
+        case .year:    return "Last Year"
+        case .all:     return "All Photos"
+        }
+    }
+}
+
+// MARK: - BackgroundTaskState
+
+/// The two flags one `BGTask` run needs, behind a lock.
+///
+/// `BGTask.expirationHandler` is called on an arbitrary thread while the drain it is
+/// interrupting runs on the main actor, so plain captured `var`s are a data race — and
+/// `setTaskCompleted` called twice is not a soft failure but a crash. `claimCompletion`
+/// returns `true` to exactly one caller, whichever gets there first.
+private final class BackgroundTaskState {
+    private let lock = NSLock()
+    private var expired = false
+    private var completed = false
+
+    var isExpired: Bool {
+        lock.lock(); defer { lock.unlock() }
+        return expired
+    }
+
+    func markExpired() {
+        lock.lock(); defer { lock.unlock() }
+        expired = true
+    }
+
+    /// `true` for the first caller only — the one that owns calling `setTaskCompleted`.
+    func claimCompletion() -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        guard !completed else { return false }
+        completed = true
+        return true
+    }
+}
+
 // MARK: - PhotoSyncService
 
 /// Coordinator for opt-in background photo-library sync: owns enablement state, the
@@ -196,12 +286,31 @@ final class PhotoSyncService: NSObject, ObservableObject {
         static let wifiOnly           = "photoSync.wifiOnly"
         static let whileChargingOnly  = "photoSync.whileChargingOnly"
         static let anchorDate         = "photoSync.anchorDate"
+        /// How many days *before* the anchor date to reach back into the existing library.
+        /// See ``PhotoSyncService/backfillDays``.
+        static let backfillDays       = "photoSync.backfillDays"
+        /// The earliest creation date a backfill scan has already swept. Stops every launch
+        /// from re-enumerating a year of library for assets the queue already knows about.
+        static let backfillScannedFrom = "photoSync.backfillScannedFrom"
         static let changeToken        = "photoSync.changeToken"
         static let lastSuccessfulSync = "photoSync.lastSuccessfulSyncDate"
+        /// When a `BGTask` last handed us runtime. Separate from `lastSuccessfulSync`: it
+        /// records that iOS woke the app *at all*, which is the thing worth knowing when
+        /// photos are only moving once the app is opened by hand.
+        static let lastBackgroundRun  = "photoSync.lastBackgroundRunDate"
     }
 
     static let defaultFolderName = "iPhone Photos"
+
+    /// `BGProcessingTask` — generous runtime, but iOS treats it as deferrable maintenance and
+    /// in practice grants it when the device is charging and idle, often overnight. Right for
+    /// clearing a large backlog; far too rare to be the only thing photo sync relies on.
     static let backgroundTaskIdentifier = "com.neutrino.drive.photosync"
+
+    /// `BGAppRefreshTask` — a much shorter budget (~30s), but iOS schedules it from the
+    /// user's actual usage pattern and requires neither charging nor idle. This is what makes
+    /// photos upload while the app is merely backgrounded rather than only overnight.
+    static let refreshTaskIdentifier = "com.neutrino.drive.photosync.refresh"
     static let maxAssetSizeBytes: Int64 = 512 * 1024 * 1024   // 512 MB — see plan "Known risks"
 
     // MARK: - Published (UI-facing) State
@@ -245,31 +354,54 @@ final class PhotoSyncService: NSObject, ObservableObject {
     /// a spy/closure directly.
     var folderResolver: ((String, String?) async throws -> String)?
 
-    /// Encrypts-and-uploads `Data`. Wired to `uploadService.upload(data:...)` in
+    /// Encrypts-and-uploads an export. Wired to `uploadService.upload(data:...)` in
     /// `configure`; tests inject a fake that skips the network entirely.
-    var uploadHandler: ((Data, String, String, String?) async throws -> UploadResult)?
+    ///
+    /// Takes the whole `PhotoExport` rather than its fields spread out: it grew a cover
+    /// thumbnail the uploader cannot re-derive cheaply, and threading each new piece of an
+    /// export through as another positional argument is how a seam ends up with six of them.
+    var uploadHandler: ((PhotoExport, String?) async throws -> UploadResult)?
 
     /// Exports a `PHAsset.localIdentifier` to bytes. Defaults to the real PhotoKit-backed
     /// exporter; tests inject a fake.
     var assetExporter: PhotoAssetExporting
+
+    /// Renews the access token when it is close to expiry. Wired to
+    /// `authService.refreshTokenIfNeeded()` in `configure`; tests inject a spy.
+    ///
+    /// Photo sync is the one upload path that has to do this for itself. Access tokens last
+    /// 15 minutes, and every *other* caller reaches the server through `DriveService`, which
+    /// refreshes on the way past. The upload does not: `E2EEUploader` reads the bearer token
+    /// straight out of the Keychain so the share extension can use it without an `AuthService`.
+    /// In the foreground that is invisible, because the user browsing Drive keeps the token
+    /// fresh; a drain that runs with the app off screen has nothing keeping it fresh at all.
+    var tokenRefresher: (() async -> Void)?
 
     // MARK: - Dependencies
 
     weak var driveService: DriveService?
     weak var uploadService: UploadService?
 
-    /// Wires `folderResolver`/`uploadHandler` to real dependencies. Call once at launch.
-    func configure(driveService: DriveService, uploadService: UploadService) {
+    /// Wires `folderResolver`/`uploadHandler`/`tokenRefresher` to real dependencies. Call once
+    /// at launch — from `NeutrinoDriveApp.init()`, so a scene-less background launch is wired
+    /// too.
+    func configure(driveService: DriveService, uploadService: UploadService, authService: AuthService) {
         self.driveService = driveService
         self.uploadService = uploadService
         folderResolver = { [weak driveService] name, parentID in
             guard let driveService else { throw DriveError.notAuthenticated }
             return try await driveService.ensureFolder(named: name, parentID: parentID)
         }
-        uploadHandler = { [weak uploadService] data, fileName, mimeType, parentFolderID in
+        uploadHandler = { [weak uploadService] export, parentFolderID in
             guard let uploadService else { throw UploadError.notAuthenticated }
-            return try await uploadService.upload(data: data, fileName: fileName, mimeType: mimeType,
-                                                  parentFolderID: parentFolderID, reportsProgress: false)
+            return try await uploadService.upload(data: export.data, fileName: export.fileName,
+                                                  mimeType: export.mimeType,
+                                                  parentFolderID: parentFolderID,
+                                                  reportsProgress: false,
+                                                  thumbnailBase64: export.thumbnailBase64)
+        }
+        tokenRefresher = { [weak authService] in
+            await authService?.refreshTokenIfNeeded()
         }
     }
 
@@ -282,9 +414,17 @@ final class PhotoSyncService: NSObject, ObservableObject {
     private var queue: PhotoSyncQueue
     private var isObserving = false
     private var isDraining = false
-    private let pathMonitor = NWPathMonitor()
+    /// Not a `let`: a cancelled `NWPathMonitor` cannot be restarted, so disabling and
+    /// re-enabling photo sync has to swap in a fresh one.
+    private var pathMonitor = NWPathMonitor()
+    private var isMonitoringNetwork = false
     private let pathMonitorQueue = DispatchQueue(label: "com.neutrino.drive.photosync.pathmonitor")
     private var backgroundTask: BGProcessingTask?
+
+    /// Keeps the drain loop running for the grace period iOS grants after the app leaves the
+    /// foreground. See ``beginDrainAssertion()``.
+    private var drainAssertionID: UIBackgroundTaskIdentifier = .invalid
+    private var drainAssertionExpired = false
 
     // MARK: - Init
 
@@ -327,7 +467,75 @@ final class PhotoSyncService: NSObject, ObservableObject {
         set { defaults.set(newValue, forKey: Keys.whileChargingOnly) }
     }
 
+    /// How far back into the existing library automatic backup reaches, in days.
+    ///
+    /// `0` (the default) preserves the original contract: nothing that was in the library
+    /// when the feature was switched on is uploaded. A positive value reaches that many days
+    /// before the anchor date; `-1` reaches the whole library. Widening the window schedules
+    /// a one-off backfill scan — narrowing it only stops *future* scans, since assets already
+    /// queued or uploaded are not un-backed-up.
+    var backfillDays: Int {
+        get { defaults.object(forKey: Keys.backfillDays) as? Int ?? 0 }
+        set {
+            guard newValue != backfillDays else { return }
+            // Backed by `UserDefaults`, not `@Published`, so nothing would otherwise tell
+            // SwiftUI to re-read it — the picker would snap back to its old row.
+            objectWillChange.send()
+            defaults.set(newValue, forKey: Keys.backfillDays)
+            Task { [weak self] in
+                guard let self else { return }
+                if await self.runBackfillScanIfNeeded() > 0 {
+                    await self.drain(ignoringPowerConstraint: false)
+                }
+            }
+        }
+    }
+
+    /// The earliest creation date an asset may carry and still be picked up, given a
+    /// `backfillDays` window and the anchor set when the feature was switched on.
+    ///
+    /// Days are subtracted with `Calendar`, not by multiplying 86 400 — "30 days ago" either
+    /// side of a DST transition is not 30 × 24 hours, and a cutoff that drifts by an hour is a
+    /// photo that silently misses the window.
+    static func backfillCutoff(days: Int, anchorDate: Date, now: Date = Date(),
+                               calendar: Calendar = .current) -> Date {
+        if days < 0 { return .distantPast }
+        guard days > 0 else { return anchorDate }
+        let windowStart = calendar.date(byAdding: .day, value: -days, to: now)
+            ?? now.addingTimeInterval(-Double(days) * 86_400)
+        return min(anchorDate, windowStart)
+    }
+
+    /// The cutoff every enqueue path filters on: the anchor date, widened by `backfillDays`.
+    ///
+    /// `.distantFuture` when there is no anchor at all, which is the state of a service that
+    /// has never been switched on — a backfill window must never be able to turn that into
+    /// "upload the library".
+    private var effectiveAnchorDate: Date {
+        guard let anchor = defaults.object(forKey: Keys.anchorDate) as? Date else { return .distantFuture }
+        return Self.backfillCutoff(days: backfillDays, anchorDate: anchor)
+    }
+
+    /// Assets created before this sort behind newer ones in the drain loop — see
+    /// ``PhotoSyncQueue/drainable(asOf:newerThan:)``. It is the *anchor*, not the backfill
+    /// cutoff: everything the backfill reached back for is by definition older than it.
+    private var backlogBoundary: Date {
+        defaults.object(forKey: Keys.anchorDate) as? Date ?? .distantPast
+    }
+
+    private func drainableEntries() -> [PhotoSyncQueue.Entry] {
+        queue.drainable(newerThan: backlogBoundary)
+    }
+
     var failedEntries: [PhotoSyncQueue.Entry] { queue.failed }
+
+    /// When iOS last gave photo sync background runtime, or `nil` if it never has.
+    ///
+    /// Surfaced in Settings because it is the one fact that separates the two very different
+    /// causes of "my photos only upload when I open the app": never set means iOS is not
+    /// running the background tasks (force-quitting the app from the switcher stops them
+    /// entirely until the next manual launch), whereas a recent value points at the drain.
+    var lastBackgroundRunAt: Date? { defaults.object(forKey: Keys.lastBackgroundRun) as? Date }
 
     // MARK: - Lifecycle
 
@@ -349,17 +557,37 @@ final class PhotoSyncService: NSObject, ObservableObject {
         startNetworkMonitoring()
         Task {
             await runCatchUpScan()
+            await runBackfillScanIfNeeded()
             await drain(ignoringPowerConstraint: false)
         }
     }
 
-    /// Registers the `BGProcessingTask` handler. Must be called before the app finishes
-    /// launching. No-ops when the feature flag is off.
+    /// Registers both background-task handlers. Must be called before the app finishes
+    /// launching — hence `NeutrinoDriveApp.init()`. No-ops when the feature flag is off.
+    ///
+    /// `register` returns `false` when the identifier is missing from
+    /// `BGTaskSchedulerPermittedIdentifiers` or the call came too late, and every later
+    /// `submit` for that identifier then throws. Discarding that result is how a completely
+    /// dead background path can look perfectly healthy from the outside, so it is logged.
     func registerBackgroundTask() {
         guard FeatureFlags.photoAutoSync else { return }
-        BGTaskScheduler.shared.register(forTaskWithIdentifier: Self.backgroundTaskIdentifier, using: nil) { [weak self] task in
-            guard let processingTask = task as? BGProcessingTask else { task.setTaskCompleted(success: false); return }
-            self?.handleBackgroundTask(processingTask)
+
+        let registeredProcessing = BGTaskScheduler.shared.register(
+            forTaskWithIdentifier: Self.backgroundTaskIdentifier, using: nil
+        ) { [weak self] task in
+            self?.handleBackgroundTask(task)
+        }
+        let registeredRefresh = BGTaskScheduler.shared.register(
+            forTaskWithIdentifier: Self.refreshTaskIdentifier, using: nil
+        ) { [weak self] task in
+            self?.handleBackgroundTask(task)
+        }
+
+        if !registeredProcessing {
+            logger.error("BGTaskScheduler refused \(Self.backgroundTaskIdentifier, privacy: .public)")
+        }
+        if !registeredRefresh {
+            logger.error("BGTaskScheduler refused \(Self.refreshTaskIdentifier, privacy: .public)")
         }
     }
 
@@ -375,10 +603,16 @@ final class PhotoSyncService: NSObject, ObservableObject {
             // starts fresh here rather than re-uploading history.
             defaults.set(Date(), forKey: Keys.anchorDate)
             defaults.removeObject(forKey: Keys.changeToken)
+            // Fresh anchor, fresh backfill: the window is measured against it, and anything
+            // captured while the feature was off is only reachable by sweeping again.
+            defaults.removeObject(forKey: Keys.backfillScannedFrom)
             self.status = status == .limited ? .permissionLimited : .idle
             startObservingIfNeeded()
             startNetworkMonitoring()
             await captureInitialChangeToken()
+            if await runBackfillScanIfNeeded() > 0 {
+                await drain(ignoringPowerConstraint: false)
+            }
         case .denied, .restricted:
             isEnabled = false   // revert the toggle; caller deep-links to Settings
             self.status = .permissionDenied
@@ -393,7 +627,7 @@ final class PhotoSyncService: NSObject, ObservableObject {
 
     private func handleDisabled() {
         stopObserving()
-        pathMonitor.cancel()
+        stopNetworkMonitoring()
         status = .disabled
     }
 
@@ -413,7 +647,11 @@ final class PhotoSyncService: NSObject, ObservableObject {
 
     // MARK: - Network monitoring
 
+    /// Idempotent: `start()` now runs on every foreground transition, and calling
+    /// `NWPathMonitor.start` twice on the same monitor is not a supported operation.
     private func startNetworkMonitoring() {
+        guard !isMonitoringNetwork else { return }
+        isMonitoringNetwork = true
         pathMonitor.pathUpdateHandler = { [weak self] path in
             Task { @MainActor in
                 guard let self else { return }
@@ -425,6 +663,15 @@ final class PhotoSyncService: NSObject, ObservableObject {
             }
         }
         pathMonitor.start(queue: pathMonitorQueue)
+    }
+
+    private func stopNetworkMonitoring() {
+        guard isMonitoringNetwork else { return }
+        pathMonitor.cancel()
+        isMonitoringNetwork = false
+        // A cancelled monitor is dead for good — without a replacement, re-enabling photo
+        // sync would leave `isOnWiFi` frozen at whatever it last read.
+        pathMonitor = NWPathMonitor()
     }
 
     // MARK: - Change enqueue (pure — testable without PhotoKit)
@@ -447,8 +694,7 @@ final class PhotoSyncService: NSObject, ObservableObject {
     /// returns the number newly enqueued.
     @discardableResult
     func enqueueIfNeeded(_ assets: [PhotoAssetProviding]) -> Int {
-        let anchor = defaults.object(forKey: Keys.anchorDate) as? Date ?? .distantFuture
-        let newOnes = Self.newIdentifiers(from: assets, anchorDate: anchor,
+        let newOnes = Self.newIdentifiers(from: assets, anchorDate: effectiveAnchorDate,
                                           includeVideos: includeVideos, queue: queue)
         for entry in newOnes {
             queue.enqueue(id: entry.id, creationDate: entry.creationDate)
@@ -503,6 +749,10 @@ final class PhotoSyncService: NSObject, ObservableObject {
     private func runBoundedFallbackScan() {
         let anchor = defaults.object(forKey: Keys.anchorDate) as? Date ?? .distantFuture
         let lastSync = defaults.object(forKey: Keys.lastSuccessfulSync) as? Date ?? .distantPast
+        // Deliberately the *anchor*, not `effectiveAnchorDate`: this scan exists to cover the
+        // gap since the last successful sync, and it runs on every launch. Reaching back over
+        // the whole backfill window here would re-enumerate it every time — that sweep is
+        // `runBackfillScanIfNeeded()`'s job, and it runs once.
         let cutoff = max(anchor, lastSync)
 
         let options = PHFetchOptions()
@@ -511,6 +761,41 @@ final class PhotoSyncService: NSObject, ObservableObject {
         var assets: [PhotoAssetProviding] = []
         result.enumerateObjects { asset, _, _ in assets.append(asset) }
         enqueueIfNeeded(assets)
+    }
+
+    // MARK: - Backfill scan
+
+    /// Sweeps the part of the existing library that `backfillDays` reaches back for, once per
+    /// widening of the window, and returns how many assets it newly enqueued.
+    ///
+    /// Bounded by `Keys.backfillScannedFrom`: a window that has already been swept is skipped,
+    /// so this is a cheap no-op on every launch after the first. The recorded date is only
+    /// ever moved *earlier*, and a rolling window ("last 30 days") moves its cutoff forward as
+    /// time passes, so re-running it costs one comparison. The anchor reset in
+    /// `handleEnabled()` clears it, which is what lets a disable/re-enable cycle pick up
+    /// whatever was captured in between.
+    @discardableResult
+    private func runBackfillScanIfNeeded() async -> Int {
+        guard FeatureFlags.photoAutoSync, isEnabled else { return 0 }
+        guard authorizationStatus == .authorized || authorizationStatus == .limited else { return 0 }
+
+        let cutoff = effectiveAnchorDate
+        guard cutoff != .distantFuture else { return 0 }
+        if let scannedFrom = defaults.object(forKey: Keys.backfillScannedFrom) as? Date,
+           scannedFrom <= cutoff {
+            return 0
+        }
+
+        let options = PHFetchOptions()
+        options.predicate = NSPredicate(format: "creationDate >= %@", cutoff as NSDate)
+        let result = PHAsset.fetchAssets(with: options)
+        var assets: [PhotoAssetProviding] = []
+        result.enumerateObjects { asset, _, _ in assets.append(asset) }
+
+        let enqueued = enqueueIfNeeded(assets)
+        defaults.set(cutoff, forKey: Keys.backfillScannedFrom)
+        logger.info("backfill scan enqueued \(enqueued) asset(s) from \(assets.count) candidate(s)")
+        return enqueued
     }
 
     private func captureInitialChangeToken() async {
@@ -535,20 +820,38 @@ final class PhotoSyncService: NSObject, ObservableObject {
     func drain(ignoringPowerConstraint: Bool, isBackgroundExpired: (() -> Bool)? = nil) async -> Bool {
         guard !isDraining else { return false }
 
+        // Claimed before the first `await` below, not after the constraint checks: the
+        // refresh suspends, and without the flag already set a second drain (the network
+        // path monitor fires one on every change) would walk straight through this guard.
+        isDraining = true
+        defer { isDraining = false }
+
+        // Renew the token *before* deciding anything. A background drain is typically the
+        // first thing to touch the network in hours, so its token is almost always stale —
+        // and an upload with a stale token returns 401, which `isPermanent` reads as fatal.
+        // Only when there is something to upload: `drain` is called on every network change.
+        if !drainableEntries().isEmpty {
+            await tokenRefresher?()
+        }
+
         guard hasAccessTokenProvider() else {
             status = .pausedNotAuthenticated
+            rescheduleIfWorkRemains()
             return false
         }
         guard hasStoredKeysProvider() else {
             status = .pausedMissingKey
+            rescheduleIfWorkRemains()
             return false
         }
         if wifiOnly && (!isOnWiFi || isNetworkExpensive) {
             status = .waitingForWiFi
+            rescheduleIfWorkRemains()
             return false
         }
         if !ignoringPowerConstraint && whileChargingOnly && batteryStateProvider() == .unplugged {
             status = .waitingToCharge
+            rescheduleIfWorkRemains()
             return false
         }
         if isBackgroundExpired != nil && isLowPowerModeEnabledProvider() {
@@ -556,13 +859,14 @@ final class PhotoSyncService: NSObject, ObservableObject {
             return false
         }
 
-        isDraining = true
-        defer { isDraining = false }
+        beginDrainAssertion()
+        defer { endDrainAssertion() }
 
         var uploadedAny = false
-        let total = queue.drainable().count
+        let total = drainableEntries().count
         var index = 0
-        while let entry = queue.drainable().first {
+        while let entry = drainableEntries().first {
+            if drainAssertionExpired { break }
             if let isBackgroundExpired, isBackgroundExpired() { break }
             index += 1
             status = .uploading(name: entry.id, index: index, total: total)
@@ -573,8 +877,58 @@ final class PhotoSyncService: NSObject, ObservableObject {
         refreshCounts()
         if pendingCount == 0 {
             status = failedCount > 0 ? .failed(count: failedCount) : .idle
+        } else {
+            // Stopped with work still queued — expiry, or an entry in backoff. Without a
+            // pending request the queue would only move again the next time the user
+            // happens to open the app.
+            scheduleBackgroundTask()
         }
         return uploadedAny
+    }
+
+    // MARK: - Background execution assertion
+
+    /// Buys the drain loop the grace period iOS grants after the app leaves the foreground.
+    ///
+    /// This is what makes the common case work at all: `photoLibraryDidChange` fires the
+    /// instant a photo is taken, so a drain almost always begins while the app is still
+    /// frontmost and is then still running when the user locks the screen. Without an
+    /// assertion the process is suspended mid-export and the photo simply waits — the
+    /// symptom being "Drive doesn't upload unless I'm looking at it".
+    ///
+    /// Distinct from `BGProcessingTask`, which schedules a *later* run and does nothing for
+    /// a run already under way, and from ``BackgroundTransferService``, which carries the
+    /// blob POST but not the PhotoKit export or the sealed-key `PUT` around it.
+    private func beginDrainAssertion() {
+        guard drainAssertionID == .invalid else { return }
+        drainAssertionExpired = false
+        drainAssertionID = UIApplication.shared.beginBackgroundTask(
+            withName: "com.neutrino.drive.photosync.drain"
+        ) { [weak self] in
+            // Suspension is imminent: raise the flag so the loop stops after the item in
+            // flight, and hand the assertion back — iOS terminates the app outright for an
+            // assertion it has to reclaim itself.
+            //
+            // Done synchronously, not via `Task { @MainActor in }`. UIKit delivers this on
+            // the main thread already, and a hop would queue behind whatever the drain is
+            // doing — including `E2EEUploader`'s encryption, which is synchronous main-actor
+            // work that runs for seconds on a large photo. There is nothing to persist here:
+            // the queue is written to disk after every individual upload.
+            self?.drainAssertionExpired = true
+            self?.endDrainAssertion()
+        }
+    }
+
+    private func endDrainAssertion() {
+        guard drainAssertionID != .invalid else { return }
+        UIApplication.shared.endBackgroundTask(drainAssertionID)
+        drainAssertionID = .invalid
+    }
+
+    /// Submits a `BGProcessingTask` request when the queue still holds pending work.
+    private func rescheduleIfWorkRemains() {
+        guard !queue.pending.isEmpty else { return }
+        scheduleBackgroundTask()
     }
 
     /// Foreground "Sync Now" — bypasses the power constraint (not Wi-Fi, unless the caller
@@ -617,9 +971,16 @@ final class PhotoSyncService: NSObject, ObservableObject {
         }
     }
 
-    /// Uploads `export`, resolving the destination folder first. If the upload fails with a
-    /// 404 (the cached folder ID was deleted/trashed server-side), the cached ID is cleared
-    /// and resolution + upload are retried exactly once before giving up.
+    /// Uploads `export`, resolving the destination folder first, recovering once from either
+    /// of the two failures that are really "the state I cached went stale":
+    ///
+    /// - **404** — the cached folder ID was deleted or trashed server-side. Clear it, resolve
+    ///   again, upload again.
+    /// - **401** — the access token expired mid-drain. A drain can outlive the 15-minute token
+    ///   lifetime on a slow link or a long backlog, and `resolveDestinationFolder` does not
+    ///   renew it once the folder ID is cached, because it never reaches `DriveService`.
+    ///
+    /// Each is retried exactly once; a second failure is the caller's to record.
     private func uploadWithFolderRetry(export: PhotoExport, entry: PhotoSyncQueue.Entry) async throws {
         let folderID = try await resolveDestinationFolder()
         do {
@@ -628,6 +989,9 @@ final class PhotoSyncService: NSObject, ObservableObject {
             defaults.removeObject(forKey: Keys.folderID)
             let retriedFolderID = try await resolveDestinationFolder()
             _ = try await upload(export: export, parentFolderID: retriedFolderID)
+        } catch UploadError.serverError(let code) where code == 401 {
+            await tokenRefresher?()
+            _ = try await upload(export: export, parentFolderID: folderID)
         }
         queue.markCompleted(id: entry.id)
         lastSyncedAt = Date()
@@ -637,12 +1001,24 @@ final class PhotoSyncService: NSObject, ObservableObject {
 
     private func upload(export: PhotoExport, parentFolderID: String?) async throws -> UploadResult {
         guard let uploadHandler else { throw UploadError.notAuthenticated }
-        return try await uploadHandler(export.data, export.fileName, export.mimeType, parentFolderID)
+        return try await uploadHandler(export, parentFolderID)
     }
 
+    /// Whether `error` will still fail however many times it is retried.
+    ///
+    /// 4xx means "this request was wrong", which for an upload is normally fatal — a retry
+    /// sends the identical bytes to the identical endpoint. The exceptions are the codes that
+    /// describe a *momentary* condition rather than the request:
+    ///
+    /// - **401** — the bearer token expired. `uploadWithFolderRetry` already refreshes and
+    ///   retries once; if one still reaches here, the next drain starts with a fresh token.
+    ///   Treating this as permanent is what quietly destroyed background sync: every photo a
+    ///   background drain touched went to `failed` on its *first* attempt, reachable only by
+    ///   tapping "Retry Failed" in Settings.
+    /// - **408 / 429** — request timeout and rate limiting, both explicitly retryable.
     private func isPermanent(_ error: UploadError) -> Bool {
         if case .serverError(let code) = error {
-            if code == 408 || code == 429 { return false }
+            if code == 401 || code == 408 || code == 429 { return false }
             return (400..<500).contains(code)
         }
         return false
@@ -676,22 +1052,29 @@ final class PhotoSyncService: NSObject, ObservableObject {
 
     // MARK: - Background task
 
-    private func handleBackgroundTask(_ task: BGProcessingTask) {
+    /// Drives one background run, for either task type — the work is identical, only the
+    /// budget differs, and the loop already stops on `isBackgroundExpired`.
+    private func handleBackgroundTask(_ task: BGTask) {
         scheduleBackgroundTask()   // the system grants exactly one run per submission
-        var expired = false
-        task.expirationHandler = { [weak self] in
-            expired = true
-            Task { @MainActor in
-                self?.persistQueueNow()
-                task.setTaskCompleted(success: false)
-            }
+
+        // `expirationHandler` fires on an arbitrary thread while the drain runs on the main
+        // actor, so both flags are shared mutable state. `setTaskCompleted` is also a hard
+        // crash if called twice ("task has already been completed"), and the old
+        // `if !expired` check lost that race whenever the drain finished as expiry landed.
+        let state = BackgroundTaskState()
+        task.expirationHandler = {
+            state.markExpired()
+            // Synchronously, not via a main-actor hop: the runtime is already gone.
+            if state.claimCompletion() { task.setTaskCompleted(success: false) }
         }
-        Task {
+
+        Task { @MainActor in
+            defaults.set(Date(), forKey: Keys.lastBackgroundRun)
             await runCatchUpScan()
-            await drain(ignoringPowerConstraint: false, isBackgroundExpired: { expired })
-            if !expired {
-                task.setTaskCompleted(success: true)
-            }
+            await runBackfillScanIfNeeded()
+            await drain(ignoringPowerConstraint: false, isBackgroundExpired: { state.isExpired })
+            persistQueueNow()
+            if state.claimCompletion() { task.setTaskCompleted(success: !state.isExpired) }
         }
     }
 
@@ -699,16 +1082,34 @@ final class PhotoSyncService: NSObject, ObservableObject {
         queueStore.save(queue)
     }
 
+    /// Submits **both** background requests.
+    ///
+    /// Two, not one, because they get scheduled on completely different terms: the refresh
+    /// task is what iOS actually runs while the phone is in a pocket, and the processing task
+    /// is what eventually clears a large backlog once the phone is charging. Submitting a
+    /// request replaces any pending one with the same identifier, so calling this often is
+    /// harmless.
     func scheduleBackgroundTask(earliestBeginDate: Date = Date().addingTimeInterval(60)) {
         guard FeatureFlags.photoAutoSync, isEnabled else { return }
-        let request = BGProcessingTaskRequest(identifier: Self.backgroundTaskIdentifier)
-        request.requiresNetworkConnectivity = true
-        request.requiresExternalPower = whileChargingOnly
-        request.earliestBeginDate = earliestBeginDate
+
+        let refresh = BGAppRefreshTaskRequest(identifier: Self.refreshTaskIdentifier)
+        refresh.earliestBeginDate = earliestBeginDate
+        submit(refresh)
+
+        let processing = BGProcessingTaskRequest(identifier: Self.backgroundTaskIdentifier)
+        processing.requiresNetworkConnectivity = true
+        processing.requiresExternalPower = whileChargingOnly
+        processing.earliestBeginDate = earliestBeginDate
+        submit(processing)
+    }
+
+    private func submit(_ request: BGTaskRequest) {
         do {
             try BGTaskScheduler.shared.submit(request)
+            logger.debug("scheduled \(request.identifier, privacy: .public)")
         } catch {
-            logger.error("scheduleBackgroundTask failed: \(error, privacy: .public)")
+            // `.unavailable` is expected on the Simulator, which has no scheduler at all.
+            logger.error("submit \(request.identifier, privacy: .public) failed: \(error, privacy: .public)")
         }
     }
 
@@ -729,9 +1130,13 @@ extension PhotoSyncService: PHPhotoLibraryChangeObserver {
             // Live observation: fetch assets created since the anchor date and enqueue any
             // not already known. The persistent-change catch-up (run on launch/foreground)
             // covers the gap while the app was not running; this covers changes while it is.
-            let anchor = self.defaults.object(forKey: Keys.anchorDate) as? Date ?? .distantFuture
+            // Bounded by the anchor, not the backfill cutoff: this fires on every library
+            // change (every frame of a burst), and re-enumerating a year — or with "All
+            // Photos", the entire library — each time would be ruinous. Older assets are the
+            // one-off `runBackfillScanIfNeeded()` sweep's job.
+            let cutoff = self.defaults.object(forKey: Keys.anchorDate) as? Date ?? .distantFuture
             let options = PHFetchOptions()
-            options.predicate = NSPredicate(format: "creationDate >= %@", anchor as NSDate)
+            options.predicate = NSPredicate(format: "creationDate >= %@", cutoff as NSDate)
             let result = PHAsset.fetchAssets(with: options)
             var assets: [PhotoAssetProviding] = []
             result.enumerateObjects { asset, _, _ in assets.append(asset) }

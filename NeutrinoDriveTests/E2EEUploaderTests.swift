@@ -70,11 +70,12 @@ final class E2EEUploaderTests: XCTestCase {
                              fileName: String = "note.txt",
                              mimeType: String = "text/plain",
                              parentFolderID: String? = nil,
-                             encryptedMetadata: String = "meta") -> String {
+                             encryptedMetadata: String = "meta",
+                             thumbnailBase64: String? = nil) -> String {
         let body = E2EEUploader.buildMultipartBody(
             encryptedData: encryptedData, fileName: fileName, mimeType: mimeType,
             parentFolderID: parentFolderID, encryptedMetadata: encryptedMetadata,
-            boundary: "BOUNDARY"
+            thumbnailBase64: thumbnailBase64, boundary: "BOUNDARY"
         )
         return String(decoding: body, as: UTF8.self)
     }
@@ -111,13 +112,134 @@ final class E2EEUploaderTests: XCTestCase {
         let ciphertext = Data([0x00, 0xFF, 0x10, 0x42])
         let body = E2EEUploader.buildMultipartBody(
             encryptedData: ciphertext, fileName: "a", mimeType: "application/octet-stream",
-            parentFolderID: nil, encryptedMetadata: "m", boundary: "B"
+            parentFolderID: nil, encryptedMetadata: "m", thumbnailBase64: nil, boundary: "B"
         )
         XCTAssertTrue(body.range(of: ciphertext) != nil)
     }
 
     func test_multipartBody_isTerminatedWithTheClosingBoundary() {
         XCTAssertTrue(decodedBody().hasSuffix("--BOUNDARY--\r\n"))
+    }
+
+    // MARK: - Cover thumbnail part
+
+    func test_multipartBody_omitsThumbnailPart_whenThereIsNoThumbnail() {
+        XCTAssertFalse(decodedBody(thumbnailBase64: nil).contains(#"name="thumbnail_b64""#))
+    }
+
+    func test_multipartBody_carriesTheThumbnailValue() {
+        let body = decodedBody(thumbnailBase64: "QkFTRTY0LUpQRUc=")
+        XCTAssertTrue(body.contains(#"name="thumbnail_b64""#))
+        XCTAssertTrue(body.contains("QkFTRTY0LUpQRUc="))
+    }
+
+    func test_multipartBody_sendsTheThumbnailBeforeTheFilePart() throws {
+        // Not a style preference. The server returns the moment it has consumed the file part,
+        // so a thumbnail sent after the blob is silently never read and the file gets no cover.
+        let body = decodedBody(thumbnailBase64: "THUMB")
+        let thumbnailAt = try XCTUnwrap(body.range(of: #"name="thumbnail_b64""#))
+        let fileAt = try XCTUnwrap(body.range(of: #"name="file""#))
+        XCTAssertTrue(thumbnailAt.lowerBound < fileAt.lowerBound)
+    }
+
+    func test_upload_sendsACoverThumbnail_forAnImageUpload() async throws {
+        seedKeysAndToken()
+        var uploadBody: Data?
+        MockURLProtocol.requestHandler = { request in
+            if request.url?.path.hasSuffix("/upload") == true {
+                uploadBody = MockURLProtocol.lastRequestBody
+                return (okResponse(request), uploadResponseJSON())
+            }
+            return (okResponse(request), Data())
+        }
+
+        _ = try await makeSUT().upload(data: makeTestPNG(width: 900, height: 600),
+                                       fileName: "holiday.png", mimeType: "image/png",
+                                       parentFolderID: nil)
+
+        let body = String(decoding: try XCTUnwrap(uploadBody), as: UTF8.self)
+        XCTAssertTrue(body.contains(#"name="thumbnail_b64""#),
+                      "An image upload with no thumbnail leaves the file with a blank tile")
+    }
+
+    func test_upload_sendsNoThumbnail_forANonImageUpload() async throws {
+        seedKeysAndToken()
+        var uploadBody: Data?
+        MockURLProtocol.requestHandler = { request in
+            if request.url?.path.hasSuffix("/upload") == true {
+                uploadBody = MockURLProtocol.lastRequestBody
+                return (okResponse(request), uploadResponseJSON())
+            }
+            return (okResponse(request), Data())
+        }
+
+        _ = try await makeSUT().upload(data: Data("plain text".utf8), fileName: "a.txt",
+                                       mimeType: "text/plain", parentFolderID: nil)
+
+        let body = String(decoding: try XCTUnwrap(uploadBody), as: UTF8.self)
+        XCTAssertFalse(body.contains(#"name="thumbnail_b64""#))
+    }
+
+    func test_upload_prefersACoverTheCallerSupplied_overDerivingOne() async throws {
+        // Photo sync supplies one for videos because it already holds the clip on disk. A derived
+        // cover winning here would make that saving pointless and re-spill the whole file.
+        seedKeysAndToken()
+        var uploadBody: Data?
+        MockURLProtocol.requestHandler = { request in
+            if request.url?.path.hasSuffix("/upload") == true {
+                uploadBody = MockURLProtocol.lastRequestBody
+                return (okResponse(request), uploadResponseJSON())
+            }
+            return (okResponse(request), Data())
+        }
+
+        _ = try await makeSUT().upload(data: makeTestPNG(width: 900, height: 600),
+                                       fileName: "holiday.png", mimeType: "image/png",
+                                       parentFolderID: nil,
+                                       thumbnailBase64: "CALLER-SUPPLIED-COVER")
+
+        let body = String(decoding: try XCTUnwrap(uploadBody), as: UTF8.self)
+        XCTAssertTrue(body.contains("CALLER-SUPPLIED-COVER"))
+    }
+
+    func test_upload_sendsACoverThumbnail_forAVideoUpload() async throws {
+        seedKeysAndToken()
+        let videoURL = try await makeTestVideo(frames: 30)
+        defer { try? FileManager.default.removeItem(at: videoURL) }
+
+        var uploadBody: Data?
+        MockURLProtocol.requestHandler = { request in
+            if request.url?.path.hasSuffix("/upload") == true {
+                uploadBody = MockURLProtocol.lastRequestBody
+                return (okResponse(request), uploadResponseJSON())
+            }
+            return (okResponse(request), Data())
+        }
+
+        _ = try await makeSUT().upload(data: try Data(contentsOf: videoURL), fileName: "clip.mov",
+                                       mimeType: "video/quicktime", parentFolderID: nil)
+
+        let body = String(decoding: try XCTUnwrap(uploadBody), as: UTF8.self)
+        XCTAssertTrue(body.contains(#"name="thumbnail_b64""#),
+                      "A video upload with no poster frame leaves the clip with a blank tile")
+    }
+
+    func test_upload_stillSucceeds_whenTheImageCannotBeDecoded() async throws {
+        // A thumbnail is a nicety; nothing about failing to make one may cost the user the
+        // upload itself.
+        seedKeysAndToken()
+        MockURLProtocol.requestHandler = { request in
+            if request.url?.path.hasSuffix("/upload") == true {
+                return (okResponse(request), uploadResponseJSON(id: "still-uploaded"))
+            }
+            return (okResponse(request), Data())
+        }
+
+        let result = try await makeSUT().upload(data: Data("not really a jpeg".utf8),
+                                                fileName: "broken.jpg", mimeType: "image/jpeg",
+                                                parentFolderID: nil)
+
+        XCTAssertEqual(result.id, "still-uploaded")
     }
 
     // MARK: - Preconditions

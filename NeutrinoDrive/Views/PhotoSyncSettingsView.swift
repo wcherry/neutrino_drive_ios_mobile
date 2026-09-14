@@ -19,7 +19,7 @@ struct PhotoSyncSettingsView: View {
                     limitedAccessRow
                 }
             } footer: {
-                Text("Photos taken from now on will be backed up. Existing photos in your library are not uploaded.")
+                Text(enableFooterText)
             }
 
             if photoSyncService.isEnabled {
@@ -34,6 +34,27 @@ struct PhotoSyncSettingsView: View {
                     Text("Destination")
                 } footer: {
                     Text("Photos are uploaded to this folder in your Drive. Encrypted before they leave your device.")
+                }
+
+                Section {
+                    Picker("Include Older Photos", selection: backfillWindow) {
+                        ForEach(PhotoBackfillWindow.allCases) { window in
+                            Text(window.label).tag(window)
+                        }
+                    }
+                    if photoSyncService.pendingCount > 0 {
+                        HStack {
+                            Text("Queued")
+                            Spacer()
+                            Text("\(photoSyncService.pendingCount)")
+                                .foregroundStyle(.secondary)
+                                .monospacedDigit()
+                        }
+                    }
+                } header: {
+                    Text("Existing Library")
+                } footer: {
+                    Text(backfillFooterText)
                 }
 
                 Section("Constraints") {
@@ -66,6 +87,25 @@ struct PhotoSyncSettingsView: View {
                                 .foregroundStyle(.secondary)
                         }
                     }
+                    // Whether iOS is waking the app at all — the one fact that tells apart
+                    // "the background run is failing" from "the background run never happens".
+                    HStack {
+                        Text("Last Background Run")
+                        Spacer()
+                        if let lastBackgroundRunAt = photoSyncService.lastBackgroundRunAt {
+                            Text(lastBackgroundRunAt, style: .relative)
+                                .foregroundStyle(.secondary)
+                        } else {
+                            Text("Never")
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                } footer: {
+                    if photoSyncService.lastBackgroundRunAt == nil {
+                        Text("iOS decides when to run background sync, and it won't run it at all "
+                             + "for an app that was force-quit from the app switcher. Leave Drive "
+                             + "running in the background rather than swiping it away.")
+                    }
                 }
 
                 Section {
@@ -97,6 +137,44 @@ struct PhotoSyncSettingsView: View {
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("Neutrino Drive needs photo library access to back up new photos. Enable access in iOS Settings.")
+        }
+    }
+
+    // MARK: - Backfill window
+
+    private var backfillWindow: Binding<PhotoBackfillWindow> {
+        Binding(
+            get: { PhotoBackfillWindow(days: photoSyncService.backfillDays) },
+            set: { photoSyncService.backfillDays = $0.days }
+        )
+    }
+
+    private var enableFooterText: String {
+        let window = PhotoBackfillWindow(days: photoSyncService.backfillDays)
+        switch window {
+        case .off:
+            return "Photos taken from now on will be backed up. Existing photos in your library are not uploaded."
+        case .all:
+            return "Photos taken from now on will be backed up, along with your entire existing library."
+        default:
+            // "Last 30 Days" → "the last 30 days".
+            return "Photos taken from now on will be backed up, along with those from the "
+                 + window.label.lowercased() + "."
+        }
+    }
+
+    private var backfillFooterText: String {
+        switch PhotoBackfillWindow(days: photoSyncService.backfillDays) {
+        case .off:
+            return "Reach back into photos you already have. Widening this queues everything in "
+                 + "the window that isn't backed up yet; narrowing it later leaves what has "
+                 + "already been uploaded in Drive."
+        case .all:
+            return "Your whole library will be queued — this can be thousands of photos and a "
+                 + "lot of data. New photos are still backed up first; older ones follow."
+        default:
+            return "Older photos are queued behind new ones, so a backlog never delays the "
+                 + "photo you just took."
         }
     }
 

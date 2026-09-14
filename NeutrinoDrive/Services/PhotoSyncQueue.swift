@@ -76,10 +76,22 @@ struct PhotoSyncQueue: Codable, Equatable {
 
     /// Pending entries eligible for an attempt right now (backoff has elapsed, or never
     /// attempted), ordered oldest-`creationDate`-first so a backlog drains in capture order.
-    func drainable(asOf now: Date = Date()) -> [Entry] {
+    ///
+    /// - Parameter newerThan: entries created before this date sort *after* every entry
+    ///   created on or after it, each group still in capture order. This is what keeps a
+    ///   backfill of the existing library (see `PhotoSyncService.backfillDays`) from
+    ///   starving the photo the user took a minute ago: without it, a one-year window puts
+    ///   thousands of old assets ahead of everything new. Defaults to `.distantPast`, which
+    ///   places every entry in the first group — i.e. plain capture order.
+    func drainable(asOf now: Date = Date(), newerThan boundary: Date = .distantPast) -> [Entry] {
         pending
             .filter { ($0.nextAttemptAfter ?? .distantPast) <= now }
-            .sorted { $0.creationDate < $1.creationDate }
+            .sorted { lhs, rhs in
+                let lhsIsBacklog = lhs.creationDate < boundary
+                let rhsIsBacklog = rhs.creationDate < boundary
+                if lhsIsBacklog != rhsIsBacklog { return !lhsIsBacklog }
+                return lhs.creationDate < rhs.creationDate
+            }
     }
 
     // MARK: - Outcomes

@@ -17,10 +17,22 @@ private struct FakeAssetExporter: PhotoAssetExporting {
     var data: Data = Data("fake-photo-bytes".utf8)
     var fileName: String = "IMG_0001.jpg"
     var mimeType: String = "image/jpeg"
+    /// What the real exporter fills in for videos, from the temp file it already wrote.
+    var thumbnailBase64: String?
 
     func exportData(for identifier: String, includeVideos: Bool,
                     networkAccessAllowed: Bool) async throws -> PhotoExport {
-        PhotoExport(data: data, fileName: fileName, mimeType: mimeType)
+        PhotoExport(data: data, fileName: fileName, mimeType: mimeType,
+                    thumbnailBase64: thumbnailBase64)
+    }
+}
+
+/// Names the exported file after the asset identifier, so a test can assert the *order* in
+/// which the drain loop picked entries off the queue.
+private struct IdentifyingAssetExporter: PhotoAssetExporting {
+    func exportData(for identifier: String, includeVideos: Bool,
+                    networkAccessAllowed: Bool) async throws -> PhotoExport {
+        PhotoExport(data: Data("bytes".utf8), fileName: identifier, mimeType: "image/jpeg")
     }
 }
 
@@ -100,6 +112,59 @@ final class PhotoSyncServiceTests: XCTestCase {
         XCTAssertEqual(sut.status, .waitingForWiFi)
     }
 
+    // MARK: - Cover thumbnails
+
+    func test_drain_forwardsTheExportersCoverThumbnailToTheUpload() async {
+        // The exporter is the only part of the pipeline holding a video as a file, so the cover
+        // it makes is the one that has to survive the trip. Dropping it here is invisible —
+        // the upload succeeds either way and the clip simply has no tile.
+        let exporter = FakeAssetExporter(data: Data("fake-video-bytes".utf8),
+                                         fileName: "IMG_0002.mov",
+                                         mimeType: "video/quicktime",
+                                         thumbnailBase64: "POSTER-FRAME")
+        let (sut, defaults) = makeSUT(enabled: true, exporter: exporter)
+        defaults.set(Date.distantPast, forKey: PhotoSyncService.Keys.anchorDate)
+        sut.hasAccessTokenProvider = { true }
+        sut.hasStoredKeysProvider = { true }
+        sut.folderResolver = { _, _ in "folder-1" }
+
+        var receivedThumbnail: String?
+        sut.uploadHandler = { export, parentFolderID in
+            receivedThumbnail = export.thumbnailBase64
+            return UploadResult(id: "file-1", name: export.fileName, folderId: parentFolderID,
+                                sizeBytes: Int64(export.data.count), mimeType: export.mimeType,
+                                updatedAt: Date())
+        }
+
+        sut.enqueueIfNeeded([FakePhotoAsset(localIdentifier: "asset-1", creationDate: Date())])
+        _ = await sut.drain(ignoringPowerConstraint: false)
+
+        XCTAssertEqual(receivedThumbnail, "POSTER-FRAME")
+    }
+
+    func test_drain_leavesTheCoverNil_whenTheExporterHasNone() async {
+        // An image's cover is derived downstream from the same bytes being uploaded, so the
+        // exporter deliberately supplies nothing and `E2EEUploader` makes it.
+        let (sut, defaults) = makeSUT(enabled: true)
+        defaults.set(Date.distantPast, forKey: PhotoSyncService.Keys.anchorDate)
+        sut.hasAccessTokenProvider = { true }
+        sut.hasStoredKeysProvider = { true }
+        sut.folderResolver = { _, _ in "folder-1" }
+
+        var sawThumbnail: String? = "sentinel"
+        sut.uploadHandler = { export, parentFolderID in
+            sawThumbnail = export.thumbnailBase64
+            return UploadResult(id: "file-1", name: export.fileName, folderId: parentFolderID,
+                                sizeBytes: Int64(export.data.count), mimeType: export.mimeType,
+                                updatedAt: Date())
+        }
+
+        sut.enqueueIfNeeded([FakePhotoAsset(localIdentifier: "asset-1", creationDate: Date())])
+        _ = await sut.drain(ignoringPowerConstraint: false)
+
+        XCTAssertNil(sawThumbnail)
+    }
+
     func test_drain_wifiOnlyOff_uploadsOverCellular() async {
         let (sut, defaults) = makeSUT(enabled: true)
         defaults.set(Date.distantPast, forKey: PhotoSyncService.Keys.anchorDate)
@@ -109,9 +174,10 @@ final class PhotoSyncServiceTests: XCTestCase {
         sut.isNetworkExpensive = true
         sut.wifiOnly = false
         sut.folderResolver = { _, _ in "folder-1" }
-        sut.uploadHandler = { data, fileName, mimeType, parentFolderID in
-            UploadResult(id: "file-1", name: fileName, folderId: parentFolderID,
-                        sizeBytes: Int64(data.count), mimeType: mimeType, updatedAt: Date())
+        sut.uploadHandler = { export, parentFolderID in
+            UploadResult(id: "file-1", name: export.fileName, folderId: parentFolderID,
+                        sizeBytes: Int64(export.data.count), mimeType: export.mimeType,
+                        updatedAt: Date())
         }
 
         sut.enqueueIfNeeded([FakePhotoAsset(localIdentifier: "asset-1", creationDate: Date())])
@@ -201,14 +267,15 @@ final class PhotoSyncServiceTests: XCTestCase {
 
         var uploadCallCount = 0
         var receivedFolderIDs: [String?] = []
-        sut.uploadHandler = { data, fileName, mimeType, parentFolderID in
+        sut.uploadHandler = { export, parentFolderID in
             uploadCallCount += 1
             receivedFolderIDs.append(parentFolderID)
             if uploadCallCount == 1 {
                 throw UploadError.serverError(statusCode: 404)
             }
-            return UploadResult(id: "file-1", name: fileName, folderId: parentFolderID,
-                                sizeBytes: Int64(data.count), mimeType: mimeType, updatedAt: Date())
+            return UploadResult(id: "file-1", name: export.fileName, folderId: parentFolderID,
+                                sizeBytes: Int64(export.data.count), mimeType: export.mimeType,
+                                updatedAt: Date())
         }
 
         sut.enqueueIfNeeded([FakePhotoAsset(localIdentifier: "asset-1", creationDate: Date())])
@@ -230,9 +297,10 @@ final class PhotoSyncServiceTests: XCTestCase {
         sut.hasStoredKeysProvider = { true }
         sut.isOnWiFi = true
         sut.folderResolver = { _, _ in "folder-1" }
-        sut.uploadHandler = { data, fileName, mimeType, parentFolderID in
-            UploadResult(id: "file-1", name: fileName, folderId: parentFolderID,
-                        sizeBytes: Int64(data.count), mimeType: mimeType, updatedAt: Date())
+        sut.uploadHandler = { export, parentFolderID in
+            UploadResult(id: "file-1", name: export.fileName, folderId: parentFolderID,
+                        sizeBytes: Int64(export.data.count), mimeType: export.mimeType,
+                        updatedAt: Date())
         }
 
         sut.enqueueIfNeeded([FakePhotoAsset(localIdentifier: "asset-1", creationDate: Date())])
@@ -245,6 +313,164 @@ final class PhotoSyncServiceTests: XCTestCase {
         XCTAssertEqual(sut.status, .idle)
     }
 
+    // MARK: - Access-token freshness
+
+    /// The regression that made background sync useless in practice. Access tokens last 15
+    /// minutes, and `E2EEUploader` reads its bearer token straight out of the Keychain so the
+    /// share extension can upload without an `AuthService`. Every *other* caller reaches the
+    /// server through `DriveService`, which renews on the way past — but once the destination
+    /// folder ID is cached, an upload never touches `DriveService` at all. In the foreground
+    /// that is invisible, because the user browsing Drive keeps the token fresh; a drain with
+    /// the app off screen has nothing keeping it fresh, so it must do it itself.
+    func test_drain_renewsTheAccessTokenBeforeUploading() async {
+        let (sut, defaults) = makeSUT(enabled: true)
+        defaults.set(Date.distantPast, forKey: PhotoSyncService.Keys.anchorDate)
+        sut.hasAccessTokenProvider = { true }
+        sut.hasStoredKeysProvider = { true }
+        sut.isOnWiFi = true
+        sut.folderResolver = { _, _ in "folder-1" }
+
+        var events: [String] = []
+        sut.tokenRefresher = { events.append("refresh") }
+        sut.uploadHandler = { export, parentFolderID in
+            events.append("upload")
+            return UploadResult(id: "file-1", name: export.fileName, folderId: parentFolderID,
+                                sizeBytes: Int64(export.data.count), mimeType: export.mimeType,
+                                updatedAt: Date())
+        }
+
+        sut.enqueueIfNeeded([FakePhotoAsset(localIdentifier: "asset-1", creationDate: Date())])
+        _ = await sut.drain(ignoringPowerConstraint: false)
+
+        XCTAssertEqual(events, ["refresh", "upload"],
+                       "The token must be renewed before the bytes go out, not after")
+    }
+
+    /// `drain` runs on every network path change, so an unconditional refresh would spend a
+    /// token round trip every time Wi-Fi flickers with nothing queued.
+    func test_drain_withNothingQueued_doesNotRenewTheToken() async {
+        let (sut, _) = makeSUT(enabled: true)
+        sut.hasAccessTokenProvider = { true }
+        sut.hasStoredKeysProvider = { true }
+        sut.isOnWiFi = true
+
+        var refreshCount = 0
+        sut.tokenRefresher = { refreshCount += 1 }
+
+        _ = await sut.drain(ignoringPowerConstraint: false)
+
+        XCTAssertEqual(refreshCount, 0)
+    }
+
+    /// A 401 is a stale token, not a rejected photo. Classifying it as permanent is what sent
+    /// every photo a background drain touched to `failed` on its *first* attempt, where only
+    /// "Retry Failed" in Settings could reach it.
+    func test_drain_unauthorized_leavesEntryPendingRatherThanFailingItPermanently() async {
+        let (sut, defaults) = makeSUT(enabled: true)
+        defaults.set(Date.distantPast, forKey: PhotoSyncService.Keys.anchorDate)
+        sut.hasAccessTokenProvider = { true }
+        sut.hasStoredKeysProvider = { true }
+        sut.isOnWiFi = true
+        sut.folderResolver = { _, _ in "folder-1" }
+        sut.tokenRefresher = {}
+        sut.uploadHandler = { _, _ in throw UploadError.serverError(statusCode: 401) }
+
+        sut.enqueueIfNeeded([FakePhotoAsset(localIdentifier: "asset-1", creationDate: Date())])
+        _ = await sut.drain(ignoringPowerConstraint: false)
+
+        XCTAssertNil(sut.debugFailedEntry("asset-1"), "401 must never be recorded as permanent")
+        XCTAssertEqual(sut.pendingCount, 1)
+        XCTAssertEqual(sut.debugPendingEntry("asset-1")?.attempts, 1)
+        XCTAssertNotNil(sut.debugPendingEntry("asset-1")?.nextAttemptAfter,
+                        "A retryable failure must be scheduled for backoff")
+    }
+
+    /// The token can also expire *during* a drain — a long backlog on a slow link outlives 15
+    /// minutes easily — so one 401 is recovered in place rather than costing the photo an
+    /// attempt. Distinct from the 404 path: a 401 says nothing about the cached folder.
+    func test_drain_unauthorizedThenRenewed_uploadsWithoutCostingAnAttempt() async {
+        let (sut, defaults) = makeSUT(enabled: true)
+        defaults.set(Date.distantPast, forKey: PhotoSyncService.Keys.anchorDate)
+        defaults.set("cached-folder", forKey: PhotoSyncService.Keys.folderID)
+        sut.hasAccessTokenProvider = { true }
+        sut.hasStoredKeysProvider = { true }
+        sut.isOnWiFi = true
+        sut.folderResolver = { _, _ in
+            XCTFail("A 401 must not invalidate the cached folder ID")
+            return "unused"
+        }
+
+        var refreshCount = 0
+        sut.tokenRefresher = { refreshCount += 1 }
+
+        var uploadCallCount = 0
+        sut.uploadHandler = { export, parentFolderID in
+            uploadCallCount += 1
+            if uploadCallCount == 1 { throw UploadError.serverError(statusCode: 401) }
+            return UploadResult(id: "file-1", name: export.fileName, folderId: parentFolderID,
+                                sizeBytes: Int64(export.data.count), mimeType: export.mimeType,
+                                updatedAt: Date())
+        }
+
+        sut.enqueueIfNeeded([FakePhotoAsset(localIdentifier: "asset-1", creationDate: Date())])
+        _ = await sut.drain(ignoringPowerConstraint: false)
+
+        XCTAssertEqual(uploadCallCount, 2)
+        XCTAssertEqual(refreshCount, 2, "Once before the drain, once to recover the 401")
+        XCTAssertTrue(sut.debugIsCompleted("asset-1"))
+        XCTAssertEqual(sut.pendingCount, 0)
+        XCTAssertEqual(sut.failedCount, 0)
+    }
+
+    // MARK: - Running out of background time
+
+    /// A background drain is always racing a clock — the `BGProcessingTask` budget, or the
+    /// grace period after the app leaves the foreground. What matters is that running out is
+    /// *harmless*: the loop stops promptly, and the entries it never reached stay `pending`
+    /// with an untouched retry budget. Charging them an attempt would burn a photo down to
+    /// `failed` after five interrupted runs, stranding it behind a manual "Retry Failed".
+    func test_drain_whenBackgroundTimeExpires_stopsAndLeavesUnreachedEntriesPending() async {
+        let (sut, defaults) = makeSUT(enabled: true)
+        defaults.set(Date.distantPast, forKey: PhotoSyncService.Keys.anchorDate)
+        sut.hasAccessTokenProvider = { true }
+        sut.hasStoredKeysProvider = { true }
+        sut.isOnWiFi = true
+        sut.folderResolver = { _, _ in "folder-1" }
+
+        var uploadCallCount = 0
+        sut.uploadHandler = { export, parentFolderID in
+            uploadCallCount += 1
+            return UploadResult(id: "file-\(uploadCallCount)", name: export.fileName,
+                                folderId: parentFolderID, sizeBytes: Int64(export.data.count),
+                                mimeType: export.mimeType, updatedAt: Date())
+        }
+
+        // Distinct creation dates: `drainable()` orders oldest-first, so asset-1 is the one
+        // the single permitted upload consumes.
+        let base = Date(timeIntervalSince1970: 1_000_000)
+        sut.enqueueIfNeeded([
+            FakePhotoAsset(localIdentifier: "asset-1", creationDate: base),
+            FakePhotoAsset(localIdentifier: "asset-2", creationDate: base.addingTimeInterval(1)),
+            FakePhotoAsset(localIdentifier: "asset-3", creationDate: base.addingTimeInterval(2)),
+        ])
+        XCTAssertEqual(sut.pendingCount, 3)
+
+        // Expires the moment the first upload lands.
+        _ = await sut.drain(ignoringPowerConstraint: false,
+                            isBackgroundExpired: { uploadCallCount >= 1 })
+
+        XCTAssertEqual(uploadCallCount, 1, "Expiry must actually stop the loop, not just be recorded")
+        XCTAssertTrue(sut.debugIsCompleted("asset-1"))
+        XCTAssertEqual(sut.pendingCount, 2)
+        XCTAssertEqual(sut.failedCount, 0, "An interrupted run must not consume anyone's retry budget")
+
+        for id in ["asset-2", "asset-3"] {
+            XCTAssertEqual(sut.debugPendingEntry(id)?.attempts, 0, "\(id) was never attempted")
+            XCTAssertNil(sut.debugPendingEntry(id)?.nextAttemptAfter,
+                         "\(id) must be eligible immediately on the next run, not sitting in backoff")
+        }
+    }
+
     func test_drain_permanentServerError_movesEntryToFailedImmediately() async {
         let (sut, defaults) = makeSUT(enabled: true)
         defaults.set(Date.distantPast, forKey: PhotoSyncService.Keys.anchorDate)
@@ -252,7 +478,7 @@ final class PhotoSyncServiceTests: XCTestCase {
         sut.hasStoredKeysProvider = { true }
         sut.isOnWiFi = true
         sut.folderResolver = { _, _ in "folder-1" }
-        sut.uploadHandler = { _, _, _, _ in throw UploadError.serverError(statusCode: 403) }
+        sut.uploadHandler = { _, _ in throw UploadError.serverError(statusCode: 403) }
 
         sut.enqueueIfNeeded([FakePhotoAsset(localIdentifier: "asset-1", creationDate: Date())])
         _ = await sut.drain(ignoringPowerConstraint: false)
@@ -270,7 +496,7 @@ final class PhotoSyncServiceTests: XCTestCase {
         sut.hasStoredKeysProvider = { true }
         sut.isOnWiFi = true
         sut.folderResolver = { _, _ in "folder-1" }
-        sut.uploadHandler = { _, _, _, _ in
+        sut.uploadHandler = { _, _ in
             XCTFail("upload should not be attempted for an oversized asset")
             throw UploadError.encryptionFailed
         }
@@ -316,6 +542,127 @@ final class PhotoSyncServiceTests: XCTestCase {
                                                       includeVideos: true, queue: queue)
 
         XCTAssertTrue(result.isEmpty)
+    }
+
+    // MARK: - Backfill window (older photos)
+
+    func test_backfillDays_defaultsToOff() {
+        let (sut, _) = makeSUT(enabled: true)
+        XCTAssertEqual(sut.backfillDays, 0)
+        XCTAssertEqual(PhotoBackfillWindow(days: sut.backfillDays), .off)
+    }
+
+    func test_backfillCutoff_whenOff_isTheAnchorDate() {
+        let anchor = Date(timeIntervalSince1970: 1_000_000)
+
+        let cutoff = PhotoSyncService.backfillCutoff(days: 0, anchorDate: anchor, now: anchor)
+
+        XCTAssertEqual(cutoff, anchor)
+    }
+
+    func test_backfillCutoff_withWindow_reachesThatManyDaysBeforeNow() {
+        let now = Date(timeIntervalSince1970: 1_000_000_000)
+        let anchor = now   // just switched on
+
+        let cutoff = PhotoSyncService.backfillCutoff(days: 30, anchorDate: anchor, now: now)
+
+        let expected = Calendar.current.date(byAdding: .day, value: -30, to: now)!
+        XCTAssertEqual(cutoff, expected)
+    }
+
+    func test_backfillCutoff_neverNarrowsAnAlreadyEarlierAnchor() {
+        // An anchor from months ago already reaches further back than a 7-day window; the
+        // window must not pull the cutoff forward and start skipping assets.
+        let now = Date(timeIntervalSince1970: 1_000_000_000)
+        let anchor = now.addingTimeInterval(-90 * 86_400)
+
+        let cutoff = PhotoSyncService.backfillCutoff(days: 7, anchorDate: anchor, now: now)
+
+        XCTAssertEqual(cutoff, anchor)
+    }
+
+    func test_backfillCutoff_allPhotos_isDistantPast() {
+        let cutoff = PhotoSyncService.backfillCutoff(days: -1, anchorDate: Date(), now: Date())
+        XCTAssertEqual(cutoff, .distantPast)
+    }
+
+    func test_enqueueIfNeeded_withBackfillWindow_acceptsAssetsOlderThanTheAnchor() {
+        let (sut, defaults) = makeSUT(enabled: true)
+        let anchor = Date()
+        defaults.set(anchor, forKey: PhotoSyncService.Keys.anchorDate)
+        let tenDaysOld = anchor.addingTimeInterval(-10 * 86_400)
+
+        // Off: an asset from before the anchor is not our business.
+        XCTAssertEqual(sut.enqueueIfNeeded([FakePhotoAsset(localIdentifier: "old", creationDate: tenDaysOld)]), 0)
+
+        sut.backfillDays = 30
+        XCTAssertEqual(sut.enqueueIfNeeded([FakePhotoAsset(localIdentifier: "old", creationDate: tenDaysOld)]), 1)
+        XCTAssertNotNil(sut.debugPendingEntry("old"))
+    }
+
+    func test_enqueueIfNeeded_withBackfillWindow_stillExcludesAssetsOlderThanTheWindow() {
+        let (sut, defaults) = makeSUT(enabled: true)
+        let anchor = Date()
+        defaults.set(anchor, forKey: PhotoSyncService.Keys.anchorDate)
+        sut.backfillDays = 7
+
+        let count = sut.enqueueIfNeeded([
+            FakePhotoAsset(localIdentifier: "just-inside", creationDate: anchor.addingTimeInterval(-6 * 86_400)),
+            FakePhotoAsset(localIdentifier: "too-old", creationDate: anchor.addingTimeInterval(-60 * 86_400)),
+        ])
+
+        XCTAssertEqual(count, 1)
+        XCTAssertNotNil(sut.debugPendingEntry("just-inside"))
+        XCTAssertNil(sut.debugPendingEntry("too-old"))
+    }
+
+    func test_enqueueIfNeeded_withoutAnchor_ignoresBackfillWindow() {
+        // No anchor means the feature was never switched on. A stale window setting must not
+        // be able to turn that into "upload the library".
+        let (sut, _) = makeSUT(enabled: true)
+        sut.backfillDays = 365
+
+        let count = sut.enqueueIfNeeded([FakePhotoAsset(localIdentifier: "asset-1", creationDate: Date())])
+
+        XCTAssertEqual(count, 0)
+    }
+
+    func test_backfillWindow_roundsAnUnknownDayCountUpToTheNextWidestPreset() {
+        XCTAssertEqual(PhotoBackfillWindow(days: 0), .off)
+        XCTAssertEqual(PhotoBackfillWindow(days: 7), .week)
+        XCTAssertEqual(PhotoBackfillWindow(days: 14), .month)
+        XCTAssertEqual(PhotoBackfillWindow(days: 400), .all)
+        XCTAssertEqual(PhotoBackfillWindow(days: -1), .all)
+    }
+
+    func test_drain_uploadsNewPhotosBeforeTheBackfillBacklog() async {
+        let (sut, defaults) = makeSUT(enabled: true)
+        let anchor = Date()
+        defaults.set(anchor, forKey: PhotoSyncService.Keys.anchorDate)
+        sut.backfillDays = 30
+        sut.hasAccessTokenProvider = { true }
+        sut.hasStoredKeysProvider = { true }
+        sut.folderResolver = { _, _ in "folder-1" }
+
+        // The exporter names each file after its identifier, so the upload order is observable.
+        sut.assetExporter = IdentifyingAssetExporter()
+        var uploadOrder: [String] = []
+        sut.uploadHandler = { export, parentFolderID in
+            uploadOrder.append(export.fileName)
+            return UploadResult(id: "file-1", name: export.fileName, folderId: parentFolderID,
+                                sizeBytes: Int64(export.data.count), mimeType: export.mimeType,
+                                updatedAt: Date())
+        }
+
+        sut.enqueueIfNeeded([
+            FakePhotoAsset(localIdentifier: "backlog", creationDate: anchor.addingTimeInterval(-10 * 86_400)),
+            FakePhotoAsset(localIdentifier: "new", creationDate: anchor.addingTimeInterval(60)),
+        ])
+        XCTAssertEqual(sut.pendingCount, 2)
+
+        _ = await sut.drain(ignoringPowerConstraint: true)
+
+        XCTAssertEqual(uploadOrder, ["new", "backlog"])
     }
 
     // MARK: - Enable / permission handling
