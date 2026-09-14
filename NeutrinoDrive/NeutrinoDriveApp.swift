@@ -160,7 +160,8 @@ struct NeutrinoDriveApp: App {
 
 // MARK: - RootContentView
 
-/// Wraps the authenticated/unauthenticated content and handles "Open In" URLs.
+/// Wraps the authenticated/unauthenticated content, handles "Open In" URLs, and asks a newly
+/// signed-in device for the account's encryption key.
 private struct RootContentView: View {
     @EnvironmentObject var authService: AuthService
 
@@ -168,6 +169,11 @@ private struct RootContentView: View {
 
     @State private var showOpenInAlert = false
     @State private var openInAlertMessage = ""
+
+    @State private var showsKeyRestore = false
+    /// Offered once per launch. Somebody who dismissed it gets back through Settings › Encryption,
+    /// and every file that needs the key still says so when opened.
+    @State private var hasOfferedKeyRestore = false
 
     var body: some View {
         Group {
@@ -204,5 +210,30 @@ private struct RootContentView: View {
         } message: {
             Text(openInAlertMessage)
         }
+        .sheet(isPresented: $showsKeyRestore) {
+            KeyRestorePromptView(isPresented: $showsKeyRestore)
+        }
+        // At launch for a session restored from the Keychain…
+        .task { offerKeyRestoreIfNeeded() }
+        // …and on a fresh sign-in, which the launch-time check above misses.
+        .onChange(of: authService.isAuthenticated) { isAuthenticated in
+            guard isAuthenticated else {
+                hasOfferedKeyRestore = false
+                return
+            }
+            offerKeyRestoreIfNeeded()
+        }
+    }
+
+    /// Asks for the account's key when this device has none.
+    ///
+    /// Unlike the apps that carry a server-side vault, there is nothing to ask the server: Drive's
+    /// key is created on a client and never transmitted, so "is there a key here" is the whole
+    /// question and a Keychain read is the whole answer.
+    private func offerKeyRestoreIfNeeded() {
+        guard authService.isAuthenticated, !hasOfferedKeyRestore else { return }
+        guard !KeyImportService.hasStoredKeys() else { return }
+        hasOfferedKeyRestore = true
+        showsKeyRestore = true
     }
 }

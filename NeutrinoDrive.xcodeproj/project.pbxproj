@@ -38,6 +38,7 @@
 		47335AA514E3DF49C3867543 /* KeychainServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AD1869BDB3871713930D9FC0 /* KeychainServiceTests.swift */; };
 		48CC24AF85BA1E18FA66A8D3 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F98AAC9AEF267C276800A5AA /* SettingsView.swift */; };
 		49E951E24B9A115064231733 /* Sodium in Frameworks */ = {isa = PBXBuildFile; productRef = C2BF65B88E6E5580857855E6 /* Sodium */; };
+		4E915DFCBDADF5143D26CFB3 /* KeyRestorePromptView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2F7205AF2EEDD5C6C43AEA3B /* KeyRestorePromptView.swift */; };
 		513BF32E8B0DB23D969F39E8 /* FavoritesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FAFF80153F6588C47A7B5E10 /* FavoritesTests.swift */; };
 		56D2621B530223F4F2178BE6 /* OfflineService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 133D81CEFB2A25FC07B29499 /* OfflineService.swift */; };
 		5821BEEE8F091BE483D457D7 /* DriveService.swift in Sources */ = {isa = PBXBuildFile; fileRef = F47172C7892BED92B27EEB8A /* DriveService.swift */; };
@@ -158,6 +159,7 @@
 		2A8D2A6AC1A08A9C3B93BA3F /* AuthServiceTwoFactorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthServiceTwoFactorTests.swift; sourceTree = "<group>"; };
 		2BE879B8C0E1B1F29A9FACFB /* AuthServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthServiceTests.swift; sourceTree = "<group>"; };
 		2D5320FC68012C09A76FD3F8 /* ShareViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareViewController.swift; sourceTree = "<group>"; };
+		2F7205AF2EEDD5C6C43AEA3B /* KeyRestorePromptView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyRestorePromptView.swift; sourceTree = "<group>"; };
 		3204F85B044BBD53BB886983 /* VersionHistoryService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VersionHistoryService.swift; sourceTree = "<group>"; };
 		327677CD98415FF37039A2D0 /* SharingServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SharingServiceTests.swift; sourceTree = "<group>"; };
 		36307D854C329925CE489930 /* LocalSearchIndex.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalSearchIndex.swift; sourceTree = "<group>"; };
@@ -365,6 +367,7 @@
 				AFDC3F2E1EDDF4169DEA3706 /* FileBrowserView.swift */,
 				0FF01D7775E4236733FC909F /* FileRowView.swift */,
 				C03256BD9495BF647E1D621E /* FilesView.swift */,
+				2F7205AF2EEDD5C6C43AEA3B /* KeyRestorePromptView.swift */,
 				5E221501A1796A0C7CB2C7C3 /* MoveSheet.swift */,
 				590E72C929910D24827A0391 /* NeutrinoFileViewer.swift */,
 				90469D5CC989E615DE795823 /* OfflineView.swift */,
@@ -591,6 +594,7 @@
 				6B69A2B077D27029DD7924B9 /* FileBrowserView.swift in Sources */,
 				6363B4D2DB17A9276F46B17A /* FileRowView.swift in Sources */,
 				3BD6B2A2583353EF5D435FE8 /* FilesView.swift in Sources */,
+				4E915DFCBDADF5143D26CFB3 /* KeyRestorePromptView.swift in Sources */,
 				F72D32E65C948E5D0F5F584B /* LocalSearchIndex.swift in Sources */,
 				A4309A73D2D6CB256BD96435 /* MoveSheet.swift in Sources */,
 				690F26E747D4DA457D331F5F /* NeutrinoDriveApp.swift in Sources */,
