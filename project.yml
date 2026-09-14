@@ -86,10 +86,15 @@ targets:
         NSCameraUsageDescription: "Neutrino Drive needs camera access to scan QR codes for key import."
         NSPhotoLibraryUsageDescription: "Neutrino Drive needs access to your photo library to automatically back up new photos to your encrypted Drive."
         NSFaceIDUsageDescription: "Neutrino Drive uses Face ID to unlock the app and to protect access to your encryption keys."
+        # `processing` backs the BGProcessingTask (long backlogs, charging+idle); `fetch`
+        # backs the BGAppRefreshTask, which is the one iOS actually schedules often enough
+        # to matter for photo sync. Without `fetch`, registering the refresh task fails.
         UIBackgroundModes:
           - processing
+          - fetch
         BGTaskSchedulerPermittedIdentifiers:
           - com.neutrino.drive.photosync
+          - com.neutrino.drive.photosync.refresh
         NSAppTransportSecurity:
           NSAllowsArbitraryLoads: true
         LSSupportsOpeningDocumentsInPlace: false
@@ -136,6 +141,10 @@ targets:
       # guarantees the extension's key wrap matches the app's.
       - path: NeutrinoDrive/Services/SealedKeyCrypto.swift
       - path: NeutrinoDrive/Services/E2EEUploader.swift
+      # E2EEUploader makes the cover thumbnail itself, so the extension needs this too —
+      # otherwise an image shared into Drive uploads without the preview the app's own
+      # upload would have produced.
+      - path: NeutrinoDrive/Services/ThumbnailGenerator.swift
       - path: NeutrinoDrive/Services/BackgroundTransferService.swift
       - path: NeutrinoDrive/Services/ShareUploadCoordinator.swift
     dependencies:

@@ -55,21 +55,39 @@ struct NeutrinoDriveApp: App {
         NeutrinoApp.configure(.drive)
         NeutrinoBrand.use(.drive)
 
-        _authService = StateObject(wrappedValue: AuthService())
-        _driveService = StateObject(wrappedValue: DriveService())
+        let auth = AuthService()
+        let drive = DriveService()
+        let upload = UploadService()
+        let photoSync = PhotoSyncService()
+
+        // Dependency wiring happens *here*, not in the scene's `.task`.
+        //
+        // iOS launches this process with no scene attached when it runs the photo-sync
+        // `BGProcessingTask`, and it relaunches it the same way to deliver finished
+        // background transfers. No scene means no view body, which means `.task` never
+        // runs — so anything wired there does not exist on precisely the launches photo
+        // sync depends on. Left unwired, `PhotoSyncService` has no `uploadHandler` and no
+        // `folderResolver`, so every background upload threw `notAuthenticated` and the
+        // photo burned an attempt against its retry budget; after five it landed in
+        // `failed`, recoverable only by tapping "Retry Failed" in Settings. The
+        // user-visible symptom was that photos only ever uploaded with the app on screen.
+        drive.authService = auth
+        upload.driveService = drive
+        photoSync.configure(driveService: drive, uploadService: upload, authService: auth)
+
+        _authService = StateObject(wrappedValue: auth)
+        _driveService = StateObject(wrappedValue: drive)
         _offlineService = StateObject(wrappedValue: OfflineService())
-        _uploadService = StateObject(wrappedValue: UploadService())
-        _photoSyncService = StateObject(wrappedValue: PhotoSyncService())
+        _uploadService = StateObject(wrappedValue: upload)
+        _photoSyncService = StateObject(wrappedValue: photoSync)
         _biometricService = StateObject(wrappedValue: BiometricAuthService(
             isFeatureEnabled: FeatureFlags.biometricLock,
             unlockReason: "Unlock Neutrino Drive to access your encrypted files."
         ))
 
         // Must be registered before the app finishes launching. No-ops when
-        // FeatureFlags.photoAutoSync is false. Accessing the StateObject's storage
-        // directly (rather than the `photoSyncService` property) is safe here — this
-        // only invokes a plain method, it doesn't participate in view invalidation.
-        _photoSyncService.wrappedValue.registerBackgroundTask()
+        // FeatureFlags.photoAutoSync is false.
+        photoSync.registerBackgroundTask()
 
         // The App Group is only resolvable once the config is installed, so re-probe before
         // relocating: `KeychainService` computes its access group at first touch.
@@ -98,9 +116,7 @@ struct NeutrinoDriveApp: App {
             }
             .animation(.easeInOut(duration: 0.15), value: biometricService.shouldPresentOverlay)
             .task {
-                driveService.authService = authService
-                uploadService.driveService = driveService
-                photoSyncService.configure(driveService: driveService, uploadService: uploadService)
+                // Services are wired in `init()`; what is left here genuinely needs the UI.
                 photoSyncService.start()
                 biometricService.lockOnLaunch()
 
@@ -129,6 +145,12 @@ struct NeutrinoDriveApp: App {
                 biometricService.sceneDidBecomeInactive()
             case .active:
                 biometricService.sceneDidBecomeActive()
+                // `.task` runs once, when the root view first appears — it does not fire
+                // again on a return from background. Re-running `start()` here is what
+                // replays the PhotoKit catch-up scan for everything captured while the app
+                // was suspended; it is idempotent (the observer, the path monitor and the
+                // drain loop all guard against a second entry).
+                photoSyncService.start()
             @unknown default:
                 break
             }

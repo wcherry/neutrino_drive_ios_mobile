@@ -95,6 +95,27 @@ final class PhotoSyncQueueTests: XCTestCase {
         XCTAssertEqual(drainable.map(\.id), ["older", "newer"])
     }
 
+    func test_drainable_sortsBacklogEntriesAfterNewOnes_stillOldestFirstWithinEachGroup() {
+        var sut = PhotoSyncQueue()
+        let boundary = Date(timeIntervalSince1970: 1000)
+        sut.enqueue(id: "backlog-newer", creationDate: Date(timeIntervalSince1970: 900))
+        sut.enqueue(id: "new-newer",     creationDate: Date(timeIntervalSince1970: 1200))
+        sut.enqueue(id: "backlog-older", creationDate: Date(timeIntervalSince1970: 100))
+        sut.enqueue(id: "new-older",     creationDate: Date(timeIntervalSince1970: 1100))
+
+        let drainable = sut.drainable(newerThan: boundary)
+
+        XCTAssertEqual(drainable.map(\.id), ["new-older", "new-newer", "backlog-older", "backlog-newer"])
+    }
+
+    func test_drainable_withoutABoundary_isPlainCaptureOrder() {
+        var sut = PhotoSyncQueue()
+        sut.enqueue(id: "newer", creationDate: Date(timeIntervalSince1970: 200))
+        sut.enqueue(id: "older", creationDate: Date(timeIntervalSince1970: 100))
+
+        XCTAssertEqual(sut.drainable().map(\.id), ["older", "newer"])
+    }
+
     func test_drainable_excludesEntriesWithFutureNextAttemptAfter() {
         var sut = PhotoSyncQueue()
         sut.enqueue(id: "asset-1", creationDate: Date())
