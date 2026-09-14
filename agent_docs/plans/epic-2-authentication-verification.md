@@ -20,7 +20,7 @@ Select the `NeutrinoDrive` scheme and any iOS 16+ simulator.
 1. Reset the simulator content and settings: Device menu → Erase All Content and Settings
 2. Build and run (Cmd+R)
 3. **Expected:** LoginView appears immediately — no tabs visible
-4. **Expected:** App icon tile (indigo/blue "externaldrive.fill.badge.wifi") at top
+4. **Expected:** App icon tile (indigo/blue "externaldrive.connected.to.line.below.fill") at top
 5. **Expected:** "Neutrino Drive" title and "Secure encrypted file storage" subtitle
 6. **Expected:** Three trust indicators (End-to-end encrypted, Zero-knowledge cloud storage, Only you hold your keys)
 7. **Expected:** "Sign In" button at the bottom spanning most of the screen width
