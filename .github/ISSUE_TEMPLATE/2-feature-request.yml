@@ -1,0 +1,94 @@
+name: ✨ Feature Request
+description: Suggest new functionality for Neutrino Drive on iOS.
+title: "[Feature]: "
+labels: ["feature"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this form for functionality Neutrino Drive doesn't have yet. If the app already does the thing but does it badly, use the **Improvement** template instead.
+
+        Asking for something that needs server support? File it in the [main Neutrino tracker](https://github.com/wcherry/neutrino/issues/new/choose) — this repository only holds the iOS client.
+
+  - type: checkboxes
+    id: preflight
+    attributes:
+      label: Preflight checks
+      options:
+        - label: I searched existing issues and this hasn't been requested yet.
+          required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem would this solve?
+      description: Describe the underlying need rather than jumping straight to a solution.
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed solution
+      description: What would you like Neutrino Drive to do?
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: How are you solving this today? What other approaches did you think about?
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Affected area
+      description: Which part of Neutrino Drive is this about?
+      multiple: true
+      options:
+        - Browsing files and folders
+        - Uploading
+        - Downloading
+        - Offline files
+        - Background transfers
+        - Share extension
+        - Sharing and links
+        - Photo auto-sync
+        - Version history
+        - Favorites
+        - Search
+        - Opening files in companion apps
+        - Encryption and keys
+        - Sign-in / account
+        - Face ID / app lock
+        - Settings
+        - Other / Not sure
+    validations:
+      required: true
+
+  - type: dropdown
+    id: scope
+    attributes:
+      label: Does this need anything outside the app?
+      description: Best guess is fine — it decides whether this stays here or moves to the main tracker.
+      options:
+        - iOS app only
+        - Needs a server or API change
+        - Needs a change in the web app too
+        - Not sure
+    validations:
+      required: true
+
+  - type: textarea
+    id: mockups
+    attributes:
+      label: Mockups, examples, or prior art
+      description: Optional. Screenshots of how other iOS apps solve this, sketches, links.
+
+  - type: checkboxes
+    id: contribution
+    attributes:
+      label: Contribution
+      options:
+        - label: I'd be willing to help implement this.

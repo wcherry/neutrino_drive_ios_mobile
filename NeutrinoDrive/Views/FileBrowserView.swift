@@ -513,6 +513,12 @@ struct FileBrowserView: View {
                 .disabled(currentItems.isEmpty)
             }
         }
+
+        // Every section, unlike New Folder above. A bug gets reported from whichever screen is
+        // misbehaving, and that is rarely the root of My Drive.
+        ToolbarItem(placement: .secondaryAction) {
+            ReportBugButton()
+        }
     }
 
     // MARK: - Companion Apps

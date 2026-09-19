@@ -1,0 +1,54 @@
+name: 📚 Documentation
+description: Something is missing, incorrect, or unclear in the docs.
+title: "[Docs]: "
+labels: ["documentation"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        For this repository's own documentation — the README, the build and signing instructions, `agent_docs/`, and the copy inside the app itself. Platform-wide documentation lives in the [main Neutrino repository](https://github.com/wcherry/neutrino).
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Which documentation?
+      multiple: true
+      options:
+        - README
+        - Build / Xcode setup
+        - Signing and provisioning
+        - TestFlight / release process
+        - Architecture notes (agent_docs)
+        - In-app help / UI copy
+        - Accessibility labels
+        - Contributing guide
+        - Other
+    validations:
+      required: true
+
+  - type: input
+    id: location
+    attributes:
+      label: Where is it?
+      description: File path, URL, or the screen/section name.
+      placeholder: "README.md#building, or agent_docs/architecture.md"
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What's wrong or missing?
+    validations:
+      required: true
+
+  - type: textarea
+    id: suggestion
+    attributes:
+      label: Suggested improvement
+      description: If you know what it should say, write it here — we'll happily take the wording.
+
+  - type: checkboxes
+    id: contribution
+    attributes:
+      label: Contribution
+      options:
+        - label: I'd be willing to open a PR for this.

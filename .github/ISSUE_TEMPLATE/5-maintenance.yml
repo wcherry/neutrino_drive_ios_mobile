@@ -1,0 +1,61 @@
+name: 🧹 Maintenance / Technical Debt
+description: Refactoring, dependencies, CI/CD, cleanup, or tooling work.
+title: "[Maint]: "
+labels: ["maintenance"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Primarily for maintainers and contributors. Examples: raise the deployment target, replace a deprecated UIKit API, refactor a service, improve test coverage, speed up the XcodeGen build.
+
+        ⚠️ Work inside `NeutrinoShared` belongs in [neutrino_shared_ios](https://github.com/wcherry/neutrino_shared_ios) — it is consumed here by local path, so a change there reaches every Neutrino iOS app at once.
+
+  - type: dropdown
+    id: type
+    attributes:
+      label: Type of work
+      multiple: true
+      options:
+        - Refactoring
+        - Dependency update
+        - Swift / iOS version bump
+        - XcodeGen / project config
+        - CI/CD
+        - Testing
+        - Performance
+        - Accessibility
+        - Code cleanup
+        - Developer experience
+        - Security hardening
+    validations:
+      required: true
+
+  - type: textarea
+    id: why
+    attributes:
+      label: Why is this needed?
+      description: What's the cost of leaving it alone?
+    validations:
+      required: true
+
+  - type: textarea
+    id: approach
+    attributes:
+      label: Proposed approach
+      description: Rough plan, or the specific files and targets involved.
+    validations:
+      required: true
+
+  - type: textarea
+    id: risks
+    attributes:
+      label: Risks
+      description: Breaking changes, migration requirements, areas likely to regress. Note anything that would also need a change in NeutrinoShared or the backend.
+
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      value: |
+        - [ ]
+        - [ ]
