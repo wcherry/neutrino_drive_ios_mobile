@@ -1,0 +1,14 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 🔒 Report a Security Vulnerability
+    url: https://github.com/wcherry/neutrino_drive_ios_mobile/security/advisories/new
+    about: Please do NOT open a public issue. Report vulnerabilities privately through GitHub Security Advisories.
+  - name: 🌐 Server, Web App, or API Issue
+    url: https://github.com/wcherry/neutrino/issues/new/choose
+    about: This repository is the Neutrino Drive iOS app only. Anything about the backend, the web UI, or Docker deployment belongs in the main Neutrino tracker.
+  - name: 🍎 Shared iOS Code (sign-in, encryption keys)
+    url: https://github.com/wcherry/neutrino_shared_ios/issues/new/choose
+    about: Sign-in screens, the OAuth flow, and the encryption-key lifecycle are shared by every Neutrino iOS app and live in NeutrinoShared.
+  - name: 📖 Documentation & Setup Guide
+    url: https://github.com/wcherry/neutrino/blob/main/README.md
+    about: Installation, configuration, and deployment instructions for the Neutrino server.

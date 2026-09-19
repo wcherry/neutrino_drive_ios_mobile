@@ -1,0 +1,174 @@
+name: 🐛 Bug Report
+description: Something isn't working correctly in Neutrino Drive for iOS.
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to file a bug report.
+
+        ⚠️ **Do not use this form for security vulnerabilities.** Please report those privately — see the Security Vulnerability option on the new-issue chooser.
+
+        💡 Opening this form from **⋯ → Report a Bug** inside the app fills in the version, device and server fields for you.
+
+        This tracker is the **iOS app only**. If the same problem happens in the web app, it belongs in the [main Neutrino tracker](https://github.com/wcherry/neutrino/issues/new/choose) instead.
+
+  - type: checkboxes
+    id: preflight
+    attributes:
+      label: Preflight checks
+      options:
+        - label: I searched existing issues and this hasn't been reported yet.
+          required: true
+        - label: I'm running a recent build of Neutrino Drive.
+          required: true
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: Describe the problem.
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open '...'
+        2. Tap on '...'
+        3. See error
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: What should have happened?
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: What happened instead?
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Affected area
+      description: Which part of Neutrino Drive is this about?
+      multiple: true
+      options:
+        - Browsing files and folders
+        - Uploading
+        - Downloading
+        - Offline files
+        - Background transfers
+        - Share extension
+        - Sharing and links
+        - Photo auto-sync
+        - Version history
+        - Favorites
+        - Search
+        - Opening files in companion apps
+        - Encryption and keys
+        - Sign-in / account
+        - Face ID / app lock
+        - Settings
+        - Other / Not sure
+    validations:
+      required: true
+
+  - type: dropdown
+    id: frequency
+    attributes:
+      label: Can you reproduce this consistently?
+      options:
+        - Always
+        - Sometimes
+        - Only happened once
+        - Unknown
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: App version
+      description: Settings → About shows this. Include the build number in brackets.
+      placeholder: "e.g. 1.0.0 (8)"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: install
+    attributes:
+      label: How did you install Neutrino Drive?
+      options:
+        - TestFlight
+        - App Store
+        - Built from source in Xcode
+        - Other
+    validations:
+      required: true
+
+  - type: input
+    id: ios
+    attributes:
+      label: iOS version
+      placeholder: "e.g. iOS 18.2"
+    validations:
+      required: true
+
+  - type: input
+    id: device
+    attributes:
+      label: Device
+      description: The model identifier is fine — the app fills this in for you.
+      placeholder: "e.g. iPhone15,3 or iPhone 15 Pro Max"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: server
+    attributes:
+      label: Which server is the app talking to?
+      description: Please don't paste a private hostname into a public issue — the category is enough.
+      options:
+        - getneutrino.app (hosted)
+        - Self-hosted
+        - localhost / development
+        - Not sure
+    validations:
+      required: true
+
+  - type: dropdown
+    id: encryption
+    attributes:
+      label: Is end-to-end encryption set up on this device?
+      options:
+        - "Yes"
+        - "No"
+        - Not sure
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs / crash report
+      description: Xcode console output, or the crash report from Settings → Privacy & Security → Analytics & Improvements → Analytics Data. This is automatically formatted as code, so no backticks needed.
+      render: shell
+
+  - type: textarea
+    id: screenshots
+    attributes:
+      label: Screenshots / recordings
+      description: Optional. Drag and drop images or a screen recording here.
