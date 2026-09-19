@@ -54,8 +54,14 @@ targets:
           - group.com.neutrino.drive
         # Shared Keychain access group, so the share extension can read the access
         # token and the encryption-key material the app imported.
+        #
+        # Order matters: the first entry is the *default* access group, where an item
+        # written without an explicit group lands. Drive's own group must stay first, or
+        # its tokens would start being written into the cross-app group below — which
+        # carries the identity keyring and nothing else, for every Neutrino app.
         keychain-access-groups:
           - $(AppIdentifierPrefix)com.neutrino.drive.shared
+          - $(AppIdentifierPrefix)com.neutrino.shared
         # Universal Links. Both spellings are claimed so a link pasted without the
         # "www." still opens the app rather than Safari. Which *paths* reach Drive is
         # decided by the apple-app-site-association document served from the domain —
@@ -170,6 +176,7 @@ targets:
           - group.com.neutrino.drive
         keychain-access-groups:
           - $(AppIdentifierPrefix)com.neutrino.drive.shared
+          - $(AppIdentifierPrefix)com.neutrino.shared
     info:
       path: NeutrinoDriveShare/Info.plist
       properties:

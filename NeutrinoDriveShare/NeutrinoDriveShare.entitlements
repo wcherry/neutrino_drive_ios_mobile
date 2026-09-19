@@ -9,6 +9,7 @@
 	<key>keychain-access-groups</key>
 	<array>
 		<string>$(AppIdentifierPrefix)com.neutrino.drive.shared</string>
+		<string>$(AppIdentifierPrefix)com.neutrino.shared</string>
 	</array>
 </dict>
 </plist>
