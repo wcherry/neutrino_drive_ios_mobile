@@ -9,6 +9,7 @@ import Photos
 private struct FakePhotoAsset: PhotoAssetProviding {
     let localIdentifier: String
     let creationDate: Date?
+    var modificationDate: Date?
     var mediaType: PHAssetMediaType = .image
 }
 
@@ -536,7 +537,7 @@ final class PhotoSyncServiceTests: XCTestCase {
         let anchor = Date(timeIntervalSince1970: 0)
         let asset = FakePhotoAsset(localIdentifier: "known", creationDate: Date())
         var queue = PhotoSyncQueue()
-        queue.completed = ["known"]
+        queue.completed = ["known": .init(fileID: "file-1")]
 
         let result = PhotoSyncService.newIdentifiers(from: [asset], anchorDate: anchor,
                                                       includeVideos: true, queue: queue)
@@ -663,6 +664,137 @@ final class PhotoSyncServiceTests: XCTestCase {
         _ = await sut.drain(ignoringPowerConstraint: true)
 
         XCTAssertEqual(uploadOrder, ["new", "backlog"])
+    }
+
+    // MARK: - Capture dates (issue #31)
+    //
+    // Nothing in the upload request carries a date, so the server stamps its own clock and a
+    // year of camera roll lands on the afternoon it was uploaded. The correction is a second
+    // call, after the content — the content write is what sets `updated_at`, so a date sent
+    // with the upload would be overwritten a moment later.
+
+    /// Wires a service whose upload always succeeds, and captures what gets stamped.
+    private func makeStampingSUT(
+        exporter: PhotoAssetExporting = FakeAssetExporter(),
+        stamp: @escaping (String, DriveImportMetadata) async throws -> Void
+    ) -> PhotoSyncService {
+        let (sut, defaults) = makeSUT(enabled: true, exporter: exporter)
+        defaults.set(Date.distantPast, forKey: PhotoSyncService.Keys.anchorDate)
+        sut.hasAccessTokenProvider = { true }
+        sut.hasStoredKeysProvider = { true }
+        sut.isOnWiFi = true
+        sut.folderResolver = { _, _ in "folder-1" }
+        sut.uploadHandler = { export, parentFolderID in
+            UploadResult(id: "file-77", name: export.fileName, folderId: parentFolderID,
+                         sizeBytes: Int64(export.data.count), mimeType: export.mimeType,
+                         updatedAt: Date())
+        }
+        sut.importMetadataStamper = stamp
+        return sut
+    }
+
+    func test_drain_stampsTheAssetsCaptureDateOnTheUploadedFile() async {
+        let captured = Date(timeIntervalSince1970: 1_562_198_400)   // 2019-07-04
+        var stamped: DriveImportMetadata?
+        let sut = makeStampingSUT { _, metadata in stamped = metadata }
+
+        sut.enqueueIfNeeded([FakePhotoAsset(localIdentifier: "asset-1", creationDate: captured)])
+        _ = await sut.drain(ignoringPowerConstraint: false)
+
+        XCTAssertEqual(stamped?.createdAt, captured)
+    }
+
+    func test_drain_stampsTheModificationDate_whenTheAssetHasOne() async {
+        let captured = Date(timeIntervalSince1970: 1_562_198_400)
+        let edited   = Date(timeIntervalSince1970: 1_700_000_000)
+        var stamped: DriveImportMetadata?
+        let sut = makeStampingSUT { _, metadata in stamped = metadata }
+
+        sut.enqueueIfNeeded([FakePhotoAsset(localIdentifier: "asset-1", creationDate: captured,
+                                            modificationDate: edited)])
+        _ = await sut.drain(ignoringPowerConstraint: false)
+
+        XCTAssertEqual(stamped?.createdAt, captured)
+        XCTAssertEqual(stamped?.updatedAt, edited)
+    }
+
+    func test_drain_fallsBackToTheCaptureDate_whenTheAssetHasNoModificationDate() async {
+        let captured = Date(timeIntervalSince1970: 1_562_198_400)
+        var stamped: DriveImportMetadata?
+        let sut = makeStampingSUT { _, metadata in stamped = metadata }
+
+        sut.enqueueIfNeeded([FakePhotoAsset(localIdentifier: "asset-1", creationDate: captured)])
+        _ = await sut.drain(ignoringPowerConstraint: false)
+
+        XCTAssertEqual(stamped?.updatedAt, captured)
+    }
+
+    func test_drain_stampsThePhotoSyncImportSource_carryingTheAssetIdentifier() async {
+        var stamped: DriveImportMetadata?
+        let sut = makeStampingSUT { _, metadata in stamped = metadata }
+
+        sut.enqueueIfNeeded([FakePhotoAsset(localIdentifier: "asset-1", creationDate: Date())])
+        _ = await sut.drain(ignoringPowerConstraint: false)
+
+        XCTAssertEqual(stamped?.importSource, "photo-sync:asset-1")
+    }
+
+    func test_drain_stampsTheFileTheUploadReturned() async {
+        var stampedFileID: String?
+        let sut = makeStampingSUT { fileID, _ in stampedFileID = fileID }
+
+        sut.enqueueIfNeeded([FakePhotoAsset(localIdentifier: "asset-1", creationDate: Date())])
+        _ = await sut.drain(ignoringPowerConstraint: false)
+
+        XCTAssertEqual(stampedFileID, "file-77",
+                       "uploadWithFolderRetry used to discard the UploadResult, which threw away the one id needed to patch the file")
+    }
+
+    func test_drain_recordsTheUploadedFileIDInTheCompletedLedger() async {
+        let sut = makeStampingSUT { _, _ in }
+
+        sut.enqueueIfNeeded([FakePhotoAsset(localIdentifier: "asset-1", creationDate: Date())])
+        _ = await sut.drain(ignoringPowerConstraint: false)
+
+        XCTAssertEqual(sut.debugCompletedFileID("asset-1"), "file-77")
+    }
+
+    /// The photo is already safely uploaded by the time the stamp runs. Failing the entry
+    /// would send a good file back to `pending` and re-upload it on the next drain — a
+    /// duplicate, to fix a wrong date.
+    func test_drain_aFailedStamp_leavesTheEntryCompletedRatherThanFailed() async {
+        struct StampError: Error {}
+        let sut = makeStampingSUT { _, _ in throw StampError() }
+
+        sut.enqueueIfNeeded([FakePhotoAsset(localIdentifier: "asset-1", creationDate: Date())])
+        _ = await sut.drain(ignoringPowerConstraint: false)
+
+        XCTAssertTrue(sut.debugIsCompleted("asset-1"))
+        XCTAssertNil(sut.debugFailedEntry("asset-1"))
+        XCTAssertEqual(sut.pendingCount, 0)
+        XCTAssertEqual(sut.status, .idle)
+    }
+
+    /// Order matters and is not cosmetic: writing the body stamps `updated_at`, so the patch
+    /// is only meaningful after the upload has returned.
+    func test_drain_stampsAfterTheUploadNotBefore() async {
+        var events: [String] = []
+        let (sut, defaults) = makeSUT(enabled: true)
+        defaults.set(Date.distantPast, forKey: PhotoSyncService.Keys.anchorDate)
+        sut.hasAccessTokenProvider = { true }
+        sut.hasStoredKeysProvider = { true }
+        sut.folderResolver = { _, _ in "folder-1" }
+        sut.uploadHandler = { export, parentFolderID in
+            events.append("upload")
+            return UploadResult(id: "file-77", name: export.fileName, folderId: parentFolderID,
+                                sizeBytes: 1, mimeType: export.mimeType, updatedAt: Date())
+        }
+        sut.importMetadataStamper = { _, _ in events.append("stamp") }
+
+        sut.enqueueIfNeeded([FakePhotoAsset(localIdentifier: "asset-1", creationDate: Date())])
+        _ = await sut.drain(ignoringPowerConstraint: false)
+
+        XCTAssertEqual(events, ["upload", "stamp"])
     }
 
     // MARK: - Enable / permission handling

@@ -17,24 +17,54 @@ struct PhotoSyncQueue: Codable, Equatable {
         /// `PHAsset.localIdentifier`.
         let id: String
         let creationDate: Date
+        /// `PHAsset.modificationDate` — when the picture was last edited, which for an
+        /// unedited one is its capture date.
+        ///
+        /// Optional, and decoded with `decodeIfPresent` by the synthesised initialiser, so a
+        /// queue file written before this field existed still loads. An entry from such a file
+        /// stamps its creation date for both dates, which is the right answer for every photo
+        /// that was never edited and a harmless one for the rest.
+        let modificationDate: Date?
         var attempts: Int
         var lastError: String?
         var nextAttemptAfter: Date?
 
-        init(id: String, creationDate: Date, attempts: Int = 0,
+        init(id: String, creationDate: Date, modificationDate: Date? = nil, attempts: Int = 0,
              lastError: String? = nil, nextAttemptAfter: Date? = nil) {
             self.id = id
             self.creationDate = creationDate
+            self.modificationDate = modificationDate
             self.attempts = attempts
             self.lastError = lastError
             self.nextAttemptAfter = nextAttemptAfter
         }
     }
 
+    // MARK: - CompletedUpload
+
+    /// What the ledger knows about an asset that finished uploading.
+    ///
+    /// A record rather than a bare identifier because the Drive file id is the one thing
+    /// needed to go back and correct a file after the fact — the capture-date patch in
+    /// `PhotoSyncService`, and anything else that has to reach the file this asset became.
+    /// Before issue #31 the ledger was a `Set<String>` and threw the id away, which is what
+    /// made repairing history a filename-matching exercise.
+    struct CompletedUpload: Codable, Equatable {
+        /// The Drive file this asset was uploaded as, or `nil` for a completion recorded
+        /// before the ledger kept one. See the migration in ``PhotoSyncQueue/init(from:)``.
+        var fileID: String?
+
+        init(fileID: String? = nil) {
+            self.fileID = fileID
+        }
+    }
+
     // MARK: - Collections
 
     var pending: [Entry] = []
-    var completed: Set<String> = []
+    /// `PHAsset.localIdentifier` → what became of it. Also the dedup ledger: membership, not
+    /// the value, is what stops a photo being uploaded twice.
+    var completed: [String: CompletedUpload] = [:]
     var failed: [Entry] = []
 
     // MARK: - Retry schedule
@@ -46,10 +76,42 @@ struct PhotoSyncQueue: Codable, Equatable {
 
     // MARK: - Init
 
-    init(pending: [Entry] = [], completed: Set<String> = [], failed: [Entry] = []) {
+    init(pending: [Entry] = [], completed: [String: CompletedUpload] = [:], failed: [Entry] = []) {
         self.pending = pending
         self.completed = completed
         self.failed = failed
+    }
+
+    // MARK: - Decoding (with migration)
+
+    private enum CodingKeys: String, CodingKey {
+        case pending, completed, failed
+    }
+
+    /// Hand-written so the `completed` ledger can be read in either of its two shapes.
+    ///
+    /// Until issue #31 it was encoded as a bare array of identifiers (a `Set<String>`). An
+    /// install upgrading across that change has one of those on disk, and decoding it as the
+    /// new dictionary throws — which `PhotoSyncQueueStore.load` turns into an *empty* queue,
+    /// i.e. a dedup ledger that has forgotten every photo it ever uploaded and a library that
+    /// re-uploads itself. Legacy entries arrive with no file id, which is the truth about
+    /// them: nothing recorded one at the time.
+    ///
+    /// Only `Decodable` is hand-written; the encoder stays synthesised and always writes the
+    /// new shape.
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        pending = try container.decodeIfPresent([Entry].self, forKey: .pending) ?? []
+        failed  = try container.decodeIfPresent([Entry].self, forKey: .failed) ?? []
+
+        if let ledger = try? container.decode([String: CompletedUpload].self, forKey: .completed) {
+            completed = ledger
+        } else {
+            let legacy = try container.decodeIfPresent([String].self, forKey: .completed) ?? []
+            completed = legacy.reduce(into: [:]) { ledger, id in
+                ledger[id] = CompletedUpload()
+            }
+        }
     }
 
     // MARK: - Dedup
@@ -57,7 +119,7 @@ struct PhotoSyncQueue: Codable, Equatable {
     /// True if `id` already exists in any of the three collections.
     func contains(id: String) -> Bool {
         pending.contains(where: { $0.id == id })
-            || completed.contains(id)
+            || completed[id] != nil
             || failed.contains(where: { $0.id == id })
     }
 
@@ -66,9 +128,9 @@ struct PhotoSyncQueue: Codable, Equatable {
     /// Adds a new pending entry unless `id` already exists in `pending`, `completed`, or
     /// `failed`. Returns `true` if the entry was newly added.
     @discardableResult
-    mutating func enqueue(id: String, creationDate: Date) -> Bool {
+    mutating func enqueue(id: String, creationDate: Date, modificationDate: Date? = nil) -> Bool {
         guard !contains(id: id) else { return false }
-        pending.append(Entry(id: id, creationDate: creationDate))
+        pending.append(Entry(id: id, creationDate: creationDate, modificationDate: modificationDate))
         return true
     }
 
@@ -96,10 +158,20 @@ struct PhotoSyncQueue: Codable, Equatable {
 
     // MARK: - Outcomes
 
-    /// Moves `id` from `pending` to `completed`.
-    mutating func markCompleted(id: String) {
+    /// Moves `id` from `pending` to `completed`, recording the Drive file it became.
+    ///
+    /// - Parameter fileID: the uploaded file's id. `nil` only for a caller that genuinely does
+    ///   not have one; every real upload does, and throwing it away is what issue #31 was
+    ///   partly about.
+    mutating func markCompleted(id: String, fileID: String? = nil) {
         pending.removeAll { $0.id == id }
-        completed.insert(id)
+        completed[id] = CompletedUpload(fileID: fileID)
+    }
+
+    /// The Drive file `id` was uploaded as, or `nil` if it has not completed or completed
+    /// before the ledger recorded one.
+    func completedFileID(for id: String) -> String? {
+        completed[id]?.fileID
     }
 
     /// Records a failed attempt for `id`.
@@ -142,7 +214,7 @@ struct PhotoSyncQueue: Codable, Equatable {
     /// Drops `completed` identifiers whose asset no longer exists in the photo library
     /// (per `validIdentifiers`), keeping the ledger from growing without bound.
     mutating func compact(keepingIdentifiers validIdentifiers: Set<String>) {
-        completed = completed.intersection(validIdentifiers)
+        completed = completed.filter { validIdentifiers.contains($0.key) }
     }
 }
 

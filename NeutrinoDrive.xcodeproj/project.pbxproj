@@ -89,6 +89,7 @@
 		C72847BAAA67973088BB0CCE /* SearchIndexSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = 67D7E829CE355529FD788F3A /* SearchIndexSnapshot.swift */; };
 		C823CEBBB11E783512FE5286 /* KeyImportServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6E9DB7865AEED70BD34195A9 /* KeyImportServiceTests.swift */; };
 		CE253EA5C208A2BAFA023848 /* OfflineFile.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C6D8A297D25380ECD262C81 /* OfflineFile.swift */; };
+		D1D99A520E9395E04B1B7694 /* PhotoDateRepairTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6AA1F9E6C39B45D29C33EF1E /* PhotoDateRepairTests.swift */; };
 		D2CF5F59EAF12FE048AA1C0A /* UploadService.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC3153FC8A0FDB182E99909E /* UploadService.swift */; };
 		D33381B0005BD3A30285FC38 /* SealedKeyCrypto.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9D218BBDBAB8CA89AA1DF5D3 /* SealedKeyCrypto.swift */; };
 		D67BD06F704794253DEF7EC0 /* CompanionAppLauncher.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8216DBB3C23F98046D4153A3 /* CompanionAppLauncher.swift */; };
@@ -108,6 +109,7 @@
 		F7889A9C8B773AE5D43BA085 /* SealedKeyCryptoTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0BC10848134DEC435F1F7763 /* SealedKeyCryptoTests.swift */; };
 		FCD16281A07596302DA0FA13 /* QuotaServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 92A6A5039A254CCFF5EF859B /* QuotaServiceTests.swift */; };
 		FD7CD39C75002E56CFD48806 /* SealedKeyCrypto.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9D218BBDBAB8CA89AA1DF5D3 /* SealedKeyCrypto.swift */; };
+		FF95FCB1684D53F9CE91468B /* PhotoDateRepair.swift in Sources */ = {isa = PBXBuildFile; fileRef = DC81812A792AB4ED231880D0 /* PhotoDateRepair.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -185,6 +187,7 @@
 		67D7E829CE355529FD788F3A /* SearchIndexSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SearchIndexSnapshot.swift; sourceTree = "<group>"; };
 		69BA21EB1245B8848A89C2BF /* KeyQRDecryptServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyQRDecryptServiceTests.swift; sourceTree = "<group>"; };
 		6A582F8B0E924BC7F78C9733 /* PhotoSyncServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoSyncServiceTests.swift; sourceTree = "<group>"; };
+		6AA1F9E6C39B45D29C33EF1E /* PhotoDateRepairTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoDateRepairTests.swift; sourceTree = "<group>"; };
 		6CA160AA5CFEE2D7364DE6B8 /* TestJWT.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TestJWT.swift; sourceTree = "<group>"; };
 		6DA4F68F868089DB48832A1A /* RecentsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecentsView.swift; sourceTree = "<group>"; };
 		6E9DB7865AEED70BD34195A9 /* KeyImportServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyImportServiceTests.swift; sourceTree = "<group>"; };
@@ -222,6 +225,7 @@
 		C77587DE1135BBDE2F75E650 /* PhotoSyncQueue.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoSyncQueue.swift; sourceTree = "<group>"; };
 		C969FFB3FA62D0C262DB6123 /* CompanionAppStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompanionAppStoreTests.swift; sourceTree = "<group>"; };
 		D2026CEA16191D389412870D /* ReportBugButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReportBugButton.swift; sourceTree = "<group>"; };
+		DC81812A792AB4ED231880D0 /* PhotoDateRepair.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoDateRepair.swift; sourceTree = "<group>"; };
 		E057910348FA5DD56CAF3BA2 /* UploadServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UploadServiceTests.swift; sourceTree = "<group>"; };
 		E3985D05C9C065C11E2FAFB0 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		E8623DF607611C4B918D550F /* NeutrinoDriveShare.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = NeutrinoDriveShare.entitlements; sourceTree = "<group>"; };
@@ -323,6 +327,7 @@
 				92DB4C10254E37F3C8B82159 /* E2EEUploader.swift */,
 				36307D854C329925CE489930 /* LocalSearchIndex.swift */,
 				133D81CEFB2A25FC07B29499 /* OfflineService.swift */,
+				DC81812A792AB4ED231880D0 /* PhotoDateRepair.swift */,
 				C77587DE1135BBDE2F75E650 /* PhotoSyncQueue.swift */,
 				A90FA64FCE70A0413A10B207 /* PhotoSyncService.swift */,
 				C346B842F6CCF727D2F047C7 /* QuotaService.swift */,
@@ -407,6 +412,7 @@
 				965E54926CB9E957E39C2117 /* MockURLProtocol.swift */,
 				3EB651419CBEB1C389962E4A /* NeutrinoAppLinkTests.swift */,
 				A9D327F0E614DA668C3FFD6D /* OfflineServiceTests.swift */,
+				6AA1F9E6C39B45D29C33EF1E /* PhotoDateRepairTests.swift */,
 				9F7CBDF1179B0B4EFACCB2C3 /* PhotoSyncQueueTests.swift */,
 				6A582F8B0E924BC7F78C9733 /* PhotoSyncServiceTests.swift */,
 				92A6A5039A254CCFF5EF859B /* QuotaServiceTests.swift */,
@@ -601,6 +607,7 @@
 				CE253EA5C208A2BAFA023848 /* OfflineFile.swift in Sources */,
 				56D2621B530223F4F2178BE6 /* OfflineService.swift in Sources */,
 				0D8546209C37EA2B1F178E91 /* OfflineView.swift in Sources */,
+				FF95FCB1684D53F9CE91468B /* PhotoDateRepair.swift in Sources */,
 				1F786DEF7714CD8067ADC7F8 /* PhotoSyncQueue.swift in Sources */,
 				830511757B1008B7376FC29F /* PhotoSyncService.swift in Sources */,
 				334F7DB18D5983A546F1239B /* PhotoSyncSettingsView.swift in Sources */,
@@ -654,6 +661,7 @@
 				7B51774A66E6E2B6B36084D0 /* MockURLProtocol.swift in Sources */,
 				141F4B2FB7C98FCE44A97FE2 /* NeutrinoAppLinkTests.swift in Sources */,
 				80359F913466643E0C14FB69 /* OfflineServiceTests.swift in Sources */,
+				D1D99A520E9395E04B1B7694 /* PhotoDateRepairTests.swift in Sources */,
 				65879C3FC4AB6E23CE34C75B /* PhotoSyncQueueTests.swift in Sources */,
 				07F648E2CD3255BFBB976CE2 /* PhotoSyncServiceTests.swift in Sources */,
 				FCD16281A07596302DA0FA13 /* QuotaServiceTests.swift in Sources */,

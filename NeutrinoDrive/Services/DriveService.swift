@@ -21,6 +21,35 @@ enum DriveError: LocalizedError {
     }
 }
 
+// MARK: - DriveImportMetadata
+
+/// The dates and provenance one `PATCH /drive/files/{id}/import-metadata` carries.
+///
+/// The endpoint exists because writing a file's content is what stamps `updated_at` with the
+/// server's clock, so anything an importer knows about the original's dates has to be applied
+/// *after* the content, in a second call. See `neutrino/src/drive/storage/service.rs`
+/// (`apply_import_metadata`) and `wcherry/neutrino` issue #110.
+struct DriveImportMetadata: Equatable {
+    let createdAt: Date
+    let updatedAt: Date
+    /// Where the file came from. Required by the server: rewriting a file's dates is a history
+    /// rewrite, and recording who did it is the endpoint's whole justification for allowing one.
+    let importSource: String
+}
+
+// MARK: - DriveFolderFile
+
+/// One file row from a folder listing, for callers that want the rows rather than the
+/// published `allItems` cache — currently the photo-date repair pass, which pages a folder
+/// without wanting a browsing session's worth of state to move underneath it.
+struct DriveFolderFile: Equatable {
+    let id: String
+    let name: String
+    /// The server's creation date. Optional only because the listing DTO is decoded
+    /// defensively; a real response always carries one.
+    let createdAt: Date?
+}
+
 // MARK: - DriveService
 
 @MainActor
@@ -160,6 +189,51 @@ final class DriveService: ObservableObject {
     func fetchItem(id: String) async throws -> DriveItem {
         let metadata: APIFileMetadataResponse = try await get("/api/v1/drive/files/\(id)/metadata")
         return DriveItem(metadata: metadata)
+    }
+
+    // MARK: - Import metadata
+
+    /// Gives a file the dates its source had, and records where they came from.
+    ///
+    /// Must be sent **after** the file's content, never with it: the content write stamps
+    /// `updated_at` with the server's clock, so dates applied at creation are overwritten a
+    /// moment later. This is why photo sync patches as a second call rather than adding a
+    /// field to the multipart upload.
+    func setImportMetadata(fileID: String, metadata: DriveImportMetadata) async throws {
+        let body = APIImportMetadataRequest(
+            importSource: metadata.importSource,
+            createdAt: Self.importTimestampFormatter.string(from: metadata.createdAt),
+            updatedAt: Self.importTimestampFormatter.string(from: metadata.updatedAt)
+        )
+        let _: APIFileMetadataResponse = try await patch(
+            "/api/v1/drive/files/\(fileID)/import-metadata", body: body
+        )
+    }
+
+    /// RFC 3339 in UTC — one of the three shapes `parse_import_timestamp` accepts, and the
+    /// only one that pins the instant rather than a local wall clock. A date sent without a
+    /// zone would be read as UTC and shift a late-evening photo onto the next day.
+    private static let importTimestampFormatter: ISO8601DateFormatter = {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime]
+        f.timeZone = TimeZone(secondsFromGMT: 0)
+        return f
+    }()
+
+    // MARK: - Raw folder paging
+
+    /// One page of a folder's files, straight from the server and without touching `allItems`.
+    ///
+    /// Ordered by name, which is the only field the photo-date repair pass does not itself
+    /// rewrite — paging by date while patching dates walks the same file twice and misses
+    /// others.
+    func folderFilesPage(folderID: String, limit: Int, offset: Int) async throws -> [DriveFolderFile] {
+        let response: APIFolderContentsResponse = try await get(
+            "/api/v1/drive/folders/\(folderID)?limit=\(limit)&offset=\(offset)&orderBy=name&direction=asc"
+        )
+        return response.files.map {
+            DriveFolderFile(id: $0.id, name: $0.name, createdAt: $0.createdAt)
+        }
     }
 
     // MARK: - Load
@@ -793,7 +867,19 @@ private struct APIFileResponse: Decodable {
     let sizeBytes: Int64
     let mimeType: String
     let updatedAt: Date
+    /// Optional for the same reason `isStarred` is: a listing that cannot be decoded takes
+    /// down browsing, and no screen needs this field to draw a row.
+    let createdAt: Date?
     let isStarred: Bool?
+}
+
+/// `PATCH /drive/files/{id}/import-metadata`. Timestamps go as strings — the server parses
+/// them itself, leniently about shape and strictly about failure, so a value it cannot read is
+/// a 400 rather than a silently ignored date.
+private struct APIImportMetadataRequest: Encodable {
+    let importSource: String
+    let createdAt: String
+    let updatedAt: String
 }
 
 private struct APIStarredContentsResponse: Decodable {
