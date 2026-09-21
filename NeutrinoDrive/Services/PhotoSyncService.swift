@@ -381,7 +381,12 @@ final class PhotoSyncService: NSObject, ObservableObject {
     /// Takes the whole `PhotoExport` rather than its fields spread out: it grew a cover
     /// thumbnail the uploader cannot re-derive cheaply, and threading each new piece of an
     /// export through as another positional argument is how a seam ends up with six of them.
-    var uploadHandler: ((PhotoExport, String?) async throws -> UploadResult)?
+    /// The third argument is the upload's stable identity — see
+    /// ``E2EEUploader/upload(data:fileName:mimeType:parentFolderID:thumbnailBase64:uploadID:progress:)``.
+    /// It is separate from the export because it identifies the *transfer*, not the bytes:
+    /// two attempts at the same asset share it, and it is what lets the second one finish
+    /// what the first left half-committed.
+    var uploadHandler: ((PhotoExport, String?, String) async throws -> UploadResult)?
 
     /// Applies a file's real dates and provenance once its content is in place. Wired to
     /// `driveService.setImportMetadata` in `configure`; tests inject a spy.
@@ -429,13 +434,14 @@ final class PhotoSyncService: NSObject, ObservableObject {
             guard let driveService else { throw DriveError.notAuthenticated }
             return try await driveService.ensureFolder(named: name, parentID: parentID)
         }
-        uploadHandler = { [weak uploadService] export, parentFolderID in
+        uploadHandler = { [weak uploadService] export, parentFolderID, uploadID in
             guard let uploadService else { throw UploadError.notAuthenticated }
             return try await uploadService.upload(data: export.data, fileName: export.fileName,
                                                   mimeType: export.mimeType,
                                                   parentFolderID: parentFolderID,
                                                   reportsProgress: false,
-                                                  thumbnailBase64: export.thumbnailBase64)
+                                                  thumbnailBase64: export.thumbnailBase64,
+                                                  uploadID: uploadID)
         }
         importMetadataStamper = { [weak driveService] fileID, metadata in
             guard let driveService else { throw DriveError.notAuthenticated }
@@ -1060,16 +1066,17 @@ final class PhotoSyncService: NSObject, ObservableObject {
     /// Each is retried exactly once; a second failure is the caller's to record.
     private func uploadWithFolderRetry(export: PhotoExport, entry: PhotoSyncQueue.Entry) async throws {
         let folderID = try await resolveDestinationFolder()
+        let uploadID = Self.uploadID(forAssetIdentifier: entry.id)
         let result: UploadResult
         do {
-            result = try await upload(export: export, parentFolderID: folderID)
+            result = try await upload(export: export, parentFolderID: folderID, uploadID: uploadID)
         } catch UploadError.serverError(let code) where code == 404 {
             defaults.removeObject(forKey: Keys.folderID)
             let retriedFolderID = try await resolveDestinationFolder()
-            result = try await upload(export: export, parentFolderID: retriedFolderID)
+            result = try await upload(export: export, parentFolderID: retriedFolderID, uploadID: uploadID)
         } catch UploadError.serverError(let code) where code == 401 {
             await tokenRefresher?()
-            result = try await upload(export: export, parentFolderID: folderID)
+            result = try await upload(export: export, parentFolderID: folderID, uploadID: uploadID)
         }
         queue.markCompleted(id: entry.id, fileID: result.id)
         lastSyncedAt = Date()
@@ -1122,9 +1129,21 @@ final class PhotoSyncService: NSObject, ObservableObject {
         "photo-sync:\(identifier)"
     }
 
-    private func upload(export: PhotoExport, parentFolderID: String?) async throws -> UploadResult {
+    private func upload(export: PhotoExport, parentFolderID: String?,
+                        uploadID: String) async throws -> UploadResult {
         guard let uploadHandler else { throw UploadError.notAuthenticated }
-        return try await uploadHandler(export, parentFolderID)
+        return try await uploadHandler(export, parentFolderID, uploadID)
+    }
+
+    /// The stable upload identity for one asset.
+    ///
+    /// Photo sync is the path that suspends most — a background drain is suspended by
+    /// definition — and it is also the only upload path whose retries are automatic, so it is
+    /// the one that most needs a retry to recognise its own interrupted attempt. The asset's
+    /// `localIdentifier` is the natural key: one asset is one logical upload, however many
+    /// attempts it takes. Shares its shape with the `import_source` stamp on purpose.
+    nonisolated static func uploadID(forAssetIdentifier identifier: String) -> String {
+        importSource(forAssetIdentifier: identifier)
     }
 
     /// Whether `error` will still fail however many times it is retried.

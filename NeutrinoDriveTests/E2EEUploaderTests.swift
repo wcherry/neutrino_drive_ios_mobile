@@ -57,8 +57,18 @@ final class E2EEUploaderTests: XCTestCase {
         super.tearDown()
     }
 
-    private func makeSUT() -> E2EEUploader {
-        E2EEUploader(transferService: BackgroundTransferService(session: MockURLProtocol.makeSession()))
+    private func makeSUT(pendingKeys: PendingUploadKeyStore? = nil) -> E2EEUploader {
+        E2EEUploader(transferService: BackgroundTransferService(session: MockURLProtocol.makeSession()),
+                     pendingKeys: pendingKeys ?? makePendingKeyStore())
+    }
+
+    /// A scratch store per test — the shared one lives in the App Group container and would
+    /// leak records between tests and, worse, into the simulator's real app state.
+    private func makePendingKeyStore() -> PendingUploadKeyStore {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString + ".json")
+        addTeardownBlock { try? FileManager.default.removeItem(at: url) }
+        return PendingUploadKeyStore(fileURL: url)
     }
 
     // MARK: - Multipart body shape
@@ -392,6 +402,256 @@ final class E2EEUploaderTests: XCTestCase {
         let after = (try? FileManager.default.contentsOfDirectory(atPath: tmp.path))?
             .filter { $0.hasPrefix("nd-upload-") }.count ?? 0
         XCTAssertEqual(after, before)
+    }
+
+    // MARK: - The sealed key outliving the process (issue #33)
+    //
+    // An upload commits in two steps on two sessions: the blob on the *background* session,
+    // which survives suspension by design, and the sealed DEK on the *foreground* one, which
+    // does not. Suspended between them the blob commits, the row declares itself encrypted,
+    // and the DEK — held only in memory until now — goes away with the process. The file is
+    // then undecryptable by every client, forever, with no error shown at the time.
+
+    func test_upload_recordsTheSealedKeyBeforeThePlaintextIsEverPosted() async throws {
+        seedKeysAndToken()
+        let store = makePendingKeyStore()
+        var recordAtPostTime: PendingUploadKey?
+
+        MockURLProtocol.requestHandler = { request in
+            if request.url?.path.hasSuffix("/upload") == true {
+                // Read the store from inside the request, which is the only moment that
+                // proves the record predates the bytes rather than following them.
+                recordAtPostTime = store.key(forUploadID: "upload-A")
+                return (okResponse(request), uploadResponseJSON(id: "file-77"))
+            }
+            return (okResponse(request), Data())
+        }
+
+        _ = try await makeSUT(pendingKeys: store).upload(
+            data: Data("x".utf8), fileName: "a.txt", mimeType: "text/plain",
+            parentFolderID: nil, uploadID: "upload-A"
+        )
+
+        XCTAssertNotNil(recordAtPostTime,
+                        "Nothing persists the DEK if the record is written after the blob")
+        XCTAssertFalse(recordAtPostTime?.sealedFileKey.isEmpty ?? true)
+        XCTAssertNil(recordAtPostTime?.fileID, "The blob has not been acknowledged yet")
+    }
+
+    func test_upload_clearsTheRecord_onceTheKeyIsStored() async throws {
+        seedKeysAndToken()
+        let store = makePendingKeyStore()
+        MockURLProtocol.requestHandler = { request in
+            request.url?.path.hasSuffix("/upload") == true
+                ? (okResponse(request), uploadResponseJSON(id: "file-77"))
+                : (okResponse(request), Data())
+        }
+
+        _ = try await makeSUT(pendingKeys: store).upload(
+            data: Data("x".utf8), fileName: "a.txt", mimeType: "text/plain",
+            parentFolderID: nil, uploadID: "upload-A"
+        )
+
+        XCTAssertTrue(store.all().isEmpty, "Both halves are on the server; nothing left to protect")
+    }
+
+    /// The failure the issue is actually about. The `PUT` is the half that cannot survive
+    /// suspension, so this is the state a killed process leaves behind.
+    func test_upload_keepsTheRecordWithTheFileID_whenTheKeyPutFails() async {
+        seedKeysAndToken()
+        let store = makePendingKeyStore()
+        MockURLProtocol.requestHandler = { request in
+            let path = request.url?.path ?? ""
+            if path.hasSuffix("/upload") { return (okResponse(request), uploadResponseJSON(id: "file-77")) }
+            if path.hasSuffix("/key")    { return (okResponse(request, status: 503), Data()) }
+            return (okResponse(request), Data())
+        }
+
+        _ = try? await makeSUT(pendingKeys: store).upload(
+            data: Data("x".utf8), fileName: "a.txt", mimeType: "text/plain",
+            parentFolderID: nil, uploadID: "upload-A"
+        )
+
+        let record = store.key(forUploadID: "upload-A")
+        XCTAssertEqual(record?.fileID, "file-77",
+                       "Without the file id there is nothing to attach the recovered key to")
+        XCTAssertFalse(record?.sealedFileKey.isEmpty ?? true)
+    }
+
+    // MARK: - Resuming
+
+    /// A retry of an upload whose blob already committed must not post the bytes again: that
+    /// leaves the first file unreadable *and* creates a duplicate.
+    func test_upload_withACommittedRecord_postsNoBlobAndStoresTheStoredKey() async throws {
+        seedKeysAndToken()
+        let store = makePendingKeyStore()
+        store.record(PendingUploadKey(uploadID: "upload-A", sealedFileKey: "EARLIER-SEALED-KEY",
+                                      keyVersion: 4, fileName: "a.txt", fileID: "file-77",
+                                      createdAt: Date()))
+
+        var paths: [String] = []
+        var keyBody: Data?
+        MockURLProtocol.requestHandler = { request in
+            let path = request.url?.path ?? ""
+            paths.append(path)
+            if path.hasSuffix("/key") {
+                keyBody = MockURLProtocol.lastRequestBody
+                return (okResponse(request), Data())
+            }
+            return (okResponse(request), uploadResponseJSON(id: "file-77", name: "a.txt"))
+        }
+
+        let result = try await makeSUT(pendingKeys: store).upload(
+            data: Data("x".utf8), fileName: "a.txt", mimeType: "text/plain",
+            parentFolderID: nil, uploadID: "upload-A"
+        )
+
+        XCTAssertFalse(paths.contains { $0.hasSuffix("/upload") },
+                       "Re-posting a committed blob duplicates the file")
+        XCTAssertTrue(paths.contains("/api/v1/drive/files/file-77/key"))
+        let sent = String(decoding: try XCTUnwrap(keyBody), as: UTF8.self)
+        XCTAssertTrue(sent.contains("EARLIER-SEALED-KEY"),
+                      "The stored key is the only one that opens the ciphertext already on the server")
+        XCTAssertTrue(sent.contains("\"keyVersion\":4"),
+                      "A resumed upload files its key under the version it was sealed to, not today's")
+        XCTAssertEqual(result.id, "file-77")
+    }
+
+    func test_upload_clearsTheRecord_afterResumingSuccessfully() async throws {
+        seedKeysAndToken()
+        let store = makePendingKeyStore()
+        store.record(PendingUploadKey(uploadID: "upload-A", sealedFileKey: "EARLIER",
+                                      keyVersion: 1, fileName: "a.txt", fileID: "file-77",
+                                      createdAt: Date()))
+        MockURLProtocol.requestHandler = { request in (okResponse(request), uploadResponseJSON(id: "file-77")) }
+
+        _ = try await makeSUT(pendingKeys: store).upload(
+            data: Data("x".utf8), fileName: "a.txt", mimeType: "text/plain",
+            parentFolderID: nil, uploadID: "upload-A"
+        )
+
+        XCTAssertTrue(store.all().isEmpty)
+    }
+
+    /// The test fixture stores a public key with no matching private key, so a stored sealed
+    /// DEK cannot be opened — which is also what a real rotation that retired the key version
+    /// looks like. The upload has to re-key rather than reuse something it cannot read.
+    func test_upload_withAnUnopenableRecordAndNoCommittedBlob_reKeysAndReposts() async throws {
+        seedKeysAndToken()
+        let store = makePendingKeyStore()
+        store.record(PendingUploadKey(uploadID: "upload-A", sealedFileKey: "UNOPENABLE",
+                                      keyVersion: 1, fileName: "a.txt", fileID: nil,
+                                      createdAt: Date()))
+        var keyBody: Data?
+        var postedBlob = false
+        MockURLProtocol.requestHandler = { request in
+            let path = request.url?.path ?? ""
+            if path.hasSuffix("/upload") {
+                postedBlob = true
+                return (okResponse(request), uploadResponseJSON(id: "file-77"))
+            }
+            if path.hasSuffix("/key") { keyBody = MockURLProtocol.lastRequestBody }
+            return (okResponse(request), Data())
+        }
+
+        _ = try await makeSUT(pendingKeys: store).upload(
+            data: Data("x".utf8), fileName: "a.txt", mimeType: "text/plain",
+            parentFolderID: nil, uploadID: "upload-A"
+        )
+
+        XCTAssertTrue(postedBlob, "Nothing had committed, so the ciphertext still has to go")
+        let sent = String(decoding: try XCTUnwrap(keyBody), as: UTF8.self)
+        XCTAssertFalse(sent.contains("UNOPENABLE"),
+                       "Storing a key that cannot open the ciphertext just sent is the bug, not the fix")
+    }
+
+    // MARK: - Reconciliation
+
+    func test_reconcilePendingKeys_storesTheKeyForACommittedBlob_andClearsTheRecord() async {
+        seedKeysAndToken()
+        let store = makePendingKeyStore()
+        store.record(PendingUploadKey(uploadID: "upload-A", sealedFileKey: "SEALED",
+                                      keyVersion: 2, fileName: "a.txt", fileID: "file-77",
+                                      createdAt: Date()))
+        var paths: [String] = []
+        MockURLProtocol.requestHandler = { request in
+            paths.append(request.url?.path ?? "")
+            return (okResponse(request), Data())
+        }
+
+        await makeSUT(pendingKeys: store).reconcilePendingKeys()
+
+        XCTAssertEqual(paths, ["/api/v1/drive/files/file-77/key"])
+        XCTAssertTrue(store.all().isEmpty)
+    }
+
+    func test_reconcilePendingKeys_keepsTheRecord_whenTheServerIsStillUnreachable() async {
+        seedKeysAndToken()
+        let store = makePendingKeyStore()
+        store.record(PendingUploadKey(uploadID: "upload-A", sealedFileKey: "SEALED",
+                                      keyVersion: 1, fileName: "a.txt", fileID: "file-77",
+                                      createdAt: Date()))
+        MockURLProtocol.requestHandler = { _ in throw URLError(.notConnectedToInternet) }
+
+        await makeSUT(pendingKeys: store).reconcilePendingKeys()
+
+        XCTAssertEqual(store.all().count, 1, "The next launch has to be able to try again")
+    }
+
+    /// A file that has been trashed and emptied cannot be given a key, and retrying forever
+    /// would mean the record never goes away.
+    func test_reconcilePendingKeys_dropsTheRecord_whenTheFileIsGone() async {
+        seedKeysAndToken()
+        let store = makePendingKeyStore()
+        store.record(PendingUploadKey(uploadID: "upload-A", sealedFileKey: "SEALED",
+                                      keyVersion: 1, fileName: "a.txt", fileID: "file-77",
+                                      createdAt: Date()))
+        MockURLProtocol.requestHandler = { request in (okResponse(request, status: 404), Data()) }
+
+        await makeSUT(pendingKeys: store).reconcilePendingKeys()
+
+        XCTAssertTrue(store.all().isEmpty)
+    }
+
+    func test_reconcilePendingKeys_ignoresARecordWhoseBlobNeverCommitted() async {
+        seedKeysAndToken()
+        let store = makePendingKeyStore()
+        store.record(PendingUploadKey(uploadID: "upload-A", sealedFileKey: "SEALED",
+                                      keyVersion: 1, fileName: "a.txt", fileID: nil,
+                                      createdAt: Date()))
+        MockURLProtocol.requestHandler = { request in
+            XCTFail("There is no file to attach a key to")
+            return (okResponse(request), Data())
+        }
+
+        await makeSUT(pendingKeys: store).reconcilePendingKeys()
+
+        XCTAssertEqual(store.all().count, 1, "Kept until the TTL, in case the blob did commit")
+    }
+
+    func test_reconcilePendingKeys_prunesAnAbandonedRecord() async {
+        seedKeysAndToken()
+        let store = makePendingKeyStore()
+        store.record(PendingUploadKey(uploadID: "upload-A", sealedFileKey: "SEALED",
+                                      keyVersion: 1, fileName: "a.txt", fileID: nil,
+                                      createdAt: Date(timeIntervalSince1970: 0)))
+        MockURLProtocol.requestHandler = { request in (okResponse(request), Data()) }
+
+        await makeSUT(pendingKeys: store).reconcilePendingKeys(
+            now: Date(timeIntervalSince1970: PendingUploadKeyStore.abandonedRecordTTL + 1)
+        )
+
+        XCTAssertTrue(store.all().isEmpty)
+    }
+
+    func test_reconcilePendingKeys_doesNothing_whenThereIsNothingPending() async {
+        seedKeysAndToken()
+        MockURLProtocol.requestHandler = { request in
+            XCTFail("No pending keys means no requests")
+            return (okResponse(request), Data())
+        }
+
+        await makeSUT().reconcilePendingKeys()
     }
 
     // MARK: - Shared storage aliases

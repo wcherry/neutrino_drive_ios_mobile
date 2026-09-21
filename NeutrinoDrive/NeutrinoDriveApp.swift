@@ -120,6 +120,13 @@ struct NeutrinoDriveApp: App {
                 photoSyncService.start()
                 biometricService.lockOnLaunch()
 
+                // Finish any upload whose ciphertext committed but whose sealed key never
+                // did. The key `PUT` runs on the foreground session, so an upload suspended
+                // after its blob cannot complete itself — and a file the server believes is
+                // encrypted, with no key ref, is unreadable by every client forever. The
+                // sealed DEK is on disk; this is the first moment it can be sent.
+                await uploadService.reconcilePendingUploadKeys()
+
                 // Top up this device's retired keys from the account's key file. Enrolment already
                 // does this, so on a healthy install it finds nothing; it is here for the device
                 // enrolled before the key file existed, and for the one that was offline when its
@@ -145,6 +152,11 @@ struct NeutrinoDriveApp: App {
                 biometricService.sceneDidBecomeInactive()
             case .active:
                 biometricService.sceneDidBecomeActive()
+                // Also on every foreground, not only at launch: the share extension uploads
+                // into the same App Group store and its process dies the moment the sheet is
+                // dismissed, so returning to the app is often the first chance to finish what
+                // it started.
+                Task { await uploadService.reconcilePendingUploadKeys() }
                 // `.task` runs once, when the root view first appears — it does not fire
                 // again on a return from background. Re-running `start()` here is what
                 // replays the PhotoKit catch-up scan for everything captured while the app

@@ -88,10 +88,15 @@ final class UploadService: ObservableObject {
     ///   photo-sync uploads pass `false` so they don't hijack that sheet's state; callers that
     ///   want their own progress UI should observe their own state instead.
     /// - Parameter thumbnailBase64: a cover the caller already has; `nil` derives one from
-    ///   `data`. See ``E2EEUploader/upload(data:fileName:mimeType:parentFolderID:thumbnailBase64:progress:)``.
+    ///   `data`. See ``E2EEUploader/upload(data:fileName:mimeType:parentFolderID:thumbnailBase64:uploadID:progress:)``.
+    /// - Parameter uploadID: a stable identity for this logical upload, so a retry can finish
+    ///   one an earlier attempt left half-committed. `nil` mints a fresh one, which is right
+    ///   for a manual upload — the user retries by picking the file again, and that is a new
+    ///   upload. Photo sync passes the asset's, because its retries are automatic.
     func upload(data: Data, fileName: String, mimeType: String, parentFolderID: String?,
                reportsProgress: Bool = true,
-               thumbnailBase64: String? = nil) async throws -> UploadResult {
+               thumbnailBase64: String? = nil,
+               uploadID: String? = nil) async throws -> UploadResult {
 
         if reportsProgress {
             isUploading = true
@@ -120,11 +125,23 @@ final class UploadService: ObservableObject {
             mimeType: mimeType,
             parentFolderID: parentFolderID,
             thumbnailBase64: thumbnailBase64,
+            uploadID: uploadID ?? UUID().uuidString,
             progress: progressHandler
         )
 
         driveService?.fileWasUploaded(result)
         if reportsProgress { progress = 1 }
         return result
+    }
+
+    // MARK: - Reconciliation
+
+    /// Finishes any upload whose ciphertext committed but whose sealed key never did.
+    ///
+    /// Called at launch and on every return to the foreground from `NeutrinoDriveApp`. See
+    /// ``E2EEUploader/reconcilePendingKeys(now:)`` — without it, an upload suspended between
+    /// its two commits leaves a file nothing can ever decrypt.
+    func reconcilePendingUploadKeys() async {
+        await uploader.reconcilePendingKeys()
     }
 }

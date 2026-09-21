@@ -147,6 +147,10 @@ targets:
       # guarantees the extension's key wrap matches the app's.
       - path: NeutrinoDrive/Services/SealedKeyCrypto.swift
       - path: NeutrinoDrive/Services/E2EEUploader.swift
+      # E2EEUploader persists the sealed DEK here before posting the ciphertext. The extension
+      # is the path most likely to be suspended between those two commits — its process dies
+      # the moment the share sheet is dismissed — so it needs this more than the app does.
+      - path: NeutrinoDrive/Services/PendingUploadKeyStore.swift
       # E2EEUploader makes the cover thumbnail itself, so the extension needs this too —
       # otherwise an image shared into Drive uploads without the preview the app's own
       # upload would have produced.

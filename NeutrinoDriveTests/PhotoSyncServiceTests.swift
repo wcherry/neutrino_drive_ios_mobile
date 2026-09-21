@@ -130,7 +130,7 @@ final class PhotoSyncServiceTests: XCTestCase {
         sut.folderResolver = { _, _ in "folder-1" }
 
         var receivedThumbnail: String?
-        sut.uploadHandler = { export, parentFolderID in
+        sut.uploadHandler = { export, parentFolderID, _ in
             receivedThumbnail = export.thumbnailBase64
             return UploadResult(id: "file-1", name: export.fileName, folderId: parentFolderID,
                                 sizeBytes: Int64(export.data.count), mimeType: export.mimeType,
@@ -153,7 +153,7 @@ final class PhotoSyncServiceTests: XCTestCase {
         sut.folderResolver = { _, _ in "folder-1" }
 
         var sawThumbnail: String? = "sentinel"
-        sut.uploadHandler = { export, parentFolderID in
+        sut.uploadHandler = { export, parentFolderID, _ in
             sawThumbnail = export.thumbnailBase64
             return UploadResult(id: "file-1", name: export.fileName, folderId: parentFolderID,
                                 sizeBytes: Int64(export.data.count), mimeType: export.mimeType,
@@ -175,7 +175,7 @@ final class PhotoSyncServiceTests: XCTestCase {
         sut.isNetworkExpensive = true
         sut.wifiOnly = false
         sut.folderResolver = { _, _ in "folder-1" }
-        sut.uploadHandler = { export, parentFolderID in
+        sut.uploadHandler = { export, parentFolderID, _ in
             UploadResult(id: "file-1", name: export.fileName, folderId: parentFolderID,
                         sizeBytes: Int64(export.data.count), mimeType: export.mimeType,
                         updatedAt: Date())
@@ -268,7 +268,7 @@ final class PhotoSyncServiceTests: XCTestCase {
 
         var uploadCallCount = 0
         var receivedFolderIDs: [String?] = []
-        sut.uploadHandler = { export, parentFolderID in
+        sut.uploadHandler = { export, parentFolderID, _ in
             uploadCallCount += 1
             receivedFolderIDs.append(parentFolderID)
             if uploadCallCount == 1 {
@@ -298,7 +298,7 @@ final class PhotoSyncServiceTests: XCTestCase {
         sut.hasStoredKeysProvider = { true }
         sut.isOnWiFi = true
         sut.folderResolver = { _, _ in "folder-1" }
-        sut.uploadHandler = { export, parentFolderID in
+        sut.uploadHandler = { export, parentFolderID, _ in
             UploadResult(id: "file-1", name: export.fileName, folderId: parentFolderID,
                         sizeBytes: Int64(export.data.count), mimeType: export.mimeType,
                         updatedAt: Date())
@@ -333,7 +333,7 @@ final class PhotoSyncServiceTests: XCTestCase {
 
         var events: [String] = []
         sut.tokenRefresher = { events.append("refresh") }
-        sut.uploadHandler = { export, parentFolderID in
+        sut.uploadHandler = { export, parentFolderID, _ in
             events.append("upload")
             return UploadResult(id: "file-1", name: export.fileName, folderId: parentFolderID,
                                 sizeBytes: Int64(export.data.count), mimeType: export.mimeType,
@@ -374,7 +374,7 @@ final class PhotoSyncServiceTests: XCTestCase {
         sut.isOnWiFi = true
         sut.folderResolver = { _, _ in "folder-1" }
         sut.tokenRefresher = {}
-        sut.uploadHandler = { _, _ in throw UploadError.serverError(statusCode: 401) }
+        sut.uploadHandler = { _, _, _ in throw UploadError.serverError(statusCode: 401) }
 
         sut.enqueueIfNeeded([FakePhotoAsset(localIdentifier: "asset-1", creationDate: Date())])
         _ = await sut.drain(ignoringPowerConstraint: false)
@@ -405,7 +405,7 @@ final class PhotoSyncServiceTests: XCTestCase {
         sut.tokenRefresher = { refreshCount += 1 }
 
         var uploadCallCount = 0
-        sut.uploadHandler = { export, parentFolderID in
+        sut.uploadHandler = { export, parentFolderID, _ in
             uploadCallCount += 1
             if uploadCallCount == 1 { throw UploadError.serverError(statusCode: 401) }
             return UploadResult(id: "file-1", name: export.fileName, folderId: parentFolderID,
@@ -439,7 +439,7 @@ final class PhotoSyncServiceTests: XCTestCase {
         sut.folderResolver = { _, _ in "folder-1" }
 
         var uploadCallCount = 0
-        sut.uploadHandler = { export, parentFolderID in
+        sut.uploadHandler = { export, parentFolderID, _ in
             uploadCallCount += 1
             return UploadResult(id: "file-\(uploadCallCount)", name: export.fileName,
                                 folderId: parentFolderID, sizeBytes: Int64(export.data.count),
@@ -479,7 +479,7 @@ final class PhotoSyncServiceTests: XCTestCase {
         sut.hasStoredKeysProvider = { true }
         sut.isOnWiFi = true
         sut.folderResolver = { _, _ in "folder-1" }
-        sut.uploadHandler = { _, _ in throw UploadError.serverError(statusCode: 403) }
+        sut.uploadHandler = { _, _, _ in throw UploadError.serverError(statusCode: 403) }
 
         sut.enqueueIfNeeded([FakePhotoAsset(localIdentifier: "asset-1", creationDate: Date())])
         _ = await sut.drain(ignoringPowerConstraint: false)
@@ -497,7 +497,7 @@ final class PhotoSyncServiceTests: XCTestCase {
         sut.hasStoredKeysProvider = { true }
         sut.isOnWiFi = true
         sut.folderResolver = { _, _ in "folder-1" }
-        sut.uploadHandler = { _, _ in
+        sut.uploadHandler = { _, _, _ in
             XCTFail("upload should not be attempted for an oversized asset")
             throw UploadError.encryptionFailed
         }
@@ -648,7 +648,7 @@ final class PhotoSyncServiceTests: XCTestCase {
         // The exporter names each file after its identifier, so the upload order is observable.
         sut.assetExporter = IdentifyingAssetExporter()
         var uploadOrder: [String] = []
-        sut.uploadHandler = { export, parentFolderID in
+        sut.uploadHandler = { export, parentFolderID, _ in
             uploadOrder.append(export.fileName)
             return UploadResult(id: "file-1", name: export.fileName, folderId: parentFolderID,
                                 sizeBytes: Int64(export.data.count), mimeType: export.mimeType,
@@ -684,7 +684,7 @@ final class PhotoSyncServiceTests: XCTestCase {
         sut.hasStoredKeysProvider = { true }
         sut.isOnWiFi = true
         sut.folderResolver = { _, _ in "folder-1" }
-        sut.uploadHandler = { export, parentFolderID in
+        sut.uploadHandler = { export, parentFolderID, _ in
             UploadResult(id: "file-77", name: export.fileName, folderId: parentFolderID,
                          sizeBytes: Int64(export.data.count), mimeType: export.mimeType,
                          updatedAt: Date())
@@ -784,7 +784,7 @@ final class PhotoSyncServiceTests: XCTestCase {
         sut.hasAccessTokenProvider = { true }
         sut.hasStoredKeysProvider = { true }
         sut.folderResolver = { _, _ in "folder-1" }
-        sut.uploadHandler = { export, parentFolderID in
+        sut.uploadHandler = { export, parentFolderID, _ in
             events.append("upload")
             return UploadResult(id: "file-77", name: export.fileName, folderId: parentFolderID,
                                 sizeBytes: 1, mimeType: export.mimeType, updatedAt: Date())
