@@ -150,14 +150,29 @@ find_simulator() {
   ' | tail -1
 }
 
-# Lists paired iOS devices as UDID<TAB>name<TAB>osVersion<TAB>developerMode.
+# Reads one field of the i-th listed device, preferring the `properties`
+# dictionary and falling back to the flat one.
+#
+# devicectl reports every field twice: the original hardwareProperties /
+# deviceProperties / connectionProperties dictionaries, which Xcode 27's own
+# output now marks deprecated and "will be removed in a future release", and
+# the nested `properties` that replaces them. Asking for both, newest first,
+# is what keeps this script working either side of that removal.
+dev_field() {
+  local json="$1" index="$2" new_path="$3" old_path="$4"
+  plutil -extract "result.devices.$index.properties.$new_path" raw -o - "$json" 2>/dev/null \
+    || plutil -extract "result.devices.$index.$old_path" raw -o - "$json" 2>/dev/null \
+    || true
+}
+
+# Lists paired *physical* iOS devices as UDID<TAB>name<TAB>osVersion<TAB>developerMode.
 #
 # devicectl's table output is unparseable — device names contain spaces, and the
 # columns are padded, not delimited — so the JSON is asked for instead. Apple's
 # own note in `devicectl --help` says the JSON file is the only supported
 # interface for scripts. plutil reads it without pulling in jq or python.
 list_devices() {
-  local json udid name platform paired osver devmode i=0
+  local json udid name platform reality visibility paired osver devmode i=0
   json="$(mktemp -t neutrino-devices)"
   # A device is queried over the network as well as USB, so this can take a
   # moment; the timeout keeps a sleeping iPhone from hanging the script.
@@ -165,14 +180,28 @@ list_devices() {
     || { rm -f "$json"; die "xcrun devicectl list devices failed — is Xcode 15 or newer installed?"; }
 
   while :; do
-    udid="$(plutil -extract "result.devices.$i.hardwareProperties.udid" raw -o - "$json" 2>/dev/null)" || break
-    platform="$(plutil -extract "result.devices.$i.hardwareProperties.platform" raw -o - "$json" 2>/dev/null || true)"
-    name="$(plutil -extract "result.devices.$i.deviceProperties.name" raw -o - "$json" 2>/dev/null || true)"
-    paired="$(plutil -extract "result.devices.$i.connectionProperties.pairingState" raw -o - "$json" 2>/dev/null || true)"
-    osver="$(plutil -extract "result.devices.$i.deviceProperties.osVersionNumber" raw -o - "$json" 2>/dev/null || true)"
-    devmode="$(plutil -extract "result.devices.$i.deviceProperties.developerModeStatus" raw -o - "$json" 2>/dev/null || true)"
+    udid="$(dev_field "$json" "$i" hardware.udid hardwareProperties.udid)"
+    [[ -n "$udid" ]] || break
+    platform="$(dev_field "$json" "$i" hardware.platform hardwareProperties.platform)"
+    reality="$(dev_field "$json" "$i" hardware.reality hardwareProperties.reality)"
+    visibility="$(plutil -extract "result.devices.$i.visibilityClass" raw -o - "$json" 2>/dev/null || true)"
+    name="$(dev_field "$json" "$i" state.name deviceProperties.name)"
+    paired="$(dev_field "$json" "$i" connection.pairingState connectionProperties.pairingState)"
+    osver="$(dev_field "$json" "$i" software.osVersionNumber.stringValue deviceProperties.osVersionNumber)"
+    devmode="$(dev_field "$json" "$i" state.developerModeStatus deviceProperties.developerModeStatus)"
     i=$((i + 1))
     [[ "$platform" == "iOS" ]] || continue
+    # Simulators are the reason this filter exists. Since Xcode 26 devicectl
+    # lists them next to real hardware — same platform, same "paired" state,
+    # a UDID that looks the part — so without this a Mac with a dozen
+    # simulators installed leaves --physical with a dozen candidates and no way
+    # to choose, even with exactly one iPhone plugged in. `reality` is the field
+    # that separates them; visibilityClass says the same thing and is checked
+    # too, since one of the two is the deprecated spelling and it is not clear
+    # which. Only an explicit "simulated" is dropped: an older devicectl that
+    # omits the field lists hardware alone, and absence must not mean exclusion.
+    [[ "$reality" != "simulated" ]] || continue
+    [[ "$visibility" != "simulators" ]] || continue
     [[ "$paired" == "paired" ]] || continue
     printf '%s\t%s\t%s\t%s\n' "$udid" "$name" "$osver" "$devmode"
   done
@@ -201,10 +230,10 @@ if [[ "$TARGET" == "device" ]]; then
     if [[ $DEVICE_GIVEN -eq 1 ]]; then
       warn "no paired iOS device named or identified by \"$DEVICE_NAME\""
     else
-      warn "no paired iOS device found"
+      warn "no paired physical iOS device found"
     fi
     if [[ -n "$DEVICE_LIST" ]]; then
-      printf 'Paired iOS devices (UDID / name / iOS / Developer Mode):\n' >&2
+      printf 'Paired physical iOS devices (UDID / name / iOS / Developer Mode):\n' >&2
       printf '%s\n' "$DEVICE_LIST" >&2
     fi
     die "connect the device by cable, unlock it, and trust this Mac.
@@ -213,7 +242,7 @@ if [[ "$TARGET" == "device" ]]; then
   fi
 
   if [[ $MATCH_COUNT -gt 1 ]]; then
-    warn "more than one paired iOS device:"
+    warn "more than one paired physical iOS device:"
     printf '%s' "$MATCHES" >&2
     die "pick one with --device NAME or --device UDID"
   fi
