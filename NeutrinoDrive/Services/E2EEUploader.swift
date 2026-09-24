@@ -56,10 +56,24 @@ struct E2EEUploader {
     // MARK: - Dependencies
 
     let transferService: BackgroundTransferService
+    /// Where a sealed DEK lives between the blob `POST` and the key `PUT`. See
+    /// ``PendingUploadKey`` for what that gap costs when nothing persists it.
+    let pendingKeys: PendingUploadKeyStore
 
-    init(transferService: BackgroundTransferService = .shared) {
+    init(transferService: BackgroundTransferService = .shared,
+         pendingKeys: PendingUploadKeyStore = .shared) {
         self.transferService = transferService
+        self.pendingKeys = pendingKeys
     }
+
+    /// Transfer identifier for an upload's blob `POST`.
+    ///
+    /// Stable per logical upload, so `BackgroundTransferService.claimOrphanedResult` can
+    /// recognise a transfer that finished while the app was suspended. It used to default to
+    /// a fresh `UUID()` per attempt, which can never match a stored result — the orphan-claim
+    /// machinery was unreachable from this path entirely. `DownloadService` always passed a
+    /// stable one; the upload path was the outlier.
+    static func blobTransferID(uploadID: String) -> String { "upload-\(uploadID)" }
 
     // MARK: - Private
 
@@ -111,6 +125,12 @@ struct E2EEUploader {
     ///   for callers that hold a cheaper source than the bytes they are uploading:
     ///   `PHKitAssetExporter` has the video already on disk, and deriving it here would mean
     ///   writing a second copy of the whole clip out to spill it back to a file.
+    /// - Parameter uploadID: a stable identity for this logical upload, reused by every
+    ///   retry of it. It names the background transfer (so a blob that completed while the
+    ///   app was suspended can be claimed instead of re-sent) and the pending-key record (so
+    ///   a retry finishes the upload it interrupted rather than starting a second one).
+    ///   Callers with no natural identity may let it default; photo sync passes
+    ///   `photo-sync:<localIdentifier>`.
     /// - Parameter progress: called with 0…1 as the request body is sent. Invoked on the
     ///   transfer session's delegate queue, **not** the main queue — callers that publish to
     ///   SwiftUI must hop themselves.
@@ -119,6 +139,7 @@ struct E2EEUploader {
                 mimeType plainMimeType: String,
                 parentFolderID: String?,
                 thumbnailBase64: String? = nil,
+                uploadID: String = UUID().uuidString,
                 progress: ((Double) -> Void)? = nil) async throws -> UploadResult {
 
         logger.debug("upload: \(data.count) bytes name=\(fileName, privacy: .public) folder=\(parentFolderID ?? "root", privacy: .public)")
@@ -128,6 +149,24 @@ struct E2EEUploader {
         }
         guard let token = SharedStorage.accessToken() else {
             throw UploadError.notAuthenticated
+        }
+
+        // MARK: Step 0 — Resume an upload a previous attempt left half-committed
+        //
+        // A record that already carries a file id means the ciphertext is on the server and
+        // only the key never made it. Re-posting the blob would not fix that; it would create
+        // a *second* file and leave the first one unreadable. Store the key it was sealed
+        // with and read the file's metadata back instead.
+        let resumed = pendingKeys.key(forUploadID: uploadID)
+        if let resumed, let committedFileID = resumed.fileID {
+            logger.debug("upload: resuming \(uploadID, privacy: .public) — blob already committed as \(committedFileID, privacy: .public)")
+            try await storeFileKey(fileID: committedFileID,
+                                   encryptedFileKey: resumed.sealedFileKey,
+                                   keyVersion: resumed.keyVersion,
+                                   token: token)
+            let result = try await fetchUploadedMetadata(fileID: committedFileID, token: token)
+            pendingKeys.remove(uploadID: uploadID)
+            return result
         }
 
         let plainData = data
@@ -154,8 +193,29 @@ struct E2EEUploader {
         // Output format matches the web's encryptFile():
         //   [24-byte header][ciphertext]
 
+        // A resumed upload must re-encrypt under the DEK it was *already* sealed with. Not a
+        // nicety: with a stable transfer id the blob `POST` below may be short-circuited by
+        // `claimOrphanedResult`, returning the earlier attempt's response — so a freshly
+        // generated key would be filed against ciphertext it cannot open. Unsealing needs the
+        // private key; where that is unavailable this falls back to a new DEK and a full
+        // re-upload, which is correct, just wasteful.
         let xcss = Self.sodium.secretStream.xchacha20poly1305
-        let dek: Bytes = xcss.key()
+        let resumedDEK: Bytes? = resumed.flatMap {
+            SealedKeyCrypto.openDEKWithStoredKeys(sealedBase64URL: $0.sealedFileKey,
+                                                  keyVersion: $0.keyVersion)
+        }
+        let dek: Bytes = resumedDEK ?? xcss.key()
+
+        // A record that exists but cannot be opened means that DEK is gone for good — a
+        // rotation that retired the version it was sealed to, most plausibly. Re-encrypting
+        // under a fresh key is the only way forward, but the stale orphaned blob must not
+        // then be claimed for it: that would file the new key against the old ciphertext, the
+        // very mismatch the reuse above exists to prevent. Give this attempt a transfer
+        // identity of its own so no claim can match it.
+        let lostTheOriginalKey = resumed != nil && resumedDEK == nil
+        let transferID = lostTheOriginalKey
+            ? Self.blobTransferID(uploadID: "\(uploadID)#\(UUID().uuidString)")
+            : Self.blobTransferID(uploadID: uploadID)
 
         guard let filePushStream = xcss.initPush(secretKey: dek) else {
             throw UploadError.encryptionFailed
@@ -198,13 +258,39 @@ struct E2EEUploader {
         // Sealing runs through `SealedKeyCrypto` — the same primitive `SharingService` uses to
         // re-wrap this DEK to a recipient. Sharing a file must produce a key wrapped exactly
         // the way upload wraps it, and sharing one implementation is what guarantees that.
-        guard let pubKeyString = KeychainService.load(forKey: SharedStorage.Keys.publicKey) else {
-            throw UploadError.noEncryptionKey
+        let encryptedFileKey: String
+        let keyVersion: Int
+        if let resumed, resumedDEK != nil {
+            // Same DEK, so the same sealed form — and filed under the version it was sealed
+            // to, which may not be the version that is active now.
+            encryptedFileKey = resumed.sealedFileKey
+            keyVersion = resumed.keyVersion
+        } else {
+            guard let pubKeyString = KeychainService.load(forKey: SharedStorage.Keys.publicKey) else {
+                throw UploadError.noEncryptionKey
+            }
+            guard let sealed = SealedKeyCrypto.seal(dek: dek,
+                                                     toPublicKeyBase64URL: pubKeyString) else {
+                throw UploadError.encryptionFailed
+            }
+            encryptedFileKey = sealed
+            keyVersion = SealedKeyCrypto.activeKeyVersion()
         }
-        guard let encryptedFileKey = SealedKeyCrypto.seal(dek: dek,
-                                                          toPublicKeyBase64URL: pubKeyString) else {
-            throw UploadError.encryptionFailed
-        }
+
+        // MARK: Step 4b — Persist the sealed DEK *before* the ciphertext goes out
+        //
+        // This is the whole point of the record. Between the `POST` below and the `PUT` at
+        // step 6 the process may be suspended and killed — the background session exists
+        // precisely so that it can be — and until now the DEK lived only in memory. Written
+        // here, an interrupted upload is finishable; written any later, it is not.
+        pendingKeys.record(PendingUploadKey(
+            uploadID: uploadID,
+            sealedFileKey: encryptedFileKey,
+            keyVersion: keyVersion,
+            fileName: fileName,
+            fileID: nil,
+            createdAt: lostTheOriginalKey ? Date() : (resumed?.createdAt ?? Date())
+        ))
 
         // MARK: Step 5 — POST multipart (folder_id?, encrypted_metadata, thumbnail_b64?, file blob)
         //
@@ -248,6 +334,7 @@ struct E2EEUploader {
             (uploadData, http) = try await transferService.upload(
                 request: uploadRequest,
                 fromFile: bodyFileURL,
+                transferID: transferID,
                 progress: progress
             )
         } catch {
@@ -267,11 +354,20 @@ struct E2EEUploader {
             throw UploadError.decodingError(underlying: error)
         }
 
+        // The blob is committed from here on. Recording the id closes the worst case: even if
+        // step 6 never runs, a later reconciliation knows which file the stored key belongs to.
+        pendingKeys.attachFileID(apiResponse.id, toUploadID: uploadID)
+
         // MARK: Step 6 — Store sealed DEK on server
         //
         // Matches the web's PUT /api/v1/drive/files/{id}/key after uploadEncryptedFile.
 
-        try await storeFileKey(fileID: apiResponse.id, encryptedFileKey: encryptedFileKey, token: token)
+        try await storeFileKey(fileID: apiResponse.id, encryptedFileKey: encryptedFileKey,
+                               keyVersion: keyVersion, token: token)
+
+        // Both halves are on the server; the local copy has nothing left to protect. A throw
+        // above deliberately leaves the record in place for reconciliation to finish.
+        pendingKeys.remove(uploadID: uploadID)
 
         let result = UploadResult(
             id:        apiResponse.id,
@@ -287,19 +383,21 @@ struct E2EEUploader {
 
     // MARK: - Private Helpers
 
-    private func storeFileKey(fileID: String, encryptedFileKey: String, token: String) async throws {
+    /// - Parameter keyVersion: which identity version the DEK was sealed to. Passed in rather
+    ///   than read from the Keychain here, so a *resumed* upload files its key under the
+    ///   version it was originally sealed to even if the account has rotated since. Sent
+    ///   explicitly rather than left to the server's default of 1: filing a rotated account's
+    ///   key under 1 means every client later reaches for the wrong key and cannot open a file
+    ///   that is perfectly intact.
+    private func storeFileKey(fileID: String, encryptedFileKey: String,
+                              keyVersion: Int, token: String) async throws {
         guard let url = URL(string: baseURL + "/api/v1/drive/files/\(fileID)/key") else { return }
         var req = URLRequest(url: url)
         req.httpMethod = "PUT"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        // `keyVersion` is sent, not left to the server's default of 1. The DEK above was sealed to
-        // whichever key this device holds as active; filing it under 1 on a rotated account means
-        // every client — this one included — later reaches for the wrong key and cannot open a file
-        // that is perfectly intact.
         req.httpBody = try JSONEncoder().encode(
-            SetFileKeyBody(encryptedFileKey: encryptedFileKey,
-                           keyVersion: SealedKeyCrypto.activeKeyVersion())
+            SetFileKeyBody(encryptedFileKey: encryptedFileKey, keyVersion: keyVersion)
         )
 
         logger.debug("--> PUT /api/v1/drive/files/\(fileID, privacy: .public)/key")
@@ -318,6 +416,81 @@ struct E2EEUploader {
             throw UploadError.serverError(statusCode: http.statusCode)
         }
         logger.debug("<-- key stored for \(fileID, privacy: .public)")
+    }
+
+    /// Reads back the metadata of a file whose blob a previous attempt committed.
+    ///
+    /// Only the resume path needs this: an upload that runs to completion already has the
+    /// `POST` response. Deliberately on the foreground session, like the key `PUT` — it is a
+    /// few hundred bytes and background sessions cannot run data tasks.
+    private func fetchUploadedMetadata(fileID: String, token: String) async throws -> UploadResult {
+        guard let url = URL(string: baseURL + "/api/v1/drive/files/\(fileID)/metadata") else {
+            throw UploadError.serverError(statusCode: 0)
+        }
+        var req = URLRequest(url: url)
+        req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+
+        let data: Data
+        let response: URLResponse
+        do {
+            (data, response) = try await transferService.data(for: req)
+        } catch {
+            throw UploadError.networkError(underlying: error)
+        }
+        if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
+            throw UploadError.serverError(statusCode: http.statusCode)
+        }
+        let decoded: APIUploadResponse
+        do {
+            decoded = try Self.decoder.decode(APIUploadResponse.self, from: data)
+        } catch {
+            throw UploadError.decodingError(underlying: error)
+        }
+        return UploadResult(id: decoded.id, name: decoded.name, folderId: decoded.folderId,
+                            sizeBytes: decoded.sizeBytes, mimeType: decoded.mimeType,
+                            updatedAt: decoded.updatedAt)
+    }
+
+    // MARK: - Reconciliation
+
+    /// Finishes every upload whose ciphertext committed but whose key never did.
+    ///
+    /// Run at launch and on every return to the foreground. This is what actually closes the
+    /// window issue #33 describes: the `PUT` runs on the foreground session, so an upload
+    /// suspended after its blob has no way to complete itself — but the sealed DEK is on disk,
+    /// and the next time the app is running it can be sent.
+    ///
+    /// Nothing here throws. A failure means the record stays and the next launch tries again,
+    /// which is strictly better than surfacing an error about an upload the user finished
+    /// thinking about days ago.
+    func reconcilePendingKeys(now: Date = Date()) async {
+        pendingKeys.pruneAbandoned(now: now)
+
+        let records = pendingKeys.all()
+        guard !records.isEmpty else { return }
+        guard let token = SharedStorage.accessToken() else { return }
+
+        for record in records {
+            // No file id means the blob `POST` never returned, so there is nothing to attach
+            // the key to. Left for a retry of the upload itself, or for the TTL.
+            guard let fileID = record.fileID else { continue }
+            do {
+                try await storeFileKey(fileID: fileID, encryptedFileKey: record.sealedFileKey,
+                                       keyVersion: record.keyVersion, token: token)
+                pendingKeys.remove(uploadID: record.uploadID)
+                logger.debug("reconciled sealed key for \(fileID, privacy: .public)")
+            } catch UploadError.serverError(let code) where code == 404 {
+                // The file is gone — trashed and emptied, most likely. The key protects
+                // nothing, so keeping it only means retrying forever.
+                pendingKeys.remove(uploadID: record.uploadID)
+                logger.debug("dropped pending key for missing file \(fileID, privacy: .public)")
+            } catch {
+                logger.error("""
+                    could not reconcile sealed key for \(fileID, privacy: .public): \
+                    \(error.localizedDescription, privacy: .public) — will retry next launch
+                    """)
+            }
+        }
     }
 
     /// Writes the multipart body to a UUID-named file directly in the temp directory.

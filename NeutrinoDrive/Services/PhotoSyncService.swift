@@ -16,6 +16,9 @@ import NeutrinoCrypto
 protocol PhotoAssetProviding {
     var localIdentifier: String { get }
     var creationDate: Date? { get }
+    /// When the picture was last edited. Sent as the uploaded file's `updatedAt` so a photo
+    /// retouched years after it was taken keeps both dates rather than collapsing onto one.
+    var modificationDate: Date? { get }
     var mediaType: PHAssetMediaType { get }
 }
 
@@ -156,10 +159,19 @@ final class PHKitAssetExporter: PhotoAssetExporting {
     // MARK: - Naming
 
     private static func fallbackFileName(for asset: PHAsset, ext: String) -> String {
+        fallbackFileName(creationDate: asset.creationDate, ext: ext)
+    }
+
+    /// The name an asset with no usable `PHAssetResource` is uploaded under.
+    ///
+    /// Not private: `PHKitAssetMetadataProvider` has to reproduce the *same* name to match an
+    /// uploaded file back to its asset, and a second copy of this format string is a
+    /// divergence nobody would notice until the repair pass reported a photo missing.
+    static func fallbackFileName(creationDate: Date?, ext: String) -> String {
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyyMMdd_HHmmss"
         formatter.locale = Locale(identifier: "en_US_POSIX")
-        let stamp = formatter.string(from: asset.creationDate ?? Date())
+        let stamp = formatter.string(from: creationDate ?? Date())
         return "IMG_\(stamp).\(ext)"
     }
 }
@@ -298,6 +310,9 @@ final class PhotoSyncService: NSObject, ObservableObject {
         /// records that iOS woke the app *at all*, which is the thing worth knowing when
         /// photos are only moving once the app is opened by hand.
         static let lastBackgroundRun  = "photoSync.lastBackgroundRunDate"
+        /// The last completed "Repair Photo Dates" pass, as JSON. Survives a relaunch so the
+        /// Settings screen can still say what the pass found.
+        static let lastDateRepair     = "photoSync.lastDateRepair"
     }
 
     static let defaultFolderName = "iPhone Photos"
@@ -320,6 +335,12 @@ final class PhotoSyncService: NSObject, ObservableObject {
     @Published private(set) var failedCount: Int = 0
     @Published private(set) var lastSyncedAt: Date?
     @Published private(set) var authorizationStatus: PHAuthorizationStatus = .notDetermined
+
+    /// Progress of the one-time "Repair Photo Dates" pass.
+    ///
+    /// Settable because ``repairPhotoDates()`` lives in `PhotoDateRepair.swift` and `private(set)`
+    /// is file-scoped; nothing else writes it.
+    @Published var dateRepairState: PhotoDateRepairState = .idle
 
     /// Bound directly by `PhotoSyncSettingsView`'s toggle. Setting this to `true` kicks off
     /// the (async) permission request; on denial the value is reverted to `false`.
@@ -360,7 +381,28 @@ final class PhotoSyncService: NSObject, ObservableObject {
     /// Takes the whole `PhotoExport` rather than its fields spread out: it grew a cover
     /// thumbnail the uploader cannot re-derive cheaply, and threading each new piece of an
     /// export through as another positional argument is how a seam ends up with six of them.
-    var uploadHandler: ((PhotoExport, String?) async throws -> UploadResult)?
+    /// The third argument is the upload's stable identity — see
+    /// ``E2EEUploader/upload(data:fileName:mimeType:parentFolderID:thumbnailBase64:uploadID:progress:)``.
+    /// It is separate from the export because it identifies the *transfer*, not the bytes:
+    /// two attempts at the same asset share it, and it is what lets the second one finish
+    /// what the first left half-committed.
+    var uploadHandler: ((PhotoExport, String?, String) async throws -> UploadResult)?
+
+    /// Applies a file's real dates and provenance once its content is in place. Wired to
+    /// `driveService.setImportMetadata` in `configure`; tests inject a spy.
+    ///
+    /// A seam of its own rather than a step inside `uploadHandler`, because it is a different
+    /// call to a different endpoint whose failure must not cost the entry — see
+    /// ``stampCaptureDates(on:from:)``.
+    var importMetadataStamper: ((String, DriveImportMetadata) async throws -> Void)?
+
+    /// Reads one page of the photo-sync destination folder. Wired to
+    /// `driveService.folderFilesPage`; used only by the repair pass.
+    var folderPageLister: ((String, Int, Int) async throws -> [DriveFolderFile])?
+
+    /// Resolves `PHAsset.localIdentifier`s to the filename and dates the repair pass matches
+    /// on. Defaults to the real PhotoKit-backed provider; tests inject a fake.
+    var assetMetadataProvider: PhotoAssetMetadataProviding = PHKitAssetMetadataProvider()
 
     /// Exports a `PHAsset.localIdentifier` to bytes. Defaults to the real PhotoKit-backed
     /// exporter; tests inject a fake.
@@ -392,13 +434,22 @@ final class PhotoSyncService: NSObject, ObservableObject {
             guard let driveService else { throw DriveError.notAuthenticated }
             return try await driveService.ensureFolder(named: name, parentID: parentID)
         }
-        uploadHandler = { [weak uploadService] export, parentFolderID in
+        uploadHandler = { [weak uploadService] export, parentFolderID, uploadID in
             guard let uploadService else { throw UploadError.notAuthenticated }
             return try await uploadService.upload(data: export.data, fileName: export.fileName,
                                                   mimeType: export.mimeType,
                                                   parentFolderID: parentFolderID,
                                                   reportsProgress: false,
-                                                  thumbnailBase64: export.thumbnailBase64)
+                                                  thumbnailBase64: export.thumbnailBase64,
+                                                  uploadID: uploadID)
+        }
+        importMetadataStamper = { [weak driveService] fileID, metadata in
+            guard let driveService else { throw DriveError.notAuthenticated }
+            try await driveService.setImportMetadata(fileID: fileID, metadata: metadata)
+        }
+        folderPageLister = { [weak driveService] folderID, limit, offset in
+            guard let driveService else { throw DriveError.notAuthenticated }
+            return try await driveService.folderFilesPage(folderID: folderID, limit: limit, offset: offset)
         }
         tokenRefresher = { [weak authService] in
             await authService?.refreshTokenIfNeeded()
@@ -536,6 +587,36 @@ final class PhotoSyncService: NSObject, ObservableObject {
     /// running the background tasks (force-quitting the app from the switcher stops them
     /// entirely until the next manual launch), whereas a recent value points at the drain.
     var lastBackgroundRunAt: Date? { defaults.object(forKey: Keys.lastBackgroundRun) as? Date }
+
+    // MARK: - Photo-date repair support
+    //
+    // The pass itself is in `PhotoDateRepair.swift`. These are the pieces of this class's
+    // otherwise-private state it needs, kept to a deliberate minimum.
+
+    /// The cached destination folder, or `nil` if no photo has been uploaded yet.
+    var photoFolderID: String? { defaults.string(forKey: Keys.folderID) }
+
+    /// `PHAsset.localIdentifier`s this device has already uploaded — the set the repair pass
+    /// builds its device-side filename lookup from.
+    var completedAssetIdentifiers: [String] { Array(queue.completed.keys) }
+
+    /// The last completed repair pass, so Settings can report it after a relaunch.
+    var lastDateRepair: PhotoDateRepairReport? {
+        get {
+            guard let data = defaults.data(forKey: Keys.lastDateRepair) else { return nil }
+            return try? JSONDecoder.photoSync.decode(PhotoDateRepairReport.self, from: data)
+        }
+        set {
+            // Backed by `UserDefaults`, not `@Published`, so nothing would otherwise tell
+            // SwiftUI to re-read it.
+            objectWillChange.send()
+            guard let newValue, let data = try? JSONEncoder.photoSync.encode(newValue) else {
+                defaults.removeObject(forKey: Keys.lastDateRepair)
+                return
+            }
+            defaults.set(data, forKey: Keys.lastDateRepair)
+        }
+    }
 
     // MARK: - Lifecycle
 
@@ -679,13 +760,14 @@ final class PhotoSyncService: NSObject, ObservableObject {
     /// Returns the identifiers from `assets` that are not already known to `queue` and were
     /// created on/after `anchorDate`, oldest-first.
     static func newIdentifiers(from assets: [PhotoAssetProviding], anchorDate: Date,
-                               includeVideos: Bool, queue: PhotoSyncQueue) -> [(id: String, creationDate: Date)] {
+                               includeVideos: Bool, queue: PhotoSyncQueue)
+    -> [(id: String, creationDate: Date, modificationDate: Date?)] {
         assets
             .filter { includeVideos || $0.mediaType != .video }
-            .compactMap { asset -> (String, Date)? in
+            .compactMap { asset -> (String, Date, Date?)? in
                 guard let created = asset.creationDate, created >= anchorDate else { return nil }
                 guard !queue.contains(id: asset.localIdentifier) else { return nil }
-                return (asset.localIdentifier, created)
+                return (asset.localIdentifier, created, asset.modificationDate)
             }
             .sorted { $0.1 < $1.1 }
     }
@@ -697,7 +779,8 @@ final class PhotoSyncService: NSObject, ObservableObject {
         let newOnes = Self.newIdentifiers(from: assets, anchorDate: effectiveAnchorDate,
                                           includeVideos: includeVideos, queue: queue)
         for entry in newOnes {
-            queue.enqueue(id: entry.id, creationDate: entry.creationDate)
+            queue.enqueue(id: entry.id, creationDate: entry.creationDate,
+                          modificationDate: entry.modificationDate)
         }
         if !newOnes.isEmpty {
             persistQueue()
@@ -983,25 +1066,84 @@ final class PhotoSyncService: NSObject, ObservableObject {
     /// Each is retried exactly once; a second failure is the caller's to record.
     private func uploadWithFolderRetry(export: PhotoExport, entry: PhotoSyncQueue.Entry) async throws {
         let folderID = try await resolveDestinationFolder()
+        let uploadID = Self.uploadID(forAssetIdentifier: entry.id)
+        let result: UploadResult
         do {
-            _ = try await upload(export: export, parentFolderID: folderID)
+            result = try await upload(export: export, parentFolderID: folderID, uploadID: uploadID)
         } catch UploadError.serverError(let code) where code == 404 {
             defaults.removeObject(forKey: Keys.folderID)
             let retriedFolderID = try await resolveDestinationFolder()
-            _ = try await upload(export: export, parentFolderID: retriedFolderID)
+            result = try await upload(export: export, parentFolderID: retriedFolderID, uploadID: uploadID)
         } catch UploadError.serverError(let code) where code == 401 {
             await tokenRefresher?()
-            _ = try await upload(export: export, parentFolderID: folderID)
+            result = try await upload(export: export, parentFolderID: folderID, uploadID: uploadID)
         }
-        queue.markCompleted(id: entry.id)
+        queue.markCompleted(id: entry.id, fileID: result.id)
         lastSyncedAt = Date()
         defaults.set(lastSyncedAt, forKey: Keys.lastSuccessfulSync)
         persistQueue()
+
+        // After the ledger, and after the content. The photo is safe at this point, which is
+        // what lets the stamp fail without consequence.
+        await stampCaptureDates(on: result.id, from: entry)
     }
 
-    private func upload(export: PhotoExport, parentFolderID: String?) async throws -> UploadResult {
+    /// Gives the uploaded file the date the picture was taken.
+    ///
+    /// **A second call, deliberately.** Writing the file's body is what stamps `updated_at`
+    /// with the server's clock, so a date sent alongside the content would be overwritten a
+    /// moment later — the reason `PATCH /drive/files/{id}/import-metadata` exists at all
+    /// (`wcherry/neutrino` #110) and the reason the Takeout runners are shaped this way.
+    ///
+    /// **Never fatal.** By the time this runs the bytes are committed and the entry is
+    /// completed. Failing it would send a good photo back to `pending` and re-upload it on the
+    /// next drain — a duplicate file, to fix a wrong date. A warning and the repair pass are
+    /// the right answer; see ``repairPhotoDates()``.
+    private func stampCaptureDates(on fileID: String, from entry: PhotoSyncQueue.Entry) async {
+        guard let importMetadataStamper else { return }
+        let metadata = DriveImportMetadata(
+            createdAt: entry.creationDate,
+            updatedAt: entry.modificationDate ?? entry.creationDate,
+            importSource: Self.importSource(forAssetIdentifier: entry.id)
+        )
+        do {
+            try await importMetadataStamper(fileID, metadata)
+        } catch {
+            logger.warning("""
+                import-metadata patch failed for \(fileID, privacy: .public): \
+                \(error.localizedDescription, privacy: .public) — the photo is uploaded but \
+                keeps today's date until Repair Photo Dates is run
+                """)
+        }
+    }
+
+    /// The provenance string a photo-sync upload records on its Drive file.
+    ///
+    /// `import_source` means "came from an archive import" elsewhere, and is reused here with
+    /// a prefix rather than given a field of its own on the backend — the cheapest correct
+    /// path, and one that keeps this whole change client-side. It carries the asset identifier
+    /// so a file can always be traced back to the picture it came from.
+    /// `nonisolated` so `PhotoDateRepairPlanner` — pure, static and off the main actor — can
+    /// build the same string the upload path stamps.
+    nonisolated static func importSource(forAssetIdentifier identifier: String) -> String {
+        "photo-sync:\(identifier)"
+    }
+
+    private func upload(export: PhotoExport, parentFolderID: String?,
+                        uploadID: String) async throws -> UploadResult {
         guard let uploadHandler else { throw UploadError.notAuthenticated }
-        return try await uploadHandler(export, parentFolderID)
+        return try await uploadHandler(export, parentFolderID, uploadID)
+    }
+
+    /// The stable upload identity for one asset.
+    ///
+    /// Photo sync is the path that suspends most — a background drain is suspended by
+    /// definition — and it is also the only upload path whose retries are automatic, so it is
+    /// the one that most needs a retry to recognise its own interrupted attempt. The asset's
+    /// `localIdentifier` is the natural key: one asset is one logical upload, however many
+    /// attempts it takes. Shares its shape with the `import_source` stamp on purpose.
+    nonisolated static func uploadID(forAssetIdentifier identifier: String) -> String {
+        importSource(forAssetIdentifier: identifier)
     }
 
     /// Whether `error` will still fail however many times it is retried.
@@ -1029,7 +1171,7 @@ final class PhotoSyncService: NSObject, ObservableObject {
     /// Resolves the destination folder ID: cached value if present, otherwise find-or-create
     /// via `folderResolver`, caching the result for next time.
     func resolveDestinationFolder() async throws -> String {
-        if let cached = defaults.string(forKey: Keys.folderID) {
+        if let cached = photoFolderID {
             return cached
         }
         guard let folderResolver else { throw DriveError.notAuthenticated }
@@ -1116,9 +1258,13 @@ final class PhotoSyncService: NSObject, ObservableObject {
     // MARK: - Test Seams
 
     #if DEBUG
-    func debugIsCompleted(_ id: String) -> Bool { queue.completed.contains(id) }
+    func debugIsCompleted(_ id: String) -> Bool { queue.completed[id] != nil }
+    func debugCompletedFileID(_ id: String) -> String? { queue.completedFileID(for: id) }
     func debugFailedEntry(_ id: String) -> PhotoSyncQueue.Entry? { queue.failed.first(where: { $0.id == id }) }
     func debugPendingEntry(_ id: String) -> PhotoSyncQueue.Entry? { queue.pending.first(where: { $0.id == id }) }
+    /// Seeds the completed ledger, for tests of things that read it — the repair pass builds
+    /// its device-side lookup from exactly these identifiers.
+    func debugMarkCompleted(_ id: String, fileID: String?) { queue.markCompleted(id: id, fileID: fileID) }
     #endif
 }
 

@@ -120,6 +120,8 @@ struct PhotoSyncSettingsView: View {
                 } footer: {
                     Text("Live Photos back up as still images only. Turning this off leaves already-uploaded photos in Drive.")
                 }
+
+                repairSection
             }
         }
         .navigationTitle("Photo Sync")
@@ -138,6 +140,59 @@ struct PhotoSyncSettingsView: View {
         } message: {
             Text("Neutrino Drive needs photo library access to back up new photos. Enable access in iOS Settings.")
         }
+    }
+
+    // MARK: - Repair photo dates
+
+    /// The one-time pass that gives photos backed up before the capture-date fix the date they
+    /// were actually taken. See ``PhotoSyncService/repairPhotoDates()``.
+    @ViewBuilder
+    private var repairSection: some View {
+        Section {
+            Button("Repair Photo Dates") {
+                Task { await photoSyncService.repairPhotoDates() }
+            }
+            .disabled(photoSyncService.dateRepairState.isRunning)
+
+            switch photoSyncService.dateRepairState {
+            case .running(let examined):
+                HStack {
+                    ProgressView().controlSize(.small)
+                    Text("Checking\(examined > 0 ? " — \(examined) so far" : "…")")
+                        .foregroundStyle(.secondary)
+                }
+            case .finished(let report):
+                Text(report.summary)
+                    .foregroundStyle(.secondary)
+            case .failed(let message):
+                Label(message, systemImage: "exclamationmark.triangle.fill")
+                    .font(.footnote)
+                    .foregroundStyle(.orange)
+            case .idle:
+                if let last = photoSyncService.lastDateRepair {
+                    HStack {
+                        Text("Last Repair")
+                        Spacer()
+                        Text(last.finishedAt, style: .relative)
+                            .foregroundStyle(.secondary)
+                    }
+                    Text(last.summary)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        } header: {
+            Text("Repair")
+        } footer: {
+            Text(repairFooterText)
+        }
+    }
+
+    private var repairFooterText: String {
+        "Photos backed up before this version are dated by the upload, not by when they were "
+        + "taken. This looks each one up in your photo library and puts the real date back. "
+        + "Safe to run more than once, and it honours the constraints above. Photos no longer "
+        + "on this device, or backed up from another one, can't be reached."
     }
 
     // MARK: - Backfill window
