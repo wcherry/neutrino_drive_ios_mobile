@@ -10,6 +10,7 @@ struct SettingsView: View {
     @EnvironmentObject var photoSyncService: PhotoSyncService
     @EnvironmentObject var biometricService: BiometricAuthService
     @EnvironmentObject var keyProvisioningService: KeyProvisioningService
+    @EnvironmentObject var deviceKeyRepair: DeviceKeyRepairService
 
     @StateObject private var quotaService = QuotaService()
 
@@ -21,6 +22,43 @@ struct SettingsView: View {
     @State private var showRemoveConfirmation = false
     @State private var showClearCacheConfirmation = false
     @State private var keyAccessDenied: String?
+
+    /// True while files exist that only this device's key opens — see `DeviceKeyRepairService`.
+    private var deviceKeyMustBeKept: Bool {
+        switch deviceKeyRepair.state {
+        case .stale, .running, .failed: return true
+        case .repaired(let report): return report.failed > 0
+        case .unknown, .current: return false
+        }
+    }
+
+    @ViewBuilder
+    private var deviceKeyStatusRow: some View {
+        switch deviceKeyRepair.state {
+        case .unknown, .current:
+            EmptyView()
+        case .stale:
+            Label("This device's key is out of date. Uploads are paused while files it sealed are repaired.",
+                  systemImage: "exclamationmark.triangle")
+                .foregroundStyle(.orange)
+        case .running(let examined, let rewrapped):
+            Label("Repairing files sealed to this device's old key… \(rewrapped) repaired, \(examined) checked",
+                  systemImage: "arrow.triangle.2.circlepath")
+        case .repaired(let report):
+            Label("Repaired: \(report.summary). Now remove this key and scan your current key code from the web to resume uploads.",
+                  systemImage: "checkmark.circle")
+                .foregroundStyle(report.failed > 0 ? .orange : .green)
+            if report.failed > 0 {
+                Button("Retry Repair") { Task { await deviceKeyRepair.checkAndRepair() } }
+            }
+        case .failed(let message):
+            VStack(alignment: .leading, spacing: 6) {
+                Label(message, systemImage: "exclamationmark.triangle")
+                    .foregroundStyle(.orange)
+                Button("Retry Repair") { Task { await deviceKeyRepair.checkAndRepair() } }
+            }
+        }
+    }
 
     var body: some View {
         List {
@@ -41,11 +79,16 @@ struct SettingsView: View {
                     Label("Encryption Key: Imported \u{2713}", systemImage: "key.fill")
                         .foregroundStyle(.primary)
 
+                    deviceKeyStatusRow
+
                     Button(role: .destructive) {
                         showRemoveConfirmation = true
                     } label: {
                         Text("Remove Keys")
                     }
+                    // While this device holds the only key that opens some of its uploads,
+                    // removing it destroys them. Wait for the repair to move them first.
+                    .disabled(deviceKeyMustBeKept)
                     .alert("Remove Encryption Keys?", isPresented: $showRemoveConfirmation) {
                         Button("Remove", role: .destructive) {
                             // Key access is the second target mvp.md names alongside app
@@ -308,5 +351,6 @@ struct SettingsView: View {
             .environmentObject(OfflineService())
             .environmentObject(PhotoSyncService())
             .environmentObject(BiometricAuthService())
+            .environmentObject(DeviceKeyRepairService())
     }
 }

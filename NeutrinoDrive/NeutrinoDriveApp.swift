@@ -45,6 +45,7 @@ struct NeutrinoDriveApp: App {
     @StateObject private var photoSyncService: PhotoSyncService
     @StateObject private var biometricService: BiometricAuthService
     @StateObject private var keyProvisioningService = KeyProvisioningService()
+    @StateObject private var deviceKeyRepair: DeviceKeyRepairService
 
     @Environment(\.scenePhase) private var scenePhase
 
@@ -74,12 +75,15 @@ struct NeutrinoDriveApp: App {
         drive.authService = auth
         upload.driveService = drive
         photoSync.configure(driveService: drive, uploadService: upload, authService: auth)
+        let keyRepair = DeviceKeyRepairService()
+        keyRepair.driveService = drive
 
         _authService = StateObject(wrappedValue: auth)
         _driveService = StateObject(wrappedValue: drive)
         _offlineService = StateObject(wrappedValue: OfflineService())
         _uploadService = StateObject(wrappedValue: upload)
         _photoSyncService = StateObject(wrappedValue: photoSync)
+        _deviceKeyRepair = StateObject(wrappedValue: keyRepair)
         _biometricService = StateObject(wrappedValue: BiometricAuthService(
             isFeatureEnabled: FeatureFlags.biometricLock,
             unlockReason: "Unlock Neutrino Drive to access your encrypted files."
@@ -108,6 +112,7 @@ struct NeutrinoDriveApp: App {
                     .environmentObject(photoSyncService)
                     .environmentObject(biometricService)
                     .environmentObject(keyProvisioningService)
+                    .environmentObject(deviceKeyRepair)
 
                 if biometricService.shouldPresentOverlay {
                     LockScreenView(biometricService: biometricService)
@@ -138,6 +143,11 @@ struct NeutrinoDriveApp: App {
                 keyProvisioningService.authService = authService
                 if authService.isAuthenticated && KeyImportService.hasStoredKeys() {
                     try? await KeyFileService.shared.restoreArchivedKeys()
+                    // A key replaced from another device leaves this one sealing to the old key,
+                    // and the files it sealed open nowhere else. Only this device can move them
+                    // onto the account's key, and only until the old key is replaced, so it
+                    // starts by itself rather than waiting to be found in Settings.
+                    await deviceKeyRepair.checkAndRepair()
                 }
             }
         }
@@ -156,7 +166,12 @@ struct NeutrinoDriveApp: App {
                 // into the same App Group store and its process dies the moment the sheet is
                 // dismissed, so returning to the app is often the first chance to finish what
                 // it started.
-                Task { await uploadService.reconcilePendingUploadKeys() }
+                Task {
+                    await uploadService.reconcilePendingUploadKeys()
+                    if authService.isAuthenticated && KeyImportService.hasStoredKeys() {
+                        await deviceKeyRepair.checkAndRepair()
+                    }
+                }
                 // `.task` runs once, when the root view first appears — it does not fire
                 // again on a return from background. Re-running `start()` here is what
                 // replays the PhotoKit catch-up scan for everything captured while the app

@@ -147,6 +147,8 @@ targets:
       # guarantees the extension's key wrap matches the app's.
       - path: NeutrinoDrive/Services/SealedKeyCrypto.swift
       - path: NeutrinoDrive/Services/E2EEUploader.swift
+      # E2EEUploader checks the device's key against the account's before sealing to it.
+      - path: NeutrinoDrive/Services/DeviceKeyCheck.swift
       # E2EEUploader persists the sealed DEK here before posting the ciphertext. The extension
       # is the path most likely to be suspended between those two commits — its process dies
       # the moment the share sheet is dismissed — so it needs this more than the app does.

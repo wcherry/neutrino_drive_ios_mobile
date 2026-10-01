@@ -236,6 +236,49 @@ final class DriveService: ObservableObject {
         }
     }
 
+    // MARK: - Key refs
+
+    /// One page of the ids of every file the caller owns, whatever folder it is in, oldest first.
+    ///
+    /// For the device-key repair pass, which has to reach files the share extension put anywhere,
+    /// not only the photo backup folder. Oldest first so files uploaded while the pass runs land
+    /// after the cursor rather than shifting the pages under it.
+    func allFileIDsPage(limit: Int, offset: Int) async throws -> [String] {
+        let response: APIListFilesResponse = try await get(
+            "/api/v1/drive/files?limit=\(limit)&offset=\(offset)&orderBy=createdAt&direction=asc"
+        )
+        return response.files.map(\.id)
+    }
+
+    /// The caller's sealed DEK for `fileID`, or nil when the file has none (it is not encrypted).
+    func fileKey(fileID: String) async throws -> SealedFileKey? {
+        do {
+            let response: APIKeyRefResponse = try await get("/api/v1/drive/files/\(fileID)/key")
+            return SealedFileKey(sealed: response.encryptedFileKey, keyVersion: response.keyVersion ?? 1)
+        } catch DriveError.serverError(let code) where code == 404 {
+            return nil
+        }
+    }
+
+    /// Replaces the caller's own key ref for `fileID`. Touches no one else's row — the server
+    /// keys `PUT /files/{id}/key` on the caller.
+    func setFileKey(fileID: String, key: SealedFileKey) async throws {
+        let req = try request(method: "PUT", path: "/api/v1/drive/files/\(fileID)/key",
+                              body: APISetKeyRefRequest(encryptedFileKey: key.sealed, keyVersion: key.keyVersion))
+        try await performVoid(req)
+    }
+
+    /// The account's active published key, or nil when it publishes none.
+    func publishedKey() async throws -> PublishedKey? {
+        guard let userID = AccessToken.currentUserID() else { throw DriveError.notAuthenticated }
+        do {
+            let key: PublishedKey = try await get("/api/v1/auth/users/\(userID)/public-key")
+            return key
+        } catch DriveError.serverError(let code) where code == 404 {
+            return nil
+        }
+    }
+
     // MARK: - Load
 
     func loadSection(_ section: DriveSection, parentID: String?) async {
@@ -917,6 +960,16 @@ private struct APITrashFolderItem: Decodable {
     let id: String
     let name: String
     let deletedAt: Date
+}
+
+private struct APIKeyRefResponse: Decodable {
+    let encryptedFileKey: String
+    let keyVersion: Int?
+}
+
+private struct APISetKeyRefRequest: Encodable {
+    let encryptedFileKey: String
+    let keyVersion: Int
 }
 
 private struct APIListFilesResponse: Decodable {
