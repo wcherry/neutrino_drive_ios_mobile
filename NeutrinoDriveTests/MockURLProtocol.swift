@@ -1,4 +1,6 @@
 import Foundation
+import NeutrinoCore
+@testable import NeutrinoDrive
 
 /// A `URLProtocol` stub that lets tests intercept `URLSession` traffic without touching the
 /// network, so `DriveService`/`UploadService` methods that make real HTTP calls can be
@@ -38,9 +40,20 @@ final class MockURLProtocol: URLProtocol {
         return config
     }
 
+    /// When true (the default), `GET /auth/users/test-user/public-key` — the signed-in test user's
+    /// own key, `TestJWT`'s default `sub` — is answered with the public key stored in the Keychain
+    /// as the account's active v1, without reaching `requestHandler`. Other users' keys (a share
+    /// recipient's) still go to the handler.
+    ///
+    /// Every upload now asks the key directory before it seals anything (`DeviceKeyCheck`). Without
+    /// this, every upload test would have to script that request ahead of the ones it is actually
+    /// about. Tests of the check itself turn it off and answer the request themselves.
+    static var answersPublishedKeyWithStoredKey = true
+
     static func reset() {
         requestHandler = nil
         lastRequestBody = nil
+        answersPublishedKeyWithStoredKey = true
     }
 
     override class func canInit(with request: URLRequest) -> Bool { true }
@@ -51,6 +64,19 @@ final class MockURLProtocol: URLProtocol {
             Self.lastRequestBody = Self.drain(stream)
         } else if let body = request.httpBody {
             Self.lastRequestBody = body
+        }
+
+        if Self.answersPublishedKeyWithStoredKey,
+           request.url?.path.hasSuffix("/users/test-user/public-key") == true,
+           let stored = KeychainService.load(forKey: SharedStorage.Keys.publicKey) {
+            let body = try! JSONSerialization.data(withJSONObject: ["userId": "test-user",
+                                                                    "publicKey": stored,
+                                                                    "version": 1])
+            let response = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!
+            client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+            client?.urlProtocol(self, didLoad: body)
+            client?.urlProtocolDidFinishLoading(self)
+            return
         }
 
         guard let handler = Self.requestHandler else {

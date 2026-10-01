@@ -20,7 +20,7 @@ private func seedKeysAndToken() {
     KeychainService.save(pubKeyB64URL, forKey: SharedStorage.Keys.publicKey)
     KeychainService.save("unused-private-key", forKey: SharedStorage.Keys.privateKey)
     KeychainService.save("1", forKey: SharedStorage.Keys.keyVersion)
-    KeychainService.save("test-access-token", forKey: SharedStorage.Keys.accessToken)
+    KeychainService.save(TestJWT.make(), forKey: SharedStorage.Keys.accessToken)
 }
 
 private func clearKeysAndToken() {
@@ -53,6 +53,7 @@ final class E2EEUploaderTests: XCTestCase {
 
     override func tearDown() {
         MockURLProtocol.reset()
+        DeviceKeyCheck.forget()
         clearKeysAndToken()
         super.tearDown()
     }
@@ -284,6 +285,89 @@ final class E2EEUploaderTests: XCTestCase {
         } catch {
             XCTFail("Unexpected error type: \(error)")
         }
+    }
+
+    // MARK: - Device key check
+
+    private func publishedKeyJSON(_ publicKey: String, version: Int) -> Data {
+        try! JSONSerialization.data(withJSONObject: ["userId": "test-user",
+                                                     "publicKey": publicKey,
+                                                     "version": version])
+    }
+
+    func test_upload_refusesToSeal_whenTheDeviceKeyIsNotTheAccountsKey() async {
+        seedKeysAndToken()
+        MockURLProtocol.answersPublishedKeyWithStoredKey = false
+        var posted = false
+        let otherKey = Data((0..<32).map { _ in UInt8.random(in: 0...255) }).base64EncodedString()
+            .replacingOccurrences(of: "+", with: "-").replacingOccurrences(of: "/", with: "_")
+            .replacingOccurrences(of: "=", with: "")
+        MockURLProtocol.requestHandler = { request in
+            if request.url?.path.hasSuffix("/public-key") == true {
+                return (okResponse(request), self.publishedKeyJSON(otherKey, version: 1))
+            }
+            posted = true
+            return (okResponse(request), uploadResponseJSON())
+        }
+
+        do {
+            _ = try await makeSUT().upload(data: Data("x".utf8), fileName: "a.txt",
+                                           mimeType: "text/plain", parentFolderID: nil)
+            XCTFail("Expected UploadError.staleEncryptionKey")
+        } catch let error as UploadError {
+            guard case .staleEncryptionKey = error else {
+                return XCTFail("Unexpected UploadError: \(error)")
+            }
+        } catch {
+            XCTFail("Unexpected error type: \(error)")
+        }
+        XCTAssertFalse(posted, "A file sealed to a key the account does not publish opens on this device only")
+    }
+
+    func test_upload_refusesToSeal_whenTheAccountPublishesNoKey() async {
+        seedKeysAndToken()
+        MockURLProtocol.answersPublishedKeyWithStoredKey = false
+        MockURLProtocol.requestHandler = { request in
+            if request.url?.path.hasSuffix("/public-key") == true {
+                return (okResponse(request, status: 404), Data())
+            }
+            return (okResponse(request), uploadResponseJSON())
+        }
+
+        do {
+            _ = try await makeSUT().upload(data: Data("x".utf8), fileName: "a.txt",
+                                           mimeType: "text/plain", parentFolderID: nil)
+            XCTFail("Expected UploadError.staleEncryptionKey")
+        } catch UploadError.staleEncryptionKey {
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+    }
+
+    func test_upload_filesTheKeyUnderThePublishedVersion_notTheKeychainsNumber() async throws {
+        seedKeysAndToken()
+        // The Keychain says v1 — the number the vault-unlock bug used to store — and the account
+        // calls the same key v3. The ref must say 3.
+        let stored = try XCTUnwrap(KeychainService.load(forKey: SharedStorage.Keys.publicKey))
+        MockURLProtocol.answersPublishedKeyWithStoredKey = false
+        var keyBody: Data?
+        MockURLProtocol.requestHandler = { request in
+            let path = request.url?.path ?? ""
+            if path.hasSuffix("/public-key") {
+                return (okResponse(request), self.publishedKeyJSON(stored, version: 3))
+            }
+            if path.hasSuffix("/upload") {
+                return (okResponse(request), uploadResponseJSON(id: "file-3"))
+            }
+            if path.hasSuffix("/file-3/key") { keyBody = request.httpBody ?? MockURLProtocol.lastRequestBody }
+            return (okResponse(request), Data())
+        }
+
+        _ = try await makeSUT().upload(data: Data("x".utf8), fileName: "a.txt",
+                                       mimeType: "text/plain", parentFolderID: nil)
+
+        let json = try XCTUnwrap(JSONSerialization.jsonObject(with: try XCTUnwrap(keyBody)) as? [String: Any])
+        XCTAssertEqual(json["keyVersion"] as? Int, 3)
     }
 
     // MARK: - Round trip

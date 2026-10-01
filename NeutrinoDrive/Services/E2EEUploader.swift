@@ -7,6 +7,9 @@ import NeutrinoCore
 
 enum UploadError: LocalizedError {
     case noEncryptionKey
+    /// The key on this device is not the one the account publishes. Sealing to it would make a
+    /// file that opens here and on no other device — see `DeviceKeyCheck`.
+    case staleEncryptionKey
     case encryptionFailed
     case notAuthenticated
     case networkError(underlying: Error)
@@ -17,6 +20,7 @@ enum UploadError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .noEncryptionKey:          return "No encryption key found. Please import a key before uploading."
+        case .staleEncryptionKey:       return "This device's encryption key is no longer your account's key, so uploads are paused. Open Settings › Encryption to repair this device."
         case .encryptionFailed:         return "Failed to encrypt the file."
         case .notAuthenticated:         return "You are not signed in."
         case .networkError:             return "A network error occurred. Please check your connection."
@@ -151,6 +155,22 @@ struct E2EEUploader {
             throw UploadError.notAuthenticated
         }
 
+        // Only ever seal to the key the account publishes, and file it under the number the
+        // account gives that key. The Keychain's copy of either can be out of date — a key
+        // replaced from another device leaves this one holding the old key — and a DEK sealed to
+        // that opens here and nowhere else. Checked before any work is done, so a stale device
+        // fails each photo in one request instead of after exporting and encrypting it.
+        guard let storedPublicKey = KeychainService.load(forKey: SharedStorage.Keys.publicKey) else {
+            throw UploadError.noEncryptionKey
+        }
+        let keyStatus = try await DeviceKeyCheck.check(storedPublicKey: storedPublicKey,
+                                                       token: token,
+                                                       baseURL: baseURL,
+                                                       fetch: transferService.data(for:))
+        guard case .current(let publishedVersion) = keyStatus else {
+            throw UploadError.staleEncryptionKey
+        }
+
         // MARK: Step 0 — Resume an upload a previous attempt left half-committed
         //
         // A record that already carries a file id means the ciphertext is on the server and
@@ -266,15 +286,12 @@ struct E2EEUploader {
             encryptedFileKey = resumed.sealedFileKey
             keyVersion = resumed.keyVersion
         } else {
-            guard let pubKeyString = KeychainService.load(forKey: SharedStorage.Keys.publicKey) else {
-                throw UploadError.noEncryptionKey
-            }
             guard let sealed = SealedKeyCrypto.seal(dek: dek,
-                                                     toPublicKeyBase64URL: pubKeyString) else {
+                                                     toPublicKeyBase64URL: storedPublicKey) else {
                 throw UploadError.encryptionFailed
             }
             encryptedFileKey = sealed
-            keyVersion = SealedKeyCrypto.activeKeyVersion()
+            keyVersion = publishedVersion
         }
 
         // MARK: Step 4b — Persist the sealed DEK *before* the ciphertext goes out
