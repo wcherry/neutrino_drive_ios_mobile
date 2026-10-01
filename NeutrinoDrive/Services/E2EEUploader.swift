@@ -2,13 +2,14 @@ import Foundation
 import Sodium
 import os.log
 import NeutrinoCore
+import NeutrinoCrypto
 
 // MARK: - UploadError
 
 enum UploadError: LocalizedError {
     case noEncryptionKey
     /// The key on this device is not the one the account publishes. Sealing to it would make a
-    /// file that opens here and on no other device — see `DeviceKeyCheck`.
+    /// file that opens here and on no other device — see `DeviceKeyCheck` in NeutrinoCrypto.
     case staleEncryptionKey
     case encryptionFailed
     case notAuthenticated
@@ -163,11 +164,14 @@ struct E2EEUploader {
         guard let storedPublicKey = KeychainService.load(forKey: SharedStorage.Keys.publicKey) else {
             throw UploadError.noEncryptionKey
         }
-        let keyStatus = try await DeviceKeyCheck.check(storedPublicKey: storedPublicKey,
-                                                       token: token,
-                                                       baseURL: baseURL,
-                                                       fetch: transferService.data(for:))
-        guard case .current(let publishedVersion) = keyStatus else {
+        let publishedVersion: Int
+        do {
+            publishedVersion = try await DeviceKeyCheck.sealingVersion {
+                try await fetchPublishedKey(token: token)
+            }
+        } catch DeviceKeyCheckError.noKey {
+            throw UploadError.noEncryptionKey
+        } catch DeviceKeyCheckError.stale {
             throw UploadError.staleEncryptionKey
         }
 
@@ -433,6 +437,51 @@ struct E2EEUploader {
             throw UploadError.serverError(statusCode: http.statusCode)
         }
         logger.debug("<-- key stored for \(fileID, privacy: .public)")
+    }
+
+    /// The account's active published key, or nil when it publishes none.
+    ///
+    /// Through `transferService` and the token in hand rather than `DriveService`, because the
+    /// share extension runs this and has neither `DriveService` nor `NeutrinoAuth`.
+    private func fetchPublishedKey(token: String) async throws -> PublishedKey? {
+        guard let userID = Self.userID(fromAccessToken: token),
+              let url = URL(string: baseURL + "/api/v1/auth/users/\(userID)/public-key") else {
+            throw UploadError.notAuthenticated
+        }
+        var req = URLRequest(url: url)
+        req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+
+        let data: Data
+        let response: URLResponse
+        do {
+            (data, response) = try await transferService.data(for: req)
+        } catch {
+            throw UploadError.networkError(underlying: error)
+        }
+        guard let http = response as? HTTPURLResponse else {
+            throw UploadError.serverError(statusCode: 0)
+        }
+        if http.statusCode == 404 { return nil }
+        guard (200...299).contains(http.statusCode) else {
+            throw UploadError.serverError(statusCode: http.statusCode)
+        }
+        do {
+            return try JSONDecoder().decode(PublishedKey.self, from: data)
+        } catch {
+            throw UploadError.decodingError(underlying: error)
+        }
+    }
+
+    /// The `sub` claim of a JWT access token — the caller's user id. Read here rather than through
+    /// `AccessToken.currentUserID()` because the share extension does not link `NeutrinoAuth`. Not a
+    /// verification of anything: the server checks the token on the request this id goes into.
+    static func userID(fromAccessToken token: String) -> String? {
+        struct Claims: Decodable { let sub: String }
+        let segments = token.split(separator: ".")
+        guard segments.count > 1,
+              let payload = Data(base64URLEncoded: String(segments[1])),
+              let claims = try? JSONDecoder().decode(Claims.self, from: payload) else { return nil }
+        return claims.sub
     }
 
     /// Reads back the metadata of a file whose blob a previous attempt committed.

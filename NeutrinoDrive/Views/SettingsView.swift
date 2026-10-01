@@ -23,15 +23,6 @@ struct SettingsView: View {
     @State private var showClearCacheConfirmation = false
     @State private var keyAccessDenied: String?
 
-    /// True while files exist that only this device's key opens — see `DeviceKeyRepairService`.
-    private var deviceKeyMustBeKept: Bool {
-        switch deviceKeyRepair.state {
-        case .stale, .running, .failed: return true
-        case .repaired(let report): return report.failed > 0
-        case .unknown, .current: return false
-        }
-    }
-
     @ViewBuilder
     private var deviceKeyStatusRow: some View {
         switch deviceKeyRepair.state {
@@ -88,7 +79,7 @@ struct SettingsView: View {
                     }
                     // While this device holds the only key that opens some of its uploads,
                     // removing it destroys them. Wait for the repair to move them first.
-                    .disabled(deviceKeyMustBeKept)
+                    .disabled(deviceKeyRepair.state.keyMustBeKept)
                     .alert("Remove Encryption Keys?", isPresented: $showRemoveConfirmation) {
                         Button("Remove", role: .destructive) {
                             // Key access is the second target mvp.md names alongside app

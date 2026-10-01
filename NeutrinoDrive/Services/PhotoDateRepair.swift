@@ -322,7 +322,7 @@ extension PhotoSyncService {
         return false
     }
 
-    static func isRetryable(_ error: Error) -> Bool {
+    nonisolated static func isRetryable(_ error: Error) -> Bool {
         guard let driveError = error as? DriveError else { return false }
         switch driveError {
         case .networkError:
