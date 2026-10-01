@@ -2,6 +2,7 @@ import Foundation
 import os.log
 import NeutrinoCore
 import NeutrinoAuth
+import NeutrinoCrypto
 
 // MARK: - DriveError
 
@@ -233,49 +234,6 @@ final class DriveService: ObservableObject {
         )
         return response.files.map {
             DriveFolderFile(id: $0.id, name: $0.name, createdAt: $0.createdAt)
-        }
-    }
-
-    // MARK: - Key refs
-
-    /// One page of the ids of every file the caller owns, whatever folder it is in, oldest first.
-    ///
-    /// For the device-key repair pass, which has to reach files the share extension put anywhere,
-    /// not only the photo backup folder. Oldest first so files uploaded while the pass runs land
-    /// after the cursor rather than shifting the pages under it.
-    func allFileIDsPage(limit: Int, offset: Int) async throws -> [String] {
-        let response: APIListFilesResponse = try await get(
-            "/api/v1/drive/files?limit=\(limit)&offset=\(offset)&orderBy=createdAt&direction=asc"
-        )
-        return response.files.map(\.id)
-    }
-
-    /// The caller's sealed DEK for `fileID`, or nil when the file has none (it is not encrypted).
-    func fileKey(fileID: String) async throws -> SealedFileKey? {
-        do {
-            let response: APIKeyRefResponse = try await get("/api/v1/drive/files/\(fileID)/key")
-            return SealedFileKey(sealed: response.encryptedFileKey, keyVersion: response.keyVersion ?? 1)
-        } catch DriveError.serverError(let code) where code == 404 {
-            return nil
-        }
-    }
-
-    /// Replaces the caller's own key ref for `fileID`. Touches no one else's row — the server
-    /// keys `PUT /files/{id}/key` on the caller.
-    func setFileKey(fileID: String, key: SealedFileKey) async throws {
-        let req = try request(method: "PUT", path: "/api/v1/drive/files/\(fileID)/key",
-                              body: APISetKeyRefRequest(encryptedFileKey: key.sealed, keyVersion: key.keyVersion))
-        try await performVoid(req)
-    }
-
-    /// The account's active published key, or nil when it publishes none.
-    func publishedKey() async throws -> PublishedKey? {
-        guard let userID = AccessToken.currentUserID() else { throw DriveError.notAuthenticated }
-        do {
-            let key: PublishedKey = try await get("/api/v1/auth/users/\(userID)/public-key")
-            return key
-        } catch DriveError.serverError(let code) where code == 404 {
-            return nil
         }
     }
 
@@ -1004,3 +962,48 @@ private struct APIBulkResult: Decodable {
     let affected: Int
 }
 
+// MARK: - DeviceKeyTransport
+
+/// The requests `DeviceKeyRepairService` (NeutrinoCrypto) makes, through this service's token
+/// refresh and session.
+extension DriveService: DeviceKeyTransport {
+
+    func publishedKey() async throws -> PublishedKey? {
+        guard let userID = AccessToken.currentUserID() else { throw DriveError.notAuthenticated }
+        do {
+            let key: PublishedKey = try await get("/api/v1/auth/users/\(userID)/public-key")
+            return key
+        } catch DriveError.serverError(let code) where code == 404 {
+            return nil
+        }
+    }
+
+    /// Every file the caller owns, whatever folder — the share extension puts files anywhere, not
+    /// only in the photo backup folder.
+    func fileIDsPage(limit: Int, offset: Int) async throws -> [String] {
+        let response: APIListFilesResponse = try await get(
+            "/api/v1/drive/files?limit=\(limit)&offset=\(offset)&orderBy=createdAt&direction=asc"
+        )
+        return response.files.map(\.id)
+    }
+
+    func fileKey(fileID: String) async throws -> (sealed: String, keyVersion: Int)? {
+        do {
+            let response: APIKeyRefResponse = try await get("/api/v1/drive/files/\(fileID)/key")
+            return (response.encryptedFileKey, response.keyVersion ?? 1)
+        } catch DriveError.serverError(let code) where code == 404 {
+            return nil
+        }
+    }
+
+    /// Touches no one else's row — the server keys `PUT /files/{id}/key` on the caller.
+    func setFileKey(fileID: String, sealed: String, keyVersion: Int) async throws {
+        let req = try request(method: "PUT", path: "/api/v1/drive/files/\(fileID)/key",
+                              body: APISetKeyRefRequest(encryptedFileKey: sealed, keyVersion: keyVersion))
+        try await performVoid(req)
+    }
+
+    nonisolated func isRetryable(_ error: Error) -> Bool {
+        PhotoSyncService.isRetryable(error)
+    }
+}

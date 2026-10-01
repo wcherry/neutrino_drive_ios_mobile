@@ -45,7 +45,7 @@ final class MockURLProtocol: URLProtocol {
     /// as the account's active v1, without reaching `requestHandler`. Other users' keys (a share
     /// recipient's) still go to the handler.
     ///
-    /// Every upload now asks the key directory before it seals anything (`DeviceKeyCheck`). Without
+    /// Every upload now asks the key directory before it seals anything (`DeviceKeyCheck`, NeutrinoCrypto). Without
     /// this, every upload test would have to script that request ahead of the ones it is actually
     /// about. Tests of the check itself turn it off and answer the request themselves.
     static var answersPublishedKeyWithStoredKey = true

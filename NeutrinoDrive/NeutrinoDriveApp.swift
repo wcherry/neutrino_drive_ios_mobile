@@ -75,8 +75,7 @@ struct NeutrinoDriveApp: App {
         drive.authService = auth
         upload.driveService = drive
         photoSync.configure(driveService: drive, uploadService: upload, authService: auth)
-        let keyRepair = DeviceKeyRepairService()
-        keyRepair.driveService = drive
+        let keyRepair = DeviceKeyRepairService(transport: drive)
 
         _authService = StateObject(wrappedValue: auth)
         _driveService = StateObject(wrappedValue: drive)

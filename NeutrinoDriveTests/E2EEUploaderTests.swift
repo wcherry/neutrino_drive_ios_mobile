@@ -370,6 +370,11 @@ final class E2EEUploaderTests: XCTestCase {
         XCTAssertEqual(json["keyVersion"] as? Int, 3)
     }
 
+    func test_userID_isReadFromTheTokensSubClaim() {
+        XCTAssertEqual(E2EEUploader.userID(fromAccessToken: TestJWT.make(sub: "u-42")), "u-42")
+        XCTAssertNil(E2EEUploader.userID(fromAccessToken: "not-a-jwt"))
+    }
+
     // MARK: - Round trip
 
     func test_upload_postsCiphertext_neverThePlaintext() async throws {
