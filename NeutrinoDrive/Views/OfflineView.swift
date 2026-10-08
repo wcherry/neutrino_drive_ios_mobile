@@ -14,6 +14,7 @@ struct OfflineView: View {
     // MARK: - State
 
     @State private var previewURL: URL?
+    @State private var zipDocument: ZipArchiveDocument?
 
     // MARK: - Body
 
@@ -27,6 +28,9 @@ struct OfflineView: View {
         }
         .navigationTitle("Offline")
         .quickLookPreview($previewURL)
+        .sheet(item: $zipDocument) { document in
+            ZipViewerView(document: document)
+        }
     }
 
     // MARK: - File List
@@ -39,7 +43,11 @@ struct OfflineView: View {
                     // storage was cleared out of band) is tolerated rather than crashing —
                     // simply do nothing if it's missing.
                     guard FileManager.default.fileExists(atPath: file.localURL.path) else { return }
-                    previewURL = file.localURL
+                    if ZipArchiveReader.isZip(mimeType: file.mimeType, name: file.name) {
+                        zipDocument = ZipArchiveDocument(url: file.localURL, name: file.name)
+                    } else {
+                        previewURL = file.localURL
+                    }
                 } label: {
                     FileRowView(item: DriveItem(offlineFile: file))
                 }

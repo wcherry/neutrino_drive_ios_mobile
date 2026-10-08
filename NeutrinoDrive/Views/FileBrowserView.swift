@@ -34,6 +34,7 @@ struct FileBrowserView: View {
     @State private var previewURL: URL?
     @State private var downloadError: String?
     @State private var nativeViewerItem: DriveItem?
+    @State private var zipDocument: ZipArchiveDocument?
 
     @StateObject private var searchService = SearchService()
     @State private var searchText = ""
@@ -153,6 +154,9 @@ struct FileBrowserView: View {
         .quickLookPreview($previewURL)
         .sheet(item: $nativeViewerItem) { item in
             NeutrinoFileViewer(item: item)
+        }
+        .sheet(item: $zipDocument) { document in
+            ZipViewerView(document: document)
         }
         .alert(
             companionPrompt.map { "\($0.kind.appName) Isn\u{2019}t Installed" } ?? "",
@@ -588,11 +592,17 @@ struct FileBrowserView: View {
     private func startDownload(for item: DriveItem) {
         Task {
             do {
-                previewURL = try await downloadService.download(
+                let url = try await downloadService.download(
                     fileID: item.id,
                     fileName: item.name,
                     mimeType: item.mimeType
                 )
+                // QuickLook shows a zip as an icon; the zip viewer shows what is in it.
+                if ZipArchiveReader.isZip(mimeType: item.mimeType, name: item.name) {
+                    zipDocument = ZipArchiveDocument(url: url, name: item.name)
+                } else {
+                    previewURL = url
+                }
             } catch {
                 downloadError = error.localizedDescription
             }

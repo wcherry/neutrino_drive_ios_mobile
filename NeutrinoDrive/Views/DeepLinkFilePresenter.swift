@@ -31,6 +31,7 @@ struct DeepLinkFilePresenter: ViewModifier {
     @StateObject private var downloadService = DownloadService()
     @State private var viewerItem: DriveItem?
     @State private var previewURL: URL?
+    @State private var zipDocument: ZipArchiveDocument?
     @State private var errorMessage: String?
     @State private var isResolving = false
 
@@ -46,6 +47,9 @@ struct DeepLinkFilePresenter: ViewModifier {
                 NeutrinoFileViewer(item: item)
             }
             .quickLookPreview($previewURL)
+            .sheet(item: $zipDocument) { document in
+                ZipViewerView(document: document)
+            }
             .alert("Couldn\u{2019}t Open File", isPresented: Binding(
                 get: { errorMessage != nil },
                 set: { if !$0 { errorMessage = nil } }
@@ -99,11 +103,16 @@ struct DeepLinkFilePresenter: ViewModifier {
         }
         Task {
             do {
-                previewURL = try await downloadService.download(
+                let url = try await downloadService.download(
                     fileID: item.id,
                     fileName: item.name,
                     mimeType: item.mimeType
                 )
+                if ZipArchiveReader.isZip(mimeType: item.mimeType, name: item.name) {
+                    zipDocument = ZipArchiveDocument(url: url, name: item.name)
+                } else {
+                    previewURL = url
+                }
             } catch {
                 errorMessage = error.localizedDescription
             }
