@@ -30,14 +30,17 @@ private func clearKeysAndToken() {
     KeychainService.delete(forKey: SharedStorage.Keys.accessToken)
 }
 
-private func uploadResponseJSON(id: String = "server-id", name: String = "f.txt") -> Data {
-    try! JSONSerialization.data(withJSONObject: [
+private func uploadResponseJSON(id: String = "server-id", name: String = "f.txt",
+                                importSource: String? = nil) -> Data {
+    var json: [String: Any] = [
         "id": id,
         "name": name,
         "size_bytes": 123,
         "mime_type": "text/plain",
         "updated_at": "2024-01-01T00:00:00",
-    ] as [String: Any])
+    ]
+    if let importSource { json["importSource"] = importSource }
+    return try! JSONSerialization.data(withJSONObject: json)
 }
 
 private func okResponse(_ request: URLRequest, status: Int = 200) -> HTTPURLResponse {
@@ -415,6 +418,137 @@ final class E2EEUploaderTests: XCTestCase {
                                        mimeType: "text/plain", parentFolderID: nil)
 
         XCTAssertEqual(keyRequestMethods["/api/v1/drive/files/file-77/key"], "PUT")
+    }
+
+    // MARK: - Self-contained uploads (issue #38)
+    //
+    // The sealed key and the file's dates ride in the upload body, so a transfer that finishes
+    // while the app is suspended leaves a whole file with nothing left to send.
+
+    func test_multipartBody_carriesTheSealedKeyAndItsVersion_beforeTheFilePart() throws {
+        let body = String(decoding: E2EEUploader.buildMultipartBody(
+            encryptedData: Data("c".utf8), fileName: "a", mimeType: "image/heic",
+            parentFolderID: nil, encryptedMetadata: "m", thumbnailBase64: nil,
+            sealedFileKey: ("SEALED-DEK", 3), boundary: "B"
+        ), as: UTF8.self)
+
+        XCTAssertTrue(body.contains("name=\"encrypted_file_key\"\r\n\r\nSEALED-DEK\r\n"))
+        XCTAssertTrue(body.contains("name=\"key_version\"\r\n\r\n3\r\n"))
+        let keyAt = try XCTUnwrap(body.range(of: #"name="encrypted_file_key""#))
+        let fileAt = try XCTUnwrap(body.range(of: #"name="file""#))
+        XCTAssertTrue(keyAt.lowerBound < fileAt.lowerBound,
+                      "The server stops reading at the file part; anything after it is lost")
+    }
+
+    func test_multipartBody_carriesTheDatesAsUTCAndTheProvenance() {
+        let metadata = DriveImportMetadata(
+            createdAt: Date(timeIntervalSince1970: 1_562_198_400),   // 2019-07-04T00:00:00Z
+            updatedAt: Date(timeIntervalSince1970: 1_700_000_000),   // 2023-11-14T22:13:20Z
+            importSource: "photo-sync:ABC"
+        )
+        let body = String(decoding: E2EEUploader.buildMultipartBody(
+            encryptedData: Data("c".utf8), fileName: "a", mimeType: "image/heic",
+            parentFolderID: nil, encryptedMetadata: "m", thumbnailBase64: nil,
+            importMetadata: metadata, boundary: "B"
+        ), as: UTF8.self)
+
+        XCTAssertTrue(body.contains("name=\"created_at\"\r\n\r\n2019-07-04T00:00:00Z\r\n"))
+        XCTAssertTrue(body.contains("name=\"updated_at\"\r\n\r\n2023-11-14T22:13:20Z\r\n"))
+        XCTAssertTrue(body.contains("name=\"import_source\"\r\n\r\nphoto-sync:ABC\r\n"))
+    }
+
+    func test_multipartBody_omitsTheDates_whenThereAreNone() {
+        XCTAssertFalse(decodedBody().contains(#"name="created_at""#))
+        XCTAssertFalse(decodedBody().contains(#"name="import_source""#))
+    }
+
+    func test_upload_sendsTheSealedKeyInTheBody_underThePublishedVersion() async throws {
+        seedKeysAndToken()
+        var uploadBody: Data?
+        MockURLProtocol.requestHandler = { request in
+            if request.url?.path.hasSuffix("/upload") == true {
+                uploadBody = MockURLProtocol.lastRequestBody
+                return (okResponse(request), uploadResponseJSON())
+            }
+            return (okResponse(request), Data())
+        }
+
+        _ = try await makeSUT().upload(data: Data("x".utf8), fileName: "a.txt",
+                                       mimeType: "text/plain", parentFolderID: nil)
+
+        let body = String(decoding: try XCTUnwrap(uploadBody), as: UTF8.self)
+        XCTAssertTrue(body.contains(#"name="encrypted_file_key""#))
+        XCTAssertTrue(body.contains("name=\"key_version\"\r\n\r\n1\r\n"))
+    }
+
+    /// A server that echoes the provenance read the extra fields and committed the key with the
+    /// file. A `PUT` after that is a request the app would have to stay awake for, for nothing.
+    func test_submit_sendsNoKeyPut_whenTheServerStoredTheKeyWithTheUpload() async throws {
+        seedKeysAndToken()
+        var paths: [String] = []
+        MockURLProtocol.requestHandler = { request in
+            let path = request.url?.path ?? ""
+            paths.append(path)
+            if path.hasSuffix("/upload") {
+                return (okResponse(request), uploadResponseJSON(id: "file-9", importSource: "photo-sync:A"))
+            }
+            return (okResponse(request), Data())
+        }
+        let pendingKeys = makePendingKeyStore()
+        let sut = makeSUT(pendingKeys: pendingKeys)
+
+        let prepared = try await sut.prepare(
+            data: Data("x".utf8), fileName: "a.jpg", mimeType: "image/jpeg", parentFolderID: nil,
+            uploadID: "photo-sync:A",
+            importMetadata: DriveImportMetadata(createdAt: Date(), updatedAt: Date(),
+                                                importSource: "photo-sync:A")
+        )
+        let result = try await sut.submit(prepared)
+
+        XCTAssertEqual(result.importSource, "photo-sync:A")
+        XCTAssertFalse(paths.contains("/api/v1/drive/files/file-9/key"))
+        XCTAssertNil(pendingKeys.key(forUploadID: "photo-sync:A"),
+                     "The key is on the server; the local copy has nothing left to protect")
+    }
+
+    /// An older server ignores fields it does not know, the key among them. Without the `PUT`
+    /// the file would exist with nothing that can open it.
+    func test_submit_stillPutsTheKey_whenTheServerDidNotEchoTheProvenance() async throws {
+        seedKeysAndToken()
+        var keyPut = false
+        MockURLProtocol.requestHandler = { request in
+            let path = request.url?.path ?? ""
+            if path.hasSuffix("/upload") { return (okResponse(request), uploadResponseJSON(id: "file-9")) }
+            if path == "/api/v1/drive/files/file-9/key", request.httpMethod == "PUT" { keyPut = true }
+            return (okResponse(request), Data())
+        }
+        let sut = makeSUT()
+
+        let prepared = try await sut.prepare(
+            data: Data("x".utf8), fileName: "a.jpg", mimeType: "image/jpeg", parentFolderID: nil,
+            uploadID: "photo-sync:A",
+            importMetadata: DriveImportMetadata(createdAt: Date(), updatedAt: Date(),
+                                                importSource: "photo-sync:A")
+        )
+        _ = try await sut.submit(prepared)
+
+        XCTAssertTrue(keyPut)
+    }
+
+    func test_prepare_keepsAWiFiOnlyRequestOffExpensiveNetworks() async throws {
+        seedKeysAndToken()
+        MockURLProtocol.requestHandler = { request in (okResponse(request), Data()) }
+
+        let prepared = try await makeSUT().prepare(
+            data: Data("x".utf8), fileName: "a.jpg", mimeType: "image/jpeg", parentFolderID: nil,
+            allowsExpensiveNetworkAccess: false
+        )
+        defer { try? FileManager.default.removeItem(at: prepared.bodyFileURL) }
+
+        XCTAssertFalse(prepared.request.allowsExpensiveNetworkAccess)
+        XCTAssertFalse(prepared.request.allowsConstrainedNetworkAccess)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: prepared.bodyFileURL.path),
+                      "Preparing writes the body; only submitting sends it")
     }
 
     func test_upload_returnsTheServersMetadata() async throws {

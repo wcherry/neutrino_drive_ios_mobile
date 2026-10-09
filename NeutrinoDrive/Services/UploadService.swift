@@ -134,6 +134,42 @@ final class UploadService: ObservableObject {
         return result
     }
 
+    // MARK: - Prepare / submit (photo sync)
+
+    /// The first half of ``upload(data:fileName:mimeType:parentFolderID:reportsProgress:thumbnailBase64:uploadID:)``:
+    /// encrypts and writes a complete body to disk without sending it. Publishes no UI state —
+    /// photo sync is the only caller, and it keeps its own.
+    func prepareUpload(data: Data, fileName: String, mimeType: String, parentFolderID: String?,
+                       thumbnailBase64: String?, uploadID: String,
+                       importMetadata: DriveImportMetadata?,
+                       allowsExpensiveNetworkAccess: Bool) async throws -> PreparedUpload {
+        try await uploader.prepare(data: data, fileName: fileName, mimeType: mimeType,
+                                   parentFolderID: parentFolderID,
+                                   thumbnailBase64: thumbnailBase64, uploadID: uploadID,
+                                   importMetadata: importMetadata,
+                                   allowsExpensiveNetworkAccess: allowsExpensiveNetworkAccess)
+    }
+
+    /// Sends a prepared body and waits for the server's answer.
+    func submit(_ prepared: PreparedUpload) async throws -> UploadResult {
+        let result = try await uploader.submit(prepared)
+        driveService?.fileWasUploaded(result)
+        return result
+    }
+
+    /// Whether an earlier attempt at `uploadID` already reached the server or the background
+    /// session. See ``E2EEUploader/earlierUpload(uploadID:)``.
+    func hasEarlierUpload(uploadID: String) async -> Bool {
+        await uploader.hasEarlierUpload(uploadID: uploadID)
+    }
+
+    /// Collects an earlier attempt at `uploadID`, or `nil` when there is none to collect.
+    func earlierUpload(uploadID: String) async throws -> UploadResult? {
+        guard let result = try await uploader.earlierUpload(uploadID: uploadID) else { return nil }
+        driveService?.fileWasUploaded(result)
+        return result
+    }
+
     // MARK: - Reconciliation
 
     /// Finishes any upload whose ciphertext committed but whose sealed key never did.

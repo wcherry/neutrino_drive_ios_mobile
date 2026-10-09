@@ -3,7 +3,7 @@
 **Date:** 2026-10-09
 **Issue:** [wcherry/neutrino_drive_ios_mobile#38](https://github.com/wcherry/neutrino_drive_ios_mobile/issues/38) — "Photo uploads take an unreasonably long time"
 **Related:** #31 (capture dates), `agent_docs/plans/feature-photo-auto-sync.md` ("Known risks")
-**Status:** Proposal — nothing implemented yet
+**Status:** Phase 1 implemented on `feature/photo-sync-single-request` (backend + Drive iOS); Phases 2–3 open
 
 ## Problem
 
