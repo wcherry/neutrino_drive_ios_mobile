@@ -95,6 +95,9 @@ final class BackgroundTransferService: NSObject {
     /// succeeded instead of re-uploading the same bytes.
     private var orphanedResults: [String: Result<(Data, HTTPURLResponse), Error>] = [:]
 
+    /// Told the transfer id of every result filed in `orphanedResults`. See ``setOrphanHandler(_:)``.
+    private var orphanHandler: ((String) -> Void)?
+
     /// Set by `AppDelegate` from `handleEventsForBackgroundURLSession`; called once the
     /// session has finished replaying its events.
     private var backgroundEventsCompletionHandler: (() -> Void)?
@@ -180,10 +183,11 @@ final class BackgroundTransferService: NSObject {
                 deleteBodyFileOnCompletion: Bool = true,
                 progress: ((Double) -> Void)? = nil) async throws -> (Data, HTTPURLResponse) {
 
-        if let claimed = claimOrphanedResult(for: transferID) {
-            logger.debug("upload: claimed result completed while suspended (\(transferID, privacy: .public))")
+        if let earlier = try await resume(transferID: transferID, progress: progress) {
+            // The bytes are already (or still) going up under this identity — sending them a
+            // second time would create a second file. The fresh body is not needed.
             if deleteBodyFileOnCompletion { try? FileManager.default.removeItem(at: fileURL) }
-            return try claimed.get()
+            return earlier
         }
 
         let task = session.uploadTask(with: request, fromFile: fileURL)
@@ -196,6 +200,66 @@ final class BackgroundTransferService: NSObject {
             if deleteBodyFileOnCompletion { bodyFilesToCleanUp[task.taskIdentifier] = fileURL }
             stateLock.unlock()
             task.resume()
+        }
+    }
+
+    // MARK: - Resuming an earlier transfer
+
+    /// Whether a transfer filed under `transferID` already exists: either still running in the
+    /// background session, or finished with its result waiting to be claimed.
+    ///
+    /// Asked *before* a caller spends time rebuilding a body. A background session hands a
+    /// relaunched process every task an earlier process left running, so after a relaunch the
+    /// upload a queue entry describes may well be in flight already.
+    func hasTransfer(transferID: String) async -> Bool {
+        stateLock.lock()
+        let hasOrphan = orphanedResults[transferID] != nil
+        stateLock.unlock()
+        if hasOrphan { return true }
+        return await runningUploadTask(transferID: transferID) != nil
+    }
+
+    /// The outcome of an earlier upload filed under `transferID`, or `nil` when there is none.
+    ///
+    /// A result that arrived with nobody waiting is handed over at once. A task still running —
+    /// typically one an earlier process started and the background session reattached on
+    /// launch — is awaited rather than duplicated.
+    func resume(transferID: String,
+                progress: ((Double) -> Void)? = nil) async throws -> (Data, HTTPURLResponse)? {
+        if let claimed = claimOrphanedResult(for: transferID) {
+            logger.debug("upload: claimed result completed while suspended (\(transferID, privacy: .public))")
+            return try claimed.get()
+        }
+        guard let task = await runningUploadTask(transferID: transferID) else { return nil }
+        logger.debug("upload: reattaching to transfer in flight (\(transferID, privacy: .public))")
+
+        return try await withCheckedThrowingContinuation { continuation in
+            // Registered and checked under one lock, against a completion funnel that pops and
+            // files an orphan under the same lock: either the task finished first and its result
+            // is waiting here, or it has not and will find this continuation. Neither order can
+            // leave the continuation hanging.
+            stateLock.lock()
+            if let finished = orphanedResults.removeValue(forKey: transferID) {
+                stateLock.unlock()
+                continuation.resume(with: finished)
+                return
+            }
+            pendingUploads[task.taskIdentifier] = continuation
+            if let progress { progressHandlers[task.taskIdentifier] = progress }
+            stateLock.unlock()
+        }
+    }
+
+    /// A live upload task carrying `transferID` that nobody in this process is awaiting yet.
+    private func runningUploadTask(transferID: String) async -> URLSessionTask? {
+        let tasks = await session.allTasks
+        stateLock.lock()
+        defer { stateLock.unlock() }
+        return tasks.first { task in
+            task.taskDescription == transferID
+                && task is URLSessionUploadTask
+                && task.state != .completed
+                && pendingUploads[task.taskIdentifier] == nil
         }
     }
 
@@ -231,6 +295,23 @@ final class BackgroundTransferService: NSObject {
         stateLock.unlock()
     }
 
+    /// Registers the code told about results that arrive with nobody waiting for them.
+    ///
+    /// Such a result is held in memory only, so it has to be collected while this process
+    /// lives. Being told the moment it lands is what makes that dependable: a relaunch to
+    /// deliver background transfers runs no UI and no drain, and a result nobody asks for there
+    /// dies with the process — leaving its upload to be sent a second time. Results that landed
+    /// before a handler was set are reported at once.
+    ///
+    /// Called on the session's delegate queue; the handler must hop to wherever its work lives.
+    func setOrphanHandler(_ handler: @escaping (String) -> Void) {
+        stateLock.lock()
+        orphanHandler = handler
+        let waiting = Array(orphanedResults.keys)
+        stateLock.unlock()
+        waiting.forEach(handler)
+    }
+
     private func claimOrphanedResult(for transferID: String) -> Result<(Data, HTTPURLResponse), Error>? {
         stateLock.lock()
         defer { stateLock.unlock() }
@@ -242,7 +323,16 @@ final class BackgroundTransferService: NSObject {
     /// Removes and returns everything registered for `taskIdentifier`, under one lock
     /// acquisition. Returning the continuations here — rather than resuming inside the lock —
     /// is what makes "resumed exactly once" structurally true instead of merely intended.
-    private func popState(for taskIdentifier: Int) -> (
+    ///
+    /// When nobody is waiting, the result is filed as an orphan under `orphanID` in the same
+    /// lock acquisition. Doing it in a second one would open a gap in which ``resume(transferID:progress:)``
+    /// could register a continuation after the pop and before the orphan existed — and wait
+    /// forever for a task that had already finished.
+    private func popState(
+        for taskIdentifier: Int,
+        orphanID: String?,
+        orphanResult: (Data) -> Result<(Data, HTTPURLResponse), Error>
+    ) -> (
         upload: CheckedContinuation<(Data, HTTPURLResponse), Error>?,
         download: CheckedContinuation<(URL, HTTPURLResponse), Error>?,
         data: Data,
@@ -257,6 +347,9 @@ final class BackgroundTransferService: NSObject {
         let relocated = relocatedDownloads.removeValue(forKey: taskIdentifier)
         let bodyFile = bodyFilesToCleanUp.removeValue(forKey: taskIdentifier)
         progressHandlers.removeValue(forKey: taskIdentifier)
+        if upload == nil, download == nil, let orphanID {
+            orphanedResults[orphanID] = orphanResult(data)
+        }
         return (upload, download, data, relocated, bodyFile)
     }
 }
@@ -293,29 +386,37 @@ extension BackgroundTransferService: URLSessionTaskDelegate {
     /// failure, cancellation — which is precisely why continuation resumption lives here and
     /// nowhere else.
     func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
-        let state = popState(for: task.taskIdentifier)
+        let wrappedError = error.map { TransferError.transportError(underlying: $0) }
+        let http = task.response as? HTTPURLResponse
+        // Nobody waiting means this task completed while the app was suspended, or in a process
+        // that has since died; its result is kept for whoever asks for it next.
+        let state = popState(for: task.taskIdentifier, orphanID: task.taskDescription) { data in
+            if let wrappedError { return .failure(wrappedError) }
+            guard let http else { return .failure(TransferError.invalidResponse) }
+            return .success((data, http))
+        }
+        if state.upload == nil, state.download == nil, let id = task.taskDescription {
+            logger.debug("recorded orphaned transfer result for \(id, privacy: .public)")
+            stateLock.lock()
+            let handler = orphanHandler
+            stateLock.unlock()
+            handler?(id)
+        }
 
         if let bodyFile = state.bodyFile {
             try? FileManager.default.removeItem(at: bodyFile)
         }
 
-        if let error {
-            logger.error("task \(task.taskIdentifier) failed: \(error, privacy: .public)")
-            let wrapped = TransferError.transportError(underlying: error)
-            state.upload?.resume(throwing: wrapped)
-            state.download?.resume(throwing: wrapped)
-            if state.upload == nil && state.download == nil, let id = task.taskDescription {
-                recordOrphan(id: id, result: .failure(wrapped))
-            }
+        if let wrappedError {
+            logger.error("task \(task.taskIdentifier) failed: \(wrappedError, privacy: .public)")
+            state.upload?.resume(throwing: wrappedError)
+            state.download?.resume(throwing: wrappedError)
             return
         }
 
-        guard let http = task.response as? HTTPURLResponse else {
+        guard let http else {
             state.upload?.resume(throwing: TransferError.invalidResponse)
             state.download?.resume(throwing: TransferError.invalidResponse)
-            if state.upload == nil && state.download == nil, let id = task.taskDescription {
-                recordOrphan(id: id, result: .failure(TransferError.invalidResponse))
-            }
             return
         }
 
@@ -330,20 +431,7 @@ extension BackgroundTransferService: URLSessionTaskDelegate {
             } else {
                 download.resume(throwing: TransferError.invalidResponse)
             }
-            return
         }
-
-        // Nobody was waiting — this task completed while the app was suspended.
-        if let id = task.taskDescription {
-            recordOrphan(id: id, result: .success((state.data, http)))
-        }
-    }
-
-    private func recordOrphan(id: String, result: Result<(Data, HTTPURLResponse), Error>) {
-        stateLock.lock()
-        orphanedResults[id] = result
-        stateLock.unlock()
-        logger.debug("recorded orphaned transfer result for \(id, privacy: .public)")
     }
 }
 

@@ -22,22 +22,6 @@ enum DriveError: LocalizedError {
     }
 }
 
-// MARK: - DriveImportMetadata
-
-/// The dates and provenance one `PATCH /drive/files/{id}/import-metadata` carries.
-///
-/// The endpoint exists because writing a file's content is what stamps `updated_at` with the
-/// server's clock, so anything an importer knows about the original's dates has to be applied
-/// *after* the content, in a second call. See `neutrino/src/drive/storage/service.rs`
-/// (`apply_import_metadata`) and `wcherry/neutrino` issue #110.
-struct DriveImportMetadata: Equatable {
-    let createdAt: Date
-    let updatedAt: Date
-    /// Where the file came from. Required by the server: rewriting a file's dates is a history
-    /// rewrite, and recording who did it is the endpoint's whole justification for allowing one.
-    let importSource: String
-}
-
 // MARK: - DriveFolderFile
 
 /// One file row from a folder listing, for callers that want the rows rather than the
@@ -203,23 +187,13 @@ final class DriveService: ObservableObject {
     func setImportMetadata(fileID: String, metadata: DriveImportMetadata) async throws {
         let body = APIImportMetadataRequest(
             importSource: metadata.importSource,
-            createdAt: Self.importTimestampFormatter.string(from: metadata.createdAt),
-            updatedAt: Self.importTimestampFormatter.string(from: metadata.updatedAt)
+            createdAt: DriveImportMetadata.wireTimestamp(metadata.createdAt),
+            updatedAt: DriveImportMetadata.wireTimestamp(metadata.updatedAt)
         )
         let _: APIFileMetadataResponse = try await patch(
             "/api/v1/drive/files/\(fileID)/import-metadata", body: body
         )
     }
-
-    /// RFC 3339 in UTC — one of the three shapes `parse_import_timestamp` accepts, and the
-    /// only one that pins the instant rather than a local wall clock. A date sent without a
-    /// zone would be read as UTC and shift a late-evening photo onto the next day.
-    private static let importTimestampFormatter: ISO8601DateFormatter = {
-        let f = ISO8601DateFormatter()
-        f.formatOptions = [.withInternetDateTime]
-        f.timeZone = TimeZone(secondsFromGMT: 0)
-        return f
-    }()
 
     // MARK: - Raw folder paging
 

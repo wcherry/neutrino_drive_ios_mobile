@@ -67,7 +67,7 @@ struct NeutrinoDriveApp: App {
         // `BGProcessingTask`, and it relaunches it the same way to deliver finished
         // background transfers. No scene means no view body, which means `.task` never
         // runs — so anything wired there does not exist on precisely the launches photo
-        // sync depends on. Left unwired, `PhotoSyncService` has no `uploadHandler` and no
+        // sync depends on. Left unwired, `PhotoSyncService` has no `uploadPreparer` and no
         // `folderResolver`, so every background upload threw `notAuthenticated` and the
         // photo burned an attempt against its retry budget; after five it landed in
         // `failed`, recoverable only by tapping "Retry Failed" in Settings. The

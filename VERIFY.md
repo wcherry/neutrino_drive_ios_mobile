@@ -1,3 +1,73 @@
+# Manual Verification: photo sync latency, Phase 1 (#38)
+
+Design: `agent_docs/research/2026-10-09-photo-sync-latency.md`. Backend half:
+`wcherry/neutrino` branch `feature/photo-sync-single-request`, which must be deployed first —
+see its `VERIFY.md` for the API-level checks.
+
+## Prerequisites
+
+- Backend from `feature/photo-sync-single-request` running locally, or deployed.
+- Drive built from this branch on a **real device** (the Simulator neither suspends the app
+  nor runs a background `URLSession` the way iOS does), signed in, key imported.
+- Photo Sync on, with a few dozen photos to back up: set **Include Older Photos** to
+  *Last 7 Days* (or take a burst).
+- Console.app filtered to the device, subsystem `com.neutrino.drive`, to watch
+  `PhotoSyncService` / `E2EEUploader` / `BackgroundTransferService`.
+
+## Steps
+
+### Happy path — one request per photo
+
+1. Turn on photo sync. Watch the server log or a proxy (Proxyman/Charles).
+   → Each photo is **one** `POST /api/v1/drive/files/upload`. There is no
+   `PUT /files/{id}/key` and no `PATCH /files/{id}/import-metadata` after it.
+2. Open a backed-up photo in Drive.
+   → It decrypts and previews, and its date is the date it was **taken**.
+3. In the web app, open the same photo.
+   → It decrypts there too (the key stored with the upload is the account's key).
+
+### Happy path — a batch goes to iOS at once
+
+1. Queue ~30 photos, open Settings → Photo Sync, and watch Status.
+   → "Uploading … (n of 30)" counts up quickly — preparing, not uploading — then reads
+   "Sending N photos" while the transfers run. Console shows up to 12 `prepared … body`
+   lines before the first `upload succeeded`.
+2. As soon as Status reads "Sending N photos", lock the phone and leave it for 10 minutes on
+   Wi-Fi.
+   → Unlock: every photo that was "Sending" is backed up (Status *Up to date* or fewer
+   waiting), although the app was suspended the whole time.
+
+### Transfers that finish while the app is dead
+
+1. Queue ~20 photos. When Status reads "Sending …", lock the phone so iOS suspends the app,
+   then wait. (Don't force-quit from the app switcher: iOS cancels a force-quit app's
+   background transfers, so that tests nothing.)
+2. Console: on the relaunch iOS performs to deliver the transfers, look for
+   `recorded orphaned transfer result for upload-photo-sync:…` followed by
+   `upload succeeded` — without the app being opened.
+3. Open the app.
+   → Those photos are not uploaded again: the backup folder has exactly one copy of each.
+
+### Edge cases
+
+1. **Wi-Fi only**: with *Upload on Wi-Fi Only* on, queue photos on Wi-Fi, then switch Wi-Fi
+   off while "Sending …" shows. → The transfers pause rather than going over cellular, and
+   resume when Wi-Fi returns.
+2. **Older server**: point the app at a backend without `feature/photo-sync-single-request`.
+   → Photos still back up, decrypt, and get their capture date — via the `PUT /key` and
+   `PATCH /import-metadata` follow-ups, which reappear in the proxy.
+3. **Expired token**: leave 30+ photos "Sending" on a slow link for over 15 minutes.
+   → Late transfers may fail 401 once; they are prepared again on the next drain, not marked
+   failed.
+4. **Folder deleted**: delete *iPhone Photos* on the web mid-batch.
+   → The next photos 404 once, the folder is recreated, and they land in it.
+
+## Cleanup
+
+Delete this section once Phase 1 has shipped and proven stable.
+
+---
+
 # Manual Verification: photo capture dates (#31) and durable upload keys (#33)
 
 ## Prerequisites

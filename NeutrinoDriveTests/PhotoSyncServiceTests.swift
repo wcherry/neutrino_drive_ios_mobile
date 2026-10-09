@@ -37,6 +37,29 @@ private struct IdentifyingAssetExporter: PhotoAssetExporting {
     }
 }
 
+/// Fails the test if PhotoKit is ever asked for bytes.
+private struct UnusableAssetExporter: PhotoAssetExporting {
+    func exportData(for identifier: String, includeVideos: Bool,
+                    networkAccessAllowed: Bool) async throws -> PhotoExport {
+        XCTFail("\(identifier) was exported, but an earlier upload of it was there to collect")
+        throw PhotoExportError.exportFailed
+    }
+}
+
+extension PhotoSyncService {
+    /// Most tests describe one whole upload and don't care where preparing ends and sending
+    /// begins. The handler runs as the *send* — after the photo has been prepared, and
+    /// possibly after later photos have been prepared too.
+    var uploadHandler: ((PhotoExport, String?, String) async throws -> UploadResult)? {
+        get { nil }
+        set {
+            uploadPreparer = newValue.map { handler in
+                { request in { try await handler(request.export, request.parentFolderID, request.uploadID) } }
+            }
+        }
+    }
+}
+
 // MARK: - PhotoSyncServiceTests
 
 @MainActor
@@ -438,16 +461,20 @@ final class PhotoSyncServiceTests: XCTestCase {
         sut.isOnWiFi = true
         sut.folderResolver = { _, _ in "folder-1" }
 
-        var uploadCallCount = 0
-        sut.uploadHandler = { export, parentFolderID, _ in
-            uploadCallCount += 1
-            return UploadResult(id: "file-\(uploadCallCount)", name: export.fileName,
-                                folderId: parentFolderID, sizeBytes: Int64(export.data.count),
-                                mimeType: export.mimeType, updatedAt: Date())
+        var prepareCount = 0
+        sut.uploadPreparer = { request in
+            prepareCount += 1
+            let id = "file-\(prepareCount)"
+            return {
+                UploadResult(id: id, name: request.export.fileName,
+                             folderId: request.parentFolderID,
+                             sizeBytes: Int64(request.export.data.count),
+                             mimeType: request.export.mimeType, updatedAt: Date())
+            }
         }
 
         // Distinct creation dates: `drainable()` orders oldest-first, so asset-1 is the one
-        // the single permitted upload consumes.
+        // the single permitted preparation consumes.
         let base = Date(timeIntervalSince1970: 1_000_000)
         sut.enqueueIfNeeded([
             FakePhotoAsset(localIdentifier: "asset-1", creationDate: base),
@@ -456,11 +483,13 @@ final class PhotoSyncServiceTests: XCTestCase {
         ])
         XCTAssertEqual(sut.pendingCount, 3)
 
-        // Expires the moment the first upload lands.
+        // Expires the moment the first photo has been handed off.
         _ = await sut.drain(ignoringPowerConstraint: false,
-                            isBackgroundExpired: { uploadCallCount >= 1 })
+                            isBackgroundExpired: { prepareCount >= 1 })
+        // The transfer handed off before expiry is iOS's to finish, and still lands.
+        await sut.debugSettle()
 
-        XCTAssertEqual(uploadCallCount, 1, "Expiry must actually stop the loop, not just be recorded")
+        XCTAssertEqual(prepareCount, 1, "Expiry must actually stop the loop, not just be recorded")
         XCTAssertTrue(sut.debugIsCompleted("asset-1"))
         XCTAssertEqual(sut.pendingCount, 2)
         XCTAssertEqual(sut.failedCount, 0, "An interrupted run must not consume anyone's retry budget")
@@ -470,6 +499,209 @@ final class PhotoSyncServiceTests: XCTestCase {
             XCTAssertNil(sut.debugPendingEntry(id)?.nextAttemptAfter,
                          "\(id) must be eligible immediately on the next run, not sitting in backoff")
         }
+    }
+
+    // MARK: - Pipelining (issue #38)
+    //
+    // Preparing a photo needs PhotoKit and the whole file in memory; sending it needs neither.
+    // A drain that waited for each transfer before preparing the next moved about one photo
+    // per background wake-up, because the next one could only be prepared once iOS relaunched
+    // the app to deliver the previous completion.
+
+    /// Wires a service whose sends are held until released, recording how many overlap.
+    private func makePipelineSUT(photos: Int) -> (PhotoSyncService, PipelineProbe) {
+        let (sut, defaults) = makeSUT(enabled: true)
+        defaults.set(Date.distantPast, forKey: PhotoSyncService.Keys.anchorDate)
+        sut.hasAccessTokenProvider = { true }
+        sut.hasStoredKeysProvider = { true }
+        sut.isOnWiFi = true
+        sut.folderResolver = { _, _ in "folder-1" }
+
+        let probe = PipelineProbe()
+        sut.uploadPreparer = { request in
+            probe.prepared += 1
+            return {
+                probe.sending += 1
+                probe.mostSendingAtOnce = max(probe.mostSendingAtOnce, probe.sending)
+                // Hold the send open long enough for the drain to prepare the next photo,
+                // if it is going to.
+                for _ in 0..<20 { await Task.yield() }
+                probe.sending -= 1
+                return UploadResult(id: "file-\(request.uploadID)", name: request.export.fileName,
+                                    folderId: request.parentFolderID, sizeBytes: 1,
+                                    mimeType: request.export.mimeType, updatedAt: Date())
+            }
+        }
+
+        let base = Date(timeIntervalSince1970: 1_000_000)
+        sut.enqueueIfNeeded((0..<photos).map {
+            FakePhotoAsset(localIdentifier: "asset-\($0)", creationDate: base.addingTimeInterval(Double($0)))
+        })
+        return (sut, probe)
+    }
+
+    @MainActor
+    private final class PipelineProbe {
+        var prepared = 0
+        var sending = 0
+        var mostSendingAtOnce = 0
+    }
+
+    func test_drain_preparesTheNextPhotoWithoutWaitingForTheLastOneToArrive() async {
+        let (sut, probe) = makePipelineSUT(photos: 4)
+
+        _ = await sut.drain(ignoringPowerConstraint: false)
+
+        XCTAssertEqual(probe.prepared, 4)
+        XCTAssertGreaterThan(probe.mostSendingAtOnce, 1,
+                             "Photos must be handed to iOS together, not one per completed transfer")
+        XCTAssertEqual(sut.pendingCount, 0)
+        XCTAssertEqual(sut.status, .idle)
+    }
+
+    func test_drain_neverHasMoreThanTheLimitInFlight() async {
+        let (sut, probe) = makePipelineSUT(photos: 6)
+        sut.maxTransfersInFlight = 2
+
+        _ = await sut.drain(ignoringPowerConstraint: false)
+
+        XCTAssertLessThanOrEqual(probe.mostSendingAtOnce, 2)
+        XCTAssertEqual(probe.prepared, 6)
+        XCTAssertEqual(sut.pendingCount, 0, "The limit throttles the queue; it must not strand it")
+    }
+
+    /// A `BGTask` drain with nothing left to prepare releases the task instead of watching
+    /// iOS's transfers until the task expires.
+    func test_backgroundDrain_returnsOnceEverythingIsHandedOff_withoutWaitingForArrival() async {
+        let (sut, defaults) = makeSUT(enabled: true)
+        defaults.set(Date.distantPast, forKey: PhotoSyncService.Keys.anchorDate)
+        sut.hasAccessTokenProvider = { true }
+        sut.hasStoredKeysProvider = { true }
+        sut.isOnWiFi = true
+        sut.folderResolver = { _, _ in "folder-1" }
+        let gate = Gate()
+        sut.uploadPreparer = { _ in
+            {
+                await gate.wait()
+                return UploadResult(id: "f", name: "n", folderId: nil, sizeBytes: 1,
+                                    mimeType: "image/jpeg", updatedAt: Date())
+            }
+        }
+        sut.enqueueIfNeeded([FakePhotoAsset(localIdentifier: "asset-1", creationDate: Date())])
+
+        _ = await sut.drain(ignoringPowerConstraint: false, isBackgroundExpired: { false })
+
+        XCTAssertEqual(sut.status, .transferring(count: 1))
+        XCTAssertFalse(sut.debugIsCompleted("asset-1"), "Its transfer has not landed yet")
+
+        gate.open()
+        await sut.debugSettle()
+        XCTAssertTrue(sut.debugIsCompleted("asset-1"), "…and is still recorded when it does")
+    }
+
+    @MainActor
+    private final class Gate {
+        private var isOpen = false
+        private var waiters: [CheckedContinuation<Void, Never>] = []
+        func wait() async {
+            guard !isOpen else { return }
+            await withCheckedContinuation { waiters.append($0) }
+        }
+        func open() {
+            isOpen = true
+            waiters.forEach { $0.resume() }
+            waiters.removeAll()
+        }
+    }
+
+    func test_drain_keepsWiFiOnlyTransfersOffCellular_evenAfterTheyAreHandedOff() async {
+        // Prepared on Wi-Fi, a transfer can still be waiting in the background session when
+        // the phone walks out of range. The request itself has to say "not on cellular".
+        let (sut, defaults) = makeSUT(enabled: true)
+        defaults.set(Date.distantPast, forKey: PhotoSyncService.Keys.anchorDate)
+        sut.hasAccessTokenProvider = { true }
+        sut.hasStoredKeysProvider = { true }
+        sut.isOnWiFi = true
+        sut.folderResolver = { _, _ in "folder-1" }
+        var allowed: [Bool] = []
+        sut.uploadPreparer = { request in
+            allowed.append(request.allowsExpensiveNetworkAccess)
+            return { UploadResult(id: "f", name: "n", folderId: nil, sizeBytes: 1,
+                                  mimeType: "image/jpeg", updatedAt: Date()) }
+        }
+
+        sut.enqueueIfNeeded([FakePhotoAsset(localIdentifier: "asset-1", creationDate: Date())])
+        _ = await sut.drain(ignoringPowerConstraint: false)
+        sut.wifiOnly = false
+        sut.enqueueIfNeeded([FakePhotoAsset(localIdentifier: "asset-2", creationDate: Date())])
+        _ = await sut.drain(ignoringPowerConstraint: false)
+
+        XCTAssertEqual(allowed, [false, true])
+    }
+
+    // MARK: - Earlier attempts
+
+    func test_drain_collectsAnEarlierUpload_insteadOfExportingThePhotoAgain() async {
+        let (sut, defaults) = makeSUT(enabled: true, exporter: UnusableAssetExporter())
+        defaults.set(Date.distantPast, forKey: PhotoSyncService.Keys.anchorDate)
+        sut.hasAccessTokenProvider = { true }
+        sut.hasStoredKeysProvider = { true }
+        sut.isOnWiFi = true
+        sut.uploadPreparer = { _ in
+            XCTFail("An earlier upload was there to collect; preparing again would send a second copy")
+            throw UploadError.encryptionFailed
+        }
+        sut.earlierUploadCollector = { uploadID in
+            XCTAssertEqual(uploadID, "photo-sync:asset-1")
+            return { UploadResult(id: "file-from-before", name: "IMG.jpg", folderId: nil,
+                                  sizeBytes: 1, mimeType: "image/jpeg", updatedAt: Date()) }
+        }
+
+        sut.enqueueIfNeeded([FakePhotoAsset(localIdentifier: "asset-1", creationDate: Date())])
+        _ = await sut.drain(ignoringPowerConstraint: false)
+
+        XCTAssertEqual(sut.debugCompletedFileID("asset-1"), "file-from-before")
+    }
+
+    /// A transfer that lands in a process iOS launched only to deliver it has nobody waiting
+    /// for it. Collected at once, the photo is done; left for "later", its result dies with
+    /// the process and the photo goes up a second time.
+    func test_collectFinishedTransfer_completesTheEntryItBelongsTo() async {
+        let (sut, defaults) = makeSUT(enabled: true, exporter: UnusableAssetExporter())
+        defaults.set(Date.distantPast, forKey: PhotoSyncService.Keys.anchorDate)
+        sut.hasAccessTokenProvider = { true }
+        sut.hasStoredKeysProvider = { true }
+        sut.isOnWiFi = true
+        sut.earlierUploadCollector = { _ in
+            { UploadResult(id: "file-delivered", name: "IMG.jpg", folderId: nil, sizeBytes: 1,
+                           mimeType: "image/jpeg", updatedAt: Date()) }
+        }
+        sut.enqueueIfNeeded([FakePhotoAsset(localIdentifier: "asset-1", creationDate: Date())])
+
+        let transferID = E2EEUploader.blobTransferID(
+            uploadID: PhotoSyncService.uploadID(forAssetIdentifier: "asset-1"))
+        await sut.collectFinishedTransfer(transferID: transferID)
+
+        XCTAssertEqual(sut.debugCompletedFileID("asset-1"), "file-delivered")
+        XCTAssertEqual(sut.pendingCount, 0)
+    }
+
+    func test_collectFinishedTransfer_ignoresTransfersThatAreNotPhotoSync() async {
+        let (sut, _) = makeSUT(enabled: true)
+        sut.earlierUploadCollector = { _ in
+            XCTFail("Only photo-sync transfers belong to the queue")
+            return nil
+        }
+
+        await sut.collectFinishedTransfer(transferID: "upload-6F1C2B9A")
+    }
+
+    func test_assetIdentifier_roundTripsThroughTheTransferID() {
+        let id = "ABC-123/L0/001"
+        let transferID = E2EEUploader.blobTransferID(
+            uploadID: PhotoSyncService.uploadID(forAssetIdentifier: id))
+        XCTAssertEqual(PhotoSyncService.assetIdentifier(forTransferID: transferID), id)
+        XCTAssertNil(PhotoSyncService.assetIdentifier(forTransferID: "download-xyz"))
     }
 
     func test_drain_permanentServerError_movesEntryToFailedImmediately() async {
@@ -648,11 +880,11 @@ final class PhotoSyncServiceTests: XCTestCase {
         // The exporter names each file after its identifier, so the upload order is observable.
         sut.assetExporter = IdentifyingAssetExporter()
         var uploadOrder: [String] = []
-        sut.uploadHandler = { export, parentFolderID, _ in
-            uploadOrder.append(export.fileName)
-            return UploadResult(id: "file-1", name: export.fileName, folderId: parentFolderID,
-                                sizeBytes: Int64(export.data.count), mimeType: export.mimeType,
-                                updatedAt: Date())
+        sut.uploadPreparer = { request in
+            uploadOrder.append(request.export.fileName)
+            return { UploadResult(id: "file-1", name: request.export.fileName,
+                                  folderId: request.parentFolderID, sizeBytes: 1,
+                                  mimeType: request.export.mimeType, updatedAt: Date()) }
         }
 
         sut.enqueueIfNeeded([
@@ -666,14 +898,58 @@ final class PhotoSyncServiceTests: XCTestCase {
         XCTAssertEqual(uploadOrder, ["new", "backlog"])
     }
 
-    // MARK: - Capture dates (issue #31)
+    // MARK: - Capture dates (issues #31, #38)
     //
-    // Nothing in the upload request carries a date, so the server stamps its own clock and a
-    // year of camera roll lands on the afternoon it was uploaded. The correction is a second
-    // call, after the content — the content write is what sets `updated_at`, so a date sent
-    // with the upload would be overwritten a moment later.
+    // Without a date the server stamps its own clock, and a year of camera roll lands on the
+    // afternoon it was uploaded. The upload carries the dates itself; a server that predates
+    // those fields ignores them, says so by not echoing the provenance back, and gets a
+    // second call after the content instead.
 
-    /// Wires a service whose upload always succeeds, and captures what gets stamped.
+    func test_drain_sendsTheCaptureDatesAndProvenanceWithTheUpload() async {
+        let captured = Date(timeIntervalSince1970: 1_562_198_400)
+        let edited   = Date(timeIntervalSince1970: 1_700_000_000)
+        let (sut, defaults) = makeSUT(enabled: true)
+        defaults.set(Date.distantPast, forKey: PhotoSyncService.Keys.anchorDate)
+        sut.hasAccessTokenProvider = { true }
+        sut.hasStoredKeysProvider = { true }
+        sut.folderResolver = { _, _ in "folder-1" }
+        var sent: DriveImportMetadata?
+        sut.uploadPreparer = { request in
+            sent = request.importMetadata
+            return { UploadResult(id: "f", name: "n", folderId: nil, sizeBytes: 1,
+                                  mimeType: "image/jpeg", updatedAt: Date()) }
+        }
+
+        sut.enqueueIfNeeded([FakePhotoAsset(localIdentifier: "asset-1", creationDate: captured,
+                                            modificationDate: edited)])
+        _ = await sut.drain(ignoringPowerConstraint: false)
+
+        XCTAssertEqual(sent, DriveImportMetadata(createdAt: captured, updatedAt: edited,
+                                                 importSource: "photo-sync:asset-1"))
+    }
+
+    /// The whole point of sending them with the body: once the server has them, there is no
+    /// follow-up request for the app to stay awake for.
+    func test_drain_sendsNoDatePatch_whenTheServerStoredTheDatesWithTheUpload() async {
+        let (sut, defaults) = makeSUT(enabled: true)
+        defaults.set(Date.distantPast, forKey: PhotoSyncService.Keys.anchorDate)
+        sut.hasAccessTokenProvider = { true }
+        sut.hasStoredKeysProvider = { true }
+        sut.folderResolver = { _, _ in "folder-1" }
+        sut.uploadPreparer = { request in
+            { UploadResult(id: "f", name: "n", folderId: nil, sizeBytes: 1, mimeType: "image/jpeg",
+                           updatedAt: Date(), importSource: request.importMetadata.importSource) }
+        }
+        sut.importMetadataStamper = { _, _ in XCTFail("The server already has the dates") }
+
+        sut.enqueueIfNeeded([FakePhotoAsset(localIdentifier: "asset-1", creationDate: Date())])
+        _ = await sut.drain(ignoringPowerConstraint: false)
+
+        XCTAssertTrue(sut.debugIsCompleted("asset-1"))
+    }
+
+    /// Wires a service whose upload always succeeds against a server that does not echo the
+    /// provenance — one that predates dates on upload — and captures what gets stamped.
     private func makeStampingSUT(
         exporter: PhotoAssetExporting = FakeAssetExporter(),
         stamp: @escaping (String, DriveImportMetadata) async throws -> Void
@@ -747,7 +1023,7 @@ final class PhotoSyncServiceTests: XCTestCase {
         _ = await sut.drain(ignoringPowerConstraint: false)
 
         XCTAssertEqual(stampedFileID, "file-77",
-                       "uploadWithFolderRetry used to discard the UploadResult, which threw away the one id needed to patch the file")
+                       "The upload path once discarded the UploadResult, which threw away the one id needed to patch the file")
     }
 
     func test_drain_recordsTheUploadedFileIDInTheCompletedLedger() async {

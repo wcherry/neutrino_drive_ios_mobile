@@ -176,12 +176,36 @@ final class PHKitAssetExporter: PhotoAssetExporting {
     }
 }
 
+// MARK: - PhotoUploadRequest
+
+/// Everything one photo's upload is prepared from.
+struct PhotoUploadRequest {
+    let export: PhotoExport
+    let parentFolderID: String?
+    /// The upload's stable identity — see ``PhotoSyncService/uploadID(forAssetIdentifier:)``.
+    let uploadID: String
+    /// The photo's capture and edit dates, sent with the body.
+    let importMetadata: DriveImportMetadata
+    /// `false` when photo sync is Wi-Fi only: the transfer may start long after it was
+    /// prepared, on whatever network the phone has by then.
+    let allowsExpensiveNetworkAccess: Bool
+}
+
+/// The second half of an upload: sends what was prepared and returns the server's answer.
+typealias PhotoUploadSubmission = () async throws -> UploadResult
+
+/// An earlier attempt the drain expected to collect was no longer there to collect. Not a
+/// failure of the photo — it is simply prepared again, at no cost to its retry budget.
+private struct EarlierUploadVanished: Error {}
+
 // MARK: - PhotoSyncStatus
 
 enum PhotoSyncStatus: Equatable {
     case disabled
     case idle
     case uploading(name: String, index: Int, total: Int)
+    /// Every queued photo is prepared and handed to iOS; only the transfers are left.
+    case transferring(count: Int)
     case waitingForWiFi
     case waitingToCharge
     case pausedMissingKey
@@ -195,6 +219,7 @@ enum PhotoSyncStatus: Equatable {
         case .disabled:                          return "Off"
         case .idle:                              return "Up to date"
         case .uploading(let name, let i, let n):  return "Uploading \(name) (\(i) of \(n))"
+        case .transferring(let count):           return "Sending \(count) photo\(count == 1 ? "" : "s")"
         case .waitingForWiFi:                    return "Waiting for Wi-Fi"
         case .waitingToCharge:                   return "Waiting to charge"
         case .pausedMissingKey:                  return "Paused — import your encryption key"
@@ -375,25 +400,37 @@ final class PhotoSyncService: NSObject, ObservableObject {
     /// a spy/closure directly.
     var folderResolver: ((String, String?) async throws -> String)?
 
-    /// Encrypts-and-uploads an export. Wired to `uploadService.upload(data:...)` in
+    /// Prepares one photo's upload — encrypts it and writes the complete request body to disk —
+    /// and returns what sends it. Wired to `uploadService.prepareUpload` / `submit` in
     /// `configure`; tests inject a fake that skips the network entirely.
     ///
-    /// Takes the whole `PhotoExport` rather than its fields spread out: it grew a cover
-    /// thumbnail the uploader cannot re-derive cheaply, and threading each new piece of an
-    /// export through as another positional argument is how a seam ends up with six of them.
-    /// The third argument is the upload's stable identity — see
-    /// ``E2EEUploader/upload(data:fileName:mimeType:parentFolderID:thumbnailBase64:uploadID:progress:)``.
-    /// It is separate from the export because it identifies the *transfer*, not the bytes:
-    /// two attempts at the same asset share it, and it is what lets the second one finish
-    /// what the first left half-committed.
-    var uploadHandler: ((PhotoExport, String?, String) async throws -> UploadResult)?
+    /// Two halves because they have different limits. Preparing holds the whole photo in
+    /// memory and needs PhotoKit, so photos are prepared one at a time. Sending needs neither,
+    /// and is mostly waiting on iOS's transfer daemon, so many are sent at once — see
+    /// ``maxTransfersInFlight``. A drain that awaited each transfer before preparing the next
+    /// moved about one photo per wake-up in the background (issue #38).
+    var uploadPreparer: ((PhotoUploadRequest) async throws -> PhotoUploadSubmission)?
+
+    /// What collects an earlier attempt at an upload id, or `nil` when there is none.
+    ///
+    /// After a relaunch, a queued photo's transfer may already be finished, or still running,
+    /// in the background session; or its bytes may be committed with only the key left to
+    /// send. Collecting that is cheap and preparing again is not — and sending again would
+    /// make a second file. Wired to `uploadService` in `configure`; tests leave it `nil`.
+    var earlierUploadCollector: ((String) async -> PhotoUploadSubmission?)?
+
+    /// How many prepared uploads may be waiting on the network at once.
+    ///
+    /// Each holds its body in a temp file until it finishes, so this bounds the disk a backlog
+    /// can take; and each carries a bearer token that expires in 15 minutes, so a transfer
+    /// that waits behind too many others starts too late to be accepted. Settable for tests.
+    var maxTransfersInFlight = 12
 
     /// Applies a file's real dates and provenance once its content is in place. Wired to
     /// `driveService.setImportMetadata` in `configure`; tests inject a spy.
     ///
-    /// A seam of its own rather than a step inside `uploadHandler`, because it is a different
-    /// call to a different endpoint whose failure must not cost the entry — see
-    /// ``stampCaptureDates(on:from:)``.
+    /// Only used against a server that did not store the dates sent with the upload — see
+    /// ``stampCaptureDatesIfNeeded(on:from:)``.
     var importMetadataStamper: ((String, DriveImportMetadata) async throws -> Void)?
 
     /// Reads one page of the photo-sync destination folder. Wired to
@@ -424,7 +461,7 @@ final class PhotoSyncService: NSObject, ObservableObject {
     weak var driveService: DriveService?
     weak var uploadService: UploadService?
 
-    /// Wires `folderResolver`/`uploadHandler`/`tokenRefresher` to real dependencies. Call once
+    /// Wires `folderResolver`/`uploadPreparer`/`tokenRefresher` to real dependencies. Call once
     /// at launch — from `NeutrinoDriveApp.init()`, so a scene-less background launch is wired
     /// too.
     func configure(driveService: DriveService, uploadService: UploadService, authService: AuthService) {
@@ -434,14 +471,31 @@ final class PhotoSyncService: NSObject, ObservableObject {
             guard let driveService else { throw DriveError.notAuthenticated }
             return try await driveService.ensureFolder(named: name, parentID: parentID)
         }
-        uploadHandler = { [weak uploadService] export, parentFolderID, uploadID in
+        uploadPreparer = { [weak uploadService] request in
             guard let uploadService else { throw UploadError.notAuthenticated }
-            return try await uploadService.upload(data: export.data, fileName: export.fileName,
-                                                  mimeType: export.mimeType,
-                                                  parentFolderID: parentFolderID,
-                                                  reportsProgress: false,
-                                                  thumbnailBase64: export.thumbnailBase64,
-                                                  uploadID: uploadID)
+            let prepared = try await uploadService.prepareUpload(
+                data: request.export.data, fileName: request.export.fileName,
+                mimeType: request.export.mimeType, parentFolderID: request.parentFolderID,
+                thumbnailBase64: request.export.thumbnailBase64, uploadID: request.uploadID,
+                importMetadata: request.importMetadata,
+                allowsExpensiveNetworkAccess: request.allowsExpensiveNetworkAccess
+            )
+            return { [weak uploadService] in
+                guard let uploadService else { throw UploadError.notAuthenticated }
+                return try await uploadService.submit(prepared)
+            }
+        }
+        earlierUploadCollector = { [weak uploadService] uploadID in
+            guard let uploadService, await uploadService.hasEarlierUpload(uploadID: uploadID) else {
+                return nil
+            }
+            return { [weak uploadService] in
+                guard let uploadService,
+                      let result = try await uploadService.earlierUpload(uploadID: uploadID) else {
+                    throw EarlierUploadVanished()
+                }
+                return result
+            }
         }
         importMetadataStamper = { [weak driveService] fileID, metadata in
             guard let driveService else { throw DriveError.notAuthenticated }
@@ -454,6 +508,13 @@ final class PhotoSyncService: NSObject, ObservableObject {
         tokenRefresher = { [weak authService] in
             await authService?.refreshTokenIfNeeded()
         }
+        // A photo's transfer can finish in a process that never ran a drain — iOS relaunches the
+        // app with no UI just to deliver it. Collected here, the photo is marked done before that
+        // process is suspended for good; left alone, the result dies with it and the photo is
+        // uploaded a second time. Wired here, in `init()`, because that relaunch runs nothing else.
+        BackgroundTransferService.shared.setOrphanHandler { [weak self] transferID in
+            Task { @MainActor in await self?.collectFinishedTransfer(transferID: transferID) }
+        }
     }
 
     // MARK: - Private
@@ -465,6 +526,15 @@ final class PhotoSyncService: NSObject, ObservableObject {
     private var queue: PhotoSyncQueue
     private var isObserving = false
     private var isDraining = false
+    /// A drain was asked for while one was running. See ``drain(ignoringPowerConstraint:isBackgroundExpired:)``.
+    private var drainRequested = false
+    /// Entries with a transfer this process is waiting on. Never prepared a second time while
+    /// listed here; the drain and ``collectFinishedTransfer(transferID:)`` both check it.
+    private var inFlight: Set<String> = []
+    /// A drain parked until something it is waiting on changes. See ``wakeDrain()``.
+    private var drainWaiters: [CheckedContinuation<Void, Never>] = []
+    /// Entries that already had their one free retry for a stale folder id or token.
+    private var staleStateRetried: Set<String> = []
     /// Not a `let`: a cancelled `NWPathMonitor` cannot be restarted, so disabling and
     /// re-enabling photo sync has to swap in a fresh one.
     private var pathMonitor = NWPathMonitor()
@@ -899,15 +969,30 @@ final class PhotoSyncService: NSObject, ObservableObject {
     ///   has separately confirmed cellular use).
     /// - Parameter isBackgroundExpired: polled between items so the `BGProcessingTask`
     ///   expiration handler can stop the loop promptly.
+    ///
+    /// A drain asked for while one is running is not dropped: the running one is woken to take
+    /// in whatever changed, and another runs after it. The running drain may be parked on a
+    /// transfer, with an expiry flag from a background window that has long since closed — a
+    /// drain refused outright would leave a photo taken now waiting for that transfer.
     @discardableResult
     func drain(ignoringPowerConstraint: Bool, isBackgroundExpired: (() -> Bool)? = nil) async -> Bool {
-        guard !isDraining else { return false }
+        guard !isDraining else {
+            drainRequested = true
+            wakeDrain()
+            return false
+        }
 
         // Claimed before the first `await` below, not after the constraint checks: the
         // refresh suspends, and without the flag already set a second drain (the network
         // path monitor fires one on every change) would walk straight through this guard.
         isDraining = true
-        defer { isDraining = false }
+        defer {
+            isDraining = false
+            if drainRequested {
+                drainRequested = false
+                Task { await self.drain(ignoringPowerConstraint: false) }
+            }
+        }
 
         // Renew the token *before* deciding anything. A background drain is typically the
         // first thing to touch the network in hours, so its token is almost always stale —
@@ -945,28 +1030,62 @@ final class PhotoSyncService: NSObject, ObservableObject {
         beginDrainAssertion()
         defer { endDrainAssertion() }
 
+        // Prepare one photo at a time, but don't wait for its transfer before preparing the next:
+        // up to `maxTransfersInFlight` go to iOS together, and are carried by its transfer daemon
+        // while this process is suspended. Waiting for each one is what limited a background
+        // drain to about one photo per wake-up (issue #38).
         var uploadedAny = false
         let total = drainableEntries().count
         var index = 0
-        while let entry = drainableEntries().first {
+        while true {
             if drainAssertionExpired { break }
             if let isBackgroundExpired, isBackgroundExpired() { break }
-            index += 1
-            status = .uploading(name: entry.id, index: index, total: total)
-            await performUpload(entry)
-            uploadedAny = true
+            if inFlight.count < maxTransfersInFlight,
+               let entry = drainableEntries().first(where: { !inFlight.contains($0.id) }) {
+                index += 1
+                // `max`: a retry is counted again, and must not read "4 of 3".
+                status = .uploading(name: entry.id, index: index, total: max(total, index))
+                await startUpload(entry)
+                uploadedAny = true
+                continue
+            }
+            // Nothing more to prepare, or no room for it. Wait for a transfer to finish — it
+            // may free a slot, or come back asking to be prepared again.
+            guard !inFlight.isEmpty else { break }
+            // Except in a `BGTask` with nothing left to prepare: the transfers are iOS's now,
+            // and their results are collected whenever they land. Holding the task open to
+            // watch them would only run it into its expiry, which iOS counts against us.
+            if isBackgroundExpired != nil,
+               !drainableEntries().contains(where: { !inFlight.contains($0.id) }) { break }
+            status = .transferring(count: inFlight.count)
+            await waitForDrainEvent()
         }
 
         refreshCounts()
         if pendingCount == 0 {
             status = failedCount > 0 ? .failed(count: failedCount) : .idle
         } else {
+            if !inFlight.isEmpty { status = .transferring(count: inFlight.count) }
             // Stopped with work still queued — expiry, or an entry in backoff. Without a
             // pending request the queue would only move again the next time the user
             // happens to open the app.
             scheduleBackgroundTask()
         }
         return uploadedAny
+    }
+
+    /// Parks the drain until ``wakeDrain()``.
+    private func waitForDrainEvent() async {
+        await withCheckedContinuation { drainWaiters.append($0) }
+    }
+
+    /// Lets a parked drain look again: a transfer finished, time ran out, or another drain was
+    /// asked for. Everything here is main-actor state, so there is no window between the drain
+    /// deciding to wait and its continuation being registered.
+    private func wakeDrain() {
+        let waiters = drainWaiters
+        drainWaiters.removeAll()
+        waiters.forEach { $0.resume() }
     }
 
     // MARK: - Background execution assertion
@@ -981,7 +1100,7 @@ final class PhotoSyncService: NSObject, ObservableObject {
     ///
     /// Distinct from `BGProcessingTask`, which schedules a *later* run and does nothing for
     /// a run already under way, and from ``BackgroundTransferService``, which carries the
-    /// blob POST but not the PhotoKit export or the sealed-key `PUT` around it.
+    /// blob POST but not the PhotoKit export and encryption that prepare it.
     private func beginDrainAssertion() {
         guard drainAssertionID == .invalid else { return }
         drainAssertionExpired = false
@@ -999,6 +1118,8 @@ final class PhotoSyncService: NSObject, ObservableObject {
             // the queue is written to disk after every individual upload.
             self?.drainAssertionExpired = true
             self?.endDrainAssertion()
+            // A drain parked on a transfer would otherwise sleep through its own expiry.
+            self?.wakeDrain()
         }
     }
 
@@ -1030,54 +1151,96 @@ final class PhotoSyncService: NSObject, ObservableObject {
 
     // MARK: - Per-entry upload
 
-    private func performUpload(_ entry: PhotoSyncQueue.Entry) async {
+    /// Prepares `entry` and hands its transfer off, returning once it is on its way — not once
+    /// it has arrived. The outcome is recorded by ``finishUpload(_:outcome:)`` whenever it lands.
+    private func startUpload(_ entry: PhotoSyncQueue.Entry) async {
+        inFlight.insert(entry.id)
+        let submission: PhotoUploadSubmission
         do {
-            let export = try await assetExporter.exportData(
-                for: entry.id,
-                includeVideos: includeVideos,
-                networkAccessAllowed: !(wifiOnly && (!isOnWiFi || isNetworkExpensive))
-            )
-
-            if export.data.count > Int(Self.maxAssetSizeBytes) {
-                queue.markFailed(id: entry.id, error: "Too large for automatic backup", permanent: true)
-                persistQueue()
-                return
-            }
-
-            try await uploadWithFolderRetry(export: export, entry: entry)
-        } catch let error as UploadError {
-            queue.markFailed(id: entry.id, error: error.localizedDescription, permanent: isPermanent(error))
-            persistQueue()
+            submission = try await prepareUpload(entry)
         } catch {
-            queue.markFailed(id: entry.id, error: error.localizedDescription)
-            persistQueue()
+            inFlight.remove(entry.id)
+            recordFailure(of: entry, error)
+            return
+        }
+        Task {
+            let outcome: Result<UploadResult, Error>
+            do {
+                outcome = .success(try await submission())
+            } catch {
+                outcome = .failure(error)
+            }
+            await finishUpload(entry, outcome: outcome)
         }
     }
 
-    /// Uploads `export`, resolving the destination folder first, recovering once from either
-    /// of the two failures that are really "the state I cached went stale":
-    ///
-    /// - **404** — the cached folder ID was deleted or trashed server-side. Clear it, resolve
-    ///   again, upload again.
-    /// - **401** — the access token expired mid-drain. A drain can outlive the 15-minute token
-    ///   lifetime on a slow link or a long backlog, and `resolveDestinationFolder` does not
-    ///   renew it once the folder ID is cached, because it never reaches `DriveService`.
-    ///
-    /// Each is retried exactly once; a second failure is the caller's to record.
-    private func uploadWithFolderRetry(export: PhotoExport, entry: PhotoSyncQueue.Entry) async throws {
-        let folderID = try await resolveDestinationFolder()
+    /// Everything before the network: collect an earlier attempt if there is one, otherwise
+    /// export, check, and prepare.
+    private func prepareUpload(_ entry: PhotoSyncQueue.Entry) async throws -> PhotoUploadSubmission {
         let uploadID = Self.uploadID(forAssetIdentifier: entry.id)
-        let result: UploadResult
-        do {
-            result = try await upload(export: export, parentFolderID: folderID, uploadID: uploadID)
-        } catch UploadError.serverError(let code) where code == 404 {
-            defaults.removeObject(forKey: Keys.folderID)
-            let retriedFolderID = try await resolveDestinationFolder()
-            result = try await upload(export: export, parentFolderID: retriedFolderID, uploadID: uploadID)
-        } catch UploadError.serverError(let code) where code == 401 {
-            await tokenRefresher?()
-            result = try await upload(export: export, parentFolderID: folderID, uploadID: uploadID)
+        if let earlier = await earlierUploadCollector?(uploadID) {
+            logger.debug("collecting an earlier upload of \(entry.id, privacy: .public)")
+            return earlier
         }
+
+        let wifiOnlyBlocksCellular = wifiOnly && (!isOnWiFi || isNetworkExpensive)
+        let export = try await assetExporter.exportData(
+            for: entry.id,
+            includeVideos: includeVideos,
+            networkAccessAllowed: !wifiOnlyBlocksCellular
+        )
+        if export.data.count > Int(Self.maxAssetSizeBytes) {
+            throw OversizedAsset()
+        }
+
+        let folderID = try await resolveDestinationFolder()
+        guard let uploadPreparer else { throw UploadError.notAuthenticated }
+        return try await uploadPreparer(PhotoUploadRequest(
+            export: export,
+            parentFolderID: folderID,
+            uploadID: uploadID,
+            importMetadata: Self.importMetadata(for: entry),
+            allowsExpensiveNetworkAccess: !wifiOnly
+        ))
+    }
+
+    private struct OversizedAsset: Error {}
+
+    /// Records how a transfer ended and lets the drain look again.
+    ///
+    /// Two failures are really "the state I cached went stale", and each gets one free retry —
+    /// the entry stays pending at no cost to its budget, and the drain prepares it again:
+    ///
+    /// - **404** — the cached folder ID was deleted or trashed server-side. Cleared, so the
+    ///   retry resolves it afresh.
+    /// - **401** — the access token expired. A drain can outlive the 15-minute token lifetime
+    ///   on a slow link or a long backlog — and a prepared transfer can wait behind others —
+    ///   and nothing on the upload path renews it.
+    private func finishUpload(_ entry: PhotoSyncQueue.Entry, outcome: Result<UploadResult, Error>) async {
+        inFlight.remove(entry.id)
+        defer { wakeDrain() }
+
+        switch outcome {
+        case .success(let result):
+            staleStateRetried.remove(entry.id)
+            await recordSuccess(of: entry, result)
+        case .failure(UploadError.serverError(let code)) where code == 404
+                && !staleStateRetried.contains(entry.id):
+            staleStateRetried.insert(entry.id)
+            defaults.removeObject(forKey: Keys.folderID)
+        case .failure(UploadError.serverError(let code)) where code == 401
+                && !staleStateRetried.contains(entry.id):
+            staleStateRetried.insert(entry.id)
+            await tokenRefresher?()
+        case .failure(is EarlierUploadVanished):
+            break   // still pending and untouched; it is simply prepared again
+        case .failure(let error):
+            staleStateRetried.remove(entry.id)
+            recordFailure(of: entry, error)
+        }
+    }
+
+    private func recordSuccess(of entry: PhotoSyncQueue.Entry, _ result: UploadResult) async {
         queue.markCompleted(id: entry.id, fileID: result.id)
         lastSyncedAt = Date()
         defaults.set(lastSyncedAt, forKey: Keys.lastSuccessfulSync)
@@ -1085,32 +1248,89 @@ final class PhotoSyncService: NSObject, ObservableObject {
 
         // After the ledger, and after the content. The photo is safe at this point, which is
         // what lets the stamp fail without consequence.
-        await stampCaptureDates(on: result.id, from: entry)
+        await stampCaptureDatesIfNeeded(on: result, from: entry)
     }
 
-    /// Gives the uploaded file the date the picture was taken.
+    private func recordFailure(of entry: PhotoSyncQueue.Entry, _ error: Error) {
+        switch error {
+        case is OversizedAsset:
+            queue.markFailed(id: entry.id, error: "Too large for automatic backup", permanent: true)
+        case let error as UploadError:
+            queue.markFailed(id: entry.id, error: error.localizedDescription, permanent: isPermanent(error))
+        default:
+            queue.markFailed(id: entry.id, error: error.localizedDescription)
+        }
+        persistQueue()
+    }
+
+    // MARK: - Transfers that finish with nobody waiting
+
+    /// Records the outcome of a photo's transfer that finished with no drain waiting for it —
+    /// typically in a process iOS launched only to deliver it — and then tops the pipeline up.
     ///
-    /// **A second call, deliberately.** Writing the file's body is what stamps `updated_at`
-    /// with the server's clock, so a date sent alongside the content would be overwritten a
-    /// moment later — the reason `PATCH /drive/files/{id}/import-metadata` exists at all
-    /// (`wcherry/neutrino` #110) and the reason the Takeout runners are shaped this way.
+    /// The result is in memory only, so this is the one chance to record it: a photo whose
+    /// result dies with the process is prepared and uploaded again. That is also why the
+    /// relaunch is worth a drain: it is runtime, and the queue may hold more.
+    func collectFinishedTransfer(transferID: String) async {
+        guard let assetID = Self.assetIdentifier(forTransferID: transferID),
+              !inFlight.contains(assetID),
+              let entry = queue.pending.first(where: { $0.id == assetID }),
+              let collect = await earlierUploadCollector?(Self.uploadID(forAssetIdentifier: assetID)),
+              // Again, after the suspension: a drain may have taken the entry meanwhile.
+              !inFlight.contains(assetID),
+              queue.pending.contains(where: { $0.id == assetID }) else { return }
+
+        inFlight.insert(assetID)
+        let outcome: Result<UploadResult, Error>
+        do {
+            outcome = .success(try await collect())
+        } catch {
+            outcome = .failure(error)
+        }
+        await finishUpload(entry, outcome: outcome)
+        if FeatureFlags.photoAutoSync, isEnabled {
+            await drain(ignoringPowerConstraint: false)
+        }
+    }
+
+    /// The asset a photo-sync blob transfer id belongs to, or `nil` for any other transfer.
+    nonisolated static func assetIdentifier(forTransferID transferID: String) -> String? {
+        let prefix = E2EEUploader.blobTransferID(uploadID: uploadID(forAssetIdentifier: ""))
+        guard transferID.hasPrefix(prefix) else { return nil }
+        return String(transferID.dropFirst(prefix.count))
+    }
+
+    // MARK: - Capture dates
+
+    /// The dates and provenance a photo's Drive file should carry: when the picture was taken,
+    /// when it was last edited, and the asset it came from.
+    static func importMetadata(for entry: PhotoSyncQueue.Entry) -> DriveImportMetadata {
+        DriveImportMetadata(
+            createdAt: entry.creationDate,
+            updatedAt: entry.modificationDate ?? entry.creationDate,
+            importSource: importSource(forAssetIdentifier: entry.id)
+        )
+    }
+
+    /// Gives the uploaded file the date the picture was taken, when the upload did not already.
+    ///
+    /// The upload carries the dates itself, and a current server commits them with the file
+    /// — echoing the provenance back is how it says so. A server that predates those fields
+    /// ignores them, and the file has today's date until this `PATCH` corrects it.
     ///
     /// **Never fatal.** By the time this runs the bytes are committed and the entry is
     /// completed. Failing it would send a good photo back to `pending` and re-upload it on the
     /// next drain — a duplicate file, to fix a wrong date. A warning and the repair pass are
     /// the right answer; see ``repairPhotoDates()``.
-    private func stampCaptureDates(on fileID: String, from entry: PhotoSyncQueue.Entry) async {
-        guard let importMetadataStamper else { return }
-        let metadata = DriveImportMetadata(
-            createdAt: entry.creationDate,
-            updatedAt: entry.modificationDate ?? entry.creationDate,
-            importSource: Self.importSource(forAssetIdentifier: entry.id)
-        )
+    private func stampCaptureDatesIfNeeded(on result: UploadResult, from entry: PhotoSyncQueue.Entry) async {
+        let metadata = Self.importMetadata(for: entry)
+        guard result.importSource != metadata.importSource,
+              let importMetadataStamper else { return }
         do {
-            try await importMetadataStamper(fileID, metadata)
+            try await importMetadataStamper(result.id, metadata)
         } catch {
             logger.warning("""
-                import-metadata patch failed for \(fileID, privacy: .public): \
+                import-metadata patch failed for \(result.id, privacy: .public): \
                 \(error.localizedDescription, privacy: .public) — the photo is uploaded but \
                 keeps today's date until Repair Photo Dates is run
                 """)
@@ -1127,12 +1347,6 @@ final class PhotoSyncService: NSObject, ObservableObject {
     /// build the same string the upload path stamps.
     nonisolated static func importSource(forAssetIdentifier identifier: String) -> String {
         "photo-sync:\(identifier)"
-    }
-
-    private func upload(export: PhotoExport, parentFolderID: String?,
-                        uploadID: String) async throws -> UploadResult {
-        guard let uploadHandler else { throw UploadError.notAuthenticated }
-        return try await uploadHandler(export, parentFolderID, uploadID)
     }
 
     /// The stable upload identity for one asset.
@@ -1152,8 +1366,8 @@ final class PhotoSyncService: NSObject, ObservableObject {
     /// sends the identical bytes to the identical endpoint. The exceptions are the codes that
     /// describe a *momentary* condition rather than the request:
     ///
-    /// - **401** — the bearer token expired. `uploadWithFolderRetry` already refreshes and
-    ///   retries once; if one still reaches here, the next drain starts with a fresh token.
+    /// - **401** — the bearer token expired. `finishUpload` already refreshes and retries
+    ///   once; if one still reaches here, the next drain starts with a fresh token.
     ///   Treating this as permanent is what quietly destroyed background sync: every photo a
     ///   background drain touched went to `failed` on its *first* attempt, reachable only by
     ///   tapping "Retry Failed" in Settings.
@@ -1265,6 +1479,11 @@ final class PhotoSyncService: NSObject, ObservableObject {
     /// Seeds the completed ledger, for tests of things that read it — the repair pass builds
     /// its device-side lookup from exactly these identifiers.
     func debugMarkCompleted(_ id: String, fileID: String?) { queue.markCompleted(id: id, fileID: fileID) }
+    /// Waits until no transfer is in flight — for tests whose drain stopped before its
+    /// transfers finished, as an expired one does.
+    func debugSettle() async {
+        while !inFlight.isEmpty { await waitForDrainEvent() }
+    }
     #endif
 }
 
