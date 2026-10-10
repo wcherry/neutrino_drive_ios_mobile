@@ -89,10 +89,12 @@ final class PhotoSyncServiceTests: XCTestCase {
     }
 
     private func makeSUT(enabled: Bool = false, defaults: UserDefaults? = nil,
-                         exporter: PhotoAssetExporting = FakeAssetExporter()) -> (PhotoSyncService, UserDefaults) {
+                         exporter: PhotoAssetExporting = FakeAssetExporter(),
+                         queueStore: PhotoSyncQueueStore? = nil) -> (PhotoSyncService, UserDefaults) {
         let defaults = defaults ?? makeDefaults()
         if enabled { defaults.set(true, forKey: PhotoSyncService.Keys.enabled) }
-        let sut = PhotoSyncService(defaults: defaults, queueStore: makeStore(), assetExporter: exporter)
+        let sut = PhotoSyncService(defaults: defaults, queueStore: queueStore ?? makeStore(),
+                                   assetExporter: exporter)
         return (sut, defaults)
     }
 
@@ -694,6 +696,101 @@ final class PhotoSyncServiceTests: XCTestCase {
         }
 
         await sut.collectFinishedTransfer(transferID: "upload-6F1C2B9A")
+    }
+
+    // MARK: - Sharing the queue with the Photos extension
+
+    /// The extension has this one in its own background session; preparing it here too would
+    /// put a second copy on the server.
+    func test_drain_leavesAnEntryThePhotosExtensionClaimed() async {
+        let store = makeStore()
+        let (sut, defaults) = makeSUT(enabled: true, exporter: UnusableAssetExporter(), queueStore: store)
+        defaults.set(Date.distantPast, forKey: PhotoSyncService.Keys.anchorDate)
+        sut.hasAccessTokenProvider = { true }
+        sut.hasStoredKeysProvider = { true }
+        sut.isOnWiFi = true
+        sut.uploadHandler = { _, _, _ in
+            XCTFail("the Photos extension is sending this one")
+            throw UploadError.encryptionFailed
+        }
+        store.update {
+            $0.enqueue(id: "asset-1", creationDate: Date())
+            $0.markHandedOff(id: "asset-1", to: .photosExtension)
+        }
+
+        _ = await sut.drain(ignoringPowerConstraint: false)
+
+        XCTAssertNotNil(sut.debugPendingEntry("asset-1"))
+    }
+
+    func test_drain_claimsAnEntryBeforePreparingIt() async {
+        let store = makeStore()
+        let (sut, defaults) = makeSUT(enabled: true, queueStore: store)
+        defaults.set(Date.distantPast, forKey: PhotoSyncService.Keys.anchorDate)
+        defaults.set("cached-folder-id", forKey: PhotoSyncService.Keys.folderID)
+        sut.hasAccessTokenProvider = { true }
+        sut.hasStoredKeysProvider = { true }
+        sut.isOnWiFi = true
+        var claimWhilePreparing: PhotoSyncQueue.Handoff.Owner?
+        sut.uploadPreparer = { _ in
+            claimWhilePreparing = store.load().pending.first?.handoff?.owner
+            return { UploadResult(id: "file-1", name: "IMG.jpg", folderId: nil, sizeBytes: 1,
+                                  mimeType: "image/jpeg", updatedAt: Date()) }
+        }
+        sut.enqueueIfNeeded([FakePhotoAsset(localIdentifier: "asset-1", creationDate: Date())])
+
+        _ = await sut.drain(ignoringPowerConstraint: false)
+
+        XCTAssertEqual(claimWhilePreparing, .app)
+        XCTAssertEqual(sut.debugCompletedFileID("asset-1"), "file-1")
+    }
+
+    /// A completion the extension's session delivered to the app, for a photo only the
+    /// extension ever enqueued — so this process's copy of the queue has never seen it.
+    func test_collectFinishedTransfer_findsAnEntryOnlyTheExtensionEnqueued() async {
+        let store = makeStore()
+        let (sut, _) = makeSUT(enabled: true, exporter: UnusableAssetExporter(), queueStore: store)
+        sut.hasAccessTokenProvider = { true }
+        sut.hasStoredKeysProvider = { true }
+        sut.earlierUploadCollector = { _ in
+            { UploadResult(id: "file-from-extension", name: "IMG.jpg", folderId: nil, sizeBytes: 1,
+                           mimeType: "image/jpeg", updatedAt: Date()) }
+        }
+        store.update {
+            $0.enqueue(id: "asset-1", creationDate: Date())
+            $0.markHandedOff(id: "asset-1", to: .photosExtension)
+        }
+
+        let transferID = E2EEUploader.blobTransferID(
+            uploadID: PhotoSyncService.uploadID(forAssetIdentifier: "asset-1"))
+        await sut.collectFinishedTransfer(transferID: transferID)
+
+        XCTAssertEqual(store.load().completedFileID(for: "asset-1"), "file-from-extension")
+    }
+
+    /// The extension completing a photo must not be undone by the app writing back its own,
+    /// older copy of the queue.
+    func test_recordingAnOutcome_keepsWhatTheExtensionWroteMeanwhile() async {
+        let store = makeStore()
+        let (sut, defaults) = makeSUT(enabled: true, queueStore: store)
+        defaults.set(Date.distantPast, forKey: PhotoSyncService.Keys.anchorDate)
+        defaults.set("cached-folder-id", forKey: PhotoSyncService.Keys.folderID)
+        sut.hasAccessTokenProvider = { true }
+        sut.hasStoredKeysProvider = { true }
+        sut.isOnWiFi = true
+        sut.enqueueIfNeeded([FakePhotoAsset(localIdentifier: "asset-1", creationDate: Date())])
+        sut.uploadPreparer = { _ in
+            // While this process prepares, the extension finishes a photo of its own.
+            store.update { $0.markCompleted(id: "asset-from-extension", fileID: "file-x") }
+            return { UploadResult(id: "file-1", name: "IMG.jpg", folderId: nil, sizeBytes: 1,
+                                  mimeType: "image/jpeg", updatedAt: Date()) }
+        }
+
+        _ = await sut.drain(ignoringPowerConstraint: false)
+
+        let queue = store.load()
+        XCTAssertEqual(queue.completedFileID(for: "asset-1"), "file-1")
+        XCTAssertEqual(queue.completedFileID(for: "asset-from-extension"), "file-x")
     }
 
     func test_assetIdentifier_roundTripsThroughTheTransferID() {

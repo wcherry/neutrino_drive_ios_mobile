@@ -28,17 +28,58 @@ struct PhotoSyncQueue: Codable, Equatable {
         var attempts: Int
         var lastError: String?
         var nextAttemptAfter: Date?
+        /// Which process last handed this entry's transfer to its background session, and when.
+        /// See ``Handoff``. Optional, so a queue file from before the Photos extension loads.
+        var handoff: Handoff?
 
         init(id: String, creationDate: Date, modificationDate: Date? = nil, attempts: Int = 0,
-             lastError: String? = nil, nextAttemptAfter: Date? = nil) {
+             lastError: String? = nil, nextAttemptAfter: Date? = nil, handoff: Handoff? = nil) {
             self.id = id
             self.creationDate = creationDate
             self.modificationDate = modificationDate
             self.attempts = attempts
             self.lastError = lastError
             self.nextAttemptAfter = nextAttemptAfter
+            self.handoff = handoff
         }
     }
+
+    // MARK: - Handoff
+
+    /// A claim on an entry by the process whose background session is carrying its transfer.
+    ///
+    /// The app and the Photos extension drain the same queue, each into a background session of
+    /// its own, and neither can see the other's tasks. Without a claim, the app would prepare a
+    /// photo the extension already sent, and the server would get a second copy. So an entry
+    /// handed to one process's session is left alone by the other until ``handoffLease`` runs
+    /// out. The owner itself ignores its own claim: it can ask its own session.
+    struct Handoff: Codable, Equatable {
+        let owner: Owner
+        let at: Date
+
+        /// A string rather than an enum, so a queue written by a later build that knows of
+        /// another owner still decodes here. Failing to decode would mean an empty queue, and
+        /// an empty ledger means the whole library uploads again.
+        struct Owner: RawRepresentable, Codable, Hashable {
+            let rawValue: String
+            init(rawValue: String) { self.rawValue = rawValue }
+            init(from decoder: Decoder) throws {
+                rawValue = try decoder.singleValueContainer().decode(String.self)
+            }
+            func encode(to encoder: Encoder) throws {
+                var container = encoder.singleValueContainer()
+                try container.encode(rawValue)
+            }
+
+            static let app = Owner(rawValue: "app")
+            static let photosExtension = Owner(rawValue: "photos-extension")
+        }
+    }
+
+    /// How long another process's claim holds. Long enough that a transfer iOS is slow to run
+    /// is not sent a second time; short enough that a result nobody collected costs a day, not
+    /// the photo.
+    static let handoffLease: TimeInterval = 24 * 60 * 60
 
     // MARK: - CompletedUpload
 
@@ -145,15 +186,40 @@ struct PhotoSyncQueue: Codable, Equatable {
     ///   starving the photo the user took a minute ago: without it, a one-year window puts
     ///   thousands of old assets ahead of everything new. Defaults to `.distantPast`, which
     ///   places every entry in the first group — i.e. plain capture order.
-    func drainable(asOf now: Date = Date(), newerThan boundary: Date = .distantPast) -> [Entry] {
+    /// - Parameter owner: the process asking. Entries another process has a live claim on are
+    ///   left out — see ``Handoff``.
+    func drainable(asOf now: Date = Date(), newerThan boundary: Date = .distantPast,
+                   for owner: Handoff.Owner = .app) -> [Entry] {
         pending
             .filter { ($0.nextAttemptAfter ?? .distantPast) <= now }
+            .filter { !isClaimed($0, byAnotherThan: owner, asOf: now) }
             .sorted { lhs, rhs in
                 let lhsIsBacklog = lhs.creationDate < boundary
                 let rhsIsBacklog = rhs.creationDate < boundary
                 if lhsIsBacklog != rhsIsBacklog { return !lhsIsBacklog }
                 return lhs.creationDate < rhs.creationDate
             }
+    }
+
+    /// Whether a process other than `owner` has a live claim on `entry`.
+    func isClaimed(_ entry: Entry, byAnotherThan owner: Handoff.Owner, asOf now: Date = Date()) -> Bool {
+        guard let handoff = entry.handoff, handoff.owner != owner else { return false }
+        return now.timeIntervalSince(handoff.at) < Self.handoffLease
+    }
+
+    // MARK: - Handoffs
+
+    /// Records that `owner` has handed `id`'s transfer to its background session.
+    mutating func markHandedOff(id: String, to owner: Handoff.Owner, at now: Date = Date()) {
+        guard let index = pending.firstIndex(where: { $0.id == id }) else { return }
+        pending[index].handoff = Handoff(owner: owner, at: now)
+    }
+
+    /// Drops the claim on `id`, for a transfer that ended without settling the entry — a stale
+    /// token or folder, or an asset left for the other process.
+    mutating func releaseHandoff(id: String) {
+        guard let index = pending.firstIndex(where: { $0.id == id }) else { return }
+        pending[index].handoff = nil
     }
 
     // MARK: - Outcomes
@@ -185,6 +251,7 @@ struct PhotoSyncQueue: Codable, Equatable {
         var entry = pending[idx]
         entry.attempts += 1
         entry.lastError = error
+        entry.handoff = nil
 
         if permanent || entry.attempts >= Self.maxAttempts {
             entry.nextAttemptAfter = nil
@@ -204,6 +271,7 @@ struct PhotoSyncQueue: Codable, Equatable {
             entry.attempts = 0
             entry.lastError = nil
             entry.nextAttemptAfter = nil
+            entry.handoff = nil
             pending.append(entry)
         }
         failed.removeAll()
@@ -220,26 +288,103 @@ struct PhotoSyncQueue: Codable, Equatable {
 
 // MARK: - PhotoSyncQueueStore
 
-/// Persists a `PhotoSyncQueue` to disk as JSON.
+/// Persists a `PhotoSyncQueue` to disk as JSON, in the App Group container the app and the
+/// Photos extension share.
+///
+/// Both processes change the queue, so a write is never "here is my copy": every change goes
+/// through ``update(_:)``, which reads, changes and writes the file under one lock. The lock is
+/// an `flock` on a sidecar file, so it holds across processes, plus an `NSLock` because `flock`
+/// is per open file and does not exclude another thread of this process. The section it guards
+/// is synchronous and short: a process suspended while holding a lock on a file in a shared
+/// container is terminated by iOS.
 final class PhotoSyncQueueStore {
 
     private let fileURL: URL
+    private let legacyFileURL: URL?
+    private let lockFileURL: URL
+    private let lock = NSLock()
     private let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "NeutrinoDrive",
                                 category: "PhotoSyncQueueStore")
 
-    /// `fileURL` defaults to `Application Support/photo-sync-queue.json`. Tests can inject a
-    /// scratch location instead of touching the real Application Support directory.
-    init(fileURL: URL? = nil) {
+    static let fileName = "photo-sync-queue.json"
+
+    /// `fileURL` defaults to the App Group container, and a queue an earlier build left in
+    /// Application Support is moved there the first time it is read. Tests inject a scratch
+    /// location, and with it a legacy location of their own or none.
+    init(fileURL: URL? = nil, legacyFileURL: URL? = nil) {
         if let fileURL {
             self.fileURL = fileURL
+            self.legacyFileURL = legacyFileURL
         } else {
-            let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
-                ?? FileManager.default.temporaryDirectory
-            self.fileURL = dir.appendingPathComponent("photo-sync-queue.json")
+            self.fileURL = PhotoSyncStorage.directory.appendingPathComponent(Self.fileName)
+            let legacy = PhotoSyncStorage.legacyDirectory.appendingPathComponent(Self.fileName)
+            self.legacyFileURL = legacy == self.fileURL ? nil : legacy
         }
+        self.lockFileURL = self.fileURL.appendingPathExtension("lock")
     }
 
     func load() -> PhotoSyncQueue {
+        withLock { read() }
+    }
+
+    func save(_ queue: PhotoSyncQueue) {
+        withLock { write(queue) }
+    }
+
+    /// Reads the queue, lets `body` change it, and writes it back if it changed, all under the
+    /// lock — so a change the other process made since this one last read is kept, not
+    /// overwritten. Returns what `body` returns.
+    @discardableResult
+    func update<T>(_ body: (inout PhotoSyncQueue) throws -> T) rethrows -> T {
+        try withLock {
+            let original = read()
+            var queue = original
+            let result = try body(&queue)
+            if queue != original { write(queue) }
+            return result
+        }
+    }
+
+    // MARK: - Private
+
+    private func withLock<T>(_ body: () throws -> T) rethrows -> T {
+        lock.lock()
+        defer { lock.unlock() }
+        let directory = fileURL.deletingLastPathComponent()
+        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let descriptor = open(lockFileURL.path, O_CREAT | O_RDWR, 0o644)
+        if descriptor >= 0 {
+            flock(descriptor, LOCK_EX)
+        } else {
+            // Unlocked is still correct within this process; only the other process could
+            // interleave, and that is what the log line is for.
+            logger.error("could not open the queue lock file: errno \(errno)")
+        }
+        defer {
+            if descriptor >= 0 {
+                flock(descriptor, LOCK_UN)
+                close(descriptor)
+            }
+        }
+        migrateLegacyFileIfNeeded()
+        return try body()
+    }
+
+    /// Moves a queue an earlier build kept in Application Support into the App Group. Moved
+    /// rather than copied: two copies would be two dedup ledgers that drift apart.
+    private func migrateLegacyFileIfNeeded() {
+        guard let legacyFileURL,
+              FileManager.default.fileExists(atPath: legacyFileURL.path),
+              !FileManager.default.fileExists(atPath: fileURL.path) else { return }
+        do {
+            try FileManager.default.moveItem(at: legacyFileURL, to: fileURL)
+            logger.info("moved the photo sync queue into the App Group")
+        } catch {
+            logger.error("could not move the photo sync queue: \(error, privacy: .public)")
+        }
+    }
+
+    private func read() -> PhotoSyncQueue {
         guard let data = try? Data(contentsOf: fileURL),
               let queue = try? JSONDecoder.photoSync.decode(PhotoSyncQueue.self, from: data) else {
             return PhotoSyncQueue()
@@ -247,10 +392,8 @@ final class PhotoSyncQueueStore {
         return queue
     }
 
-    func save(_ queue: PhotoSyncQueue) {
+    private func write(_ queue: PhotoSyncQueue) {
         do {
-            let dir = fileURL.deletingLastPathComponent()
-            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
             let data = try JSONEncoder.photoSync.encode(queue)
             try data.write(to: fileURL, options: .atomic)
             excludeFromBackup()

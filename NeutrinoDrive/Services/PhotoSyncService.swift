@@ -9,195 +9,6 @@ import NeutrinoCore
 import NeutrinoAuth
 import NeutrinoCrypto
 
-// MARK: - PhotoAssetProviding
-
-/// Abstraction over `PHAsset` so unit tests can supply fakes — `PHAsset` cannot be
-/// constructed directly in a test target.
-protocol PhotoAssetProviding {
-    var localIdentifier: String { get }
-    var creationDate: Date? { get }
-    /// When the picture was last edited. Sent as the uploaded file's `updatedAt` so a photo
-    /// retouched years after it was taken keeps both dates rather than collapsing onto one.
-    var modificationDate: Date? { get }
-    var mediaType: PHAssetMediaType { get }
-}
-
-extension PHAsset: PhotoAssetProviding {}
-
-// MARK: - PhotoAssetExporting
-
-/// Resolves a `PHAsset.localIdentifier` to exportable bytes. The real implementation talks
-/// to `PHImageManager`/`PHAssetResourceManager`; tests inject a fake that returns canned data
-/// instantly, without touching PhotoKit.
-protocol PhotoAssetExporting {
-    func exportData(for identifier: String, includeVideos: Bool,
-                    networkAccessAllowed: Bool) async throws -> PhotoExport
-}
-
-struct PhotoExport {
-    let data: Data
-    let fileName: String
-    let mimeType: String
-    /// A cover thumbnail the exporter was able to make more cheaply than the uploader could.
-    ///
-    /// Only videos set it. An image's cover comes from the same bytes being uploaded, so
-    /// `E2EEUploader` derives it and nothing is saved by doing it earlier; a video's has to come
-    /// from a file on disk, and the exporter is the one place in the pipeline that already has
-    /// one — deriving it downstream would mean writing a second copy of the whole clip.
-    ///
-    /// Declared last with a default so the memberwise initialiser stays source-compatible with
-    /// the fakes in `PhotoSyncServiceTests`.
-    var thumbnailBase64: String? = nil
-}
-
-enum PhotoExportError: LocalizedError {
-    case assetNotFound
-    case videoExcluded
-    case exportFailed
-
-    var errorDescription: String? {
-        switch self {
-        case .assetNotFound: return "The photo could not be found in the library."
-        case .videoExcluded: return "Video sync is turned off."
-        case .exportFailed:  return "The photo could not be read for upload."
-        }
-    }
-}
-
-// MARK: - PHKitAssetExporter
-
-/// Production `PhotoAssetExporting`. Images export via `requestImageDataAndOrientation`
-/// (current/edited rendition, original bytes — no transcoding). Videos export via
-/// `PHAssetResourceManager.writeData(for:toFile:)` to a temp file (never held fully in
-/// memory) and are read back as `Data`. Live Photos upload the still image resource only —
-/// the paired video resource is intentionally skipped for MVP.
-final class PHKitAssetExporter: PhotoAssetExporting {
-
-    private let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "NeutrinoDrive",
-                                category: "PHKitAssetExporter")
-
-    func exportData(for identifier: String, includeVideos: Bool,
-                    networkAccessAllowed: Bool) async throws -> PhotoExport {
-        let fetchResult = PHAsset.fetchAssets(withLocalIdentifiers: [identifier], options: nil)
-        guard let asset = fetchResult.firstObject else {
-            throw PhotoExportError.assetNotFound
-        }
-
-        if asset.mediaType == .video {
-            guard includeVideos else { throw PhotoExportError.videoExcluded }
-            return try await exportVideo(asset: asset, networkAccessAllowed: networkAccessAllowed)
-        }
-        return try await exportImage(asset: asset, networkAccessAllowed: networkAccessAllowed)
-    }
-
-    // MARK: - Images (and Live Photo stills)
-
-    private func exportImage(asset: PHAsset, networkAccessAllowed: Bool) async throws -> PhotoExport {
-        let resources = PHAssetResource.assetResources(for: asset)
-        let primary = resources.first(where: { $0.type == .photo }) ?? resources.first
-        let fallbackName = Self.fallbackFileName(for: asset, ext: "jpg")
-
-        return try await withCheckedThrowingContinuation { continuation in
-            let options = PHImageRequestOptions()
-            options.version = .current
-            options.isNetworkAccessAllowed = networkAccessAllowed
-            options.deliveryMode = .highQualityFormat
-            options.isSynchronous = false
-
-            PHImageManager.default().requestImageDataAndOrientation(for: asset, options: options) { data, dataUTI, _, info in
-                if let error = info?[PHImageErrorKey] as? Error {
-                    continuation.resume(throwing: error)
-                    return
-                }
-                guard let data else {
-                    continuation.resume(throwing: PhotoExportError.exportFailed)
-                    return
-                }
-                let mimeType = dataUTI.flatMap { UTType($0)?.preferredMIMEType } ?? "image/jpeg"
-                let fileName = primary?.originalFilename ?? fallbackName
-                continuation.resume(returning: PhotoExport(data: data, fileName: fileName, mimeType: mimeType))
-            }
-        }
-    }
-
-    // MARK: - Videos
-
-    private func exportVideo(asset: PHAsset, networkAccessAllowed: Bool) async throws -> PhotoExport {
-        let resources = PHAssetResource.assetResources(for: asset)
-        guard let resource = resources.first(where: { $0.type == .video }) ?? resources.first else {
-            throw PhotoExportError.exportFailed
-        }
-        let fileName = resource.originalFilename.isEmpty
-            ? Self.fallbackFileName(for: asset, ext: "mov")
-            : resource.originalFilename
-        let mimeType = UTType(resource.uniformTypeIdentifier)?.preferredMIMEType ?? "video/quicktime"
-
-        let tempURL = FileManager.default.temporaryDirectory
-            .appendingPathComponent(UUID().uuidString)
-            .appendingPathExtension((fileName as NSString).pathExtension)
-
-        let options = PHAssetResourceRequestOptions()
-        options.isNetworkAccessAllowed = networkAccessAllowed
-
-        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-            PHAssetResourceManager.default().writeData(for: resource, toFile: tempURL, options: options) { error in
-                if let error { continuation.resume(throwing: error) } else { continuation.resume() }
-            }
-        }
-
-        defer { try? FileManager.default.removeItem(at: tempURL) }
-        // Taken here, while the clip is still on disk and before the `defer` above reclaims it.
-        // `AVFoundation` reads poster frames from files, so the alternative is spilling the whole
-        // video back out to a second temp file downstream — up to half a gigabyte of extra writes
-        // (see `maxAssetSizeBytes`), in a background drain that is racing an expiry.
-        let thumbnailBase64 = await ThumbnailGenerator.coverThumbnailBase64(forVideoAt: tempURL)
-        let data = try Data(contentsOf: tempURL)
-        return PhotoExport(data: data, fileName: fileName, mimeType: mimeType,
-                           thumbnailBase64: thumbnailBase64)
-    }
-
-    // MARK: - Naming
-
-    private static func fallbackFileName(for asset: PHAsset, ext: String) -> String {
-        fallbackFileName(creationDate: asset.creationDate, ext: ext)
-    }
-
-    /// The name an asset with no usable `PHAssetResource` is uploaded under.
-    ///
-    /// Not private: `PHKitAssetMetadataProvider` has to reproduce the *same* name to match an
-    /// uploaded file back to its asset, and a second copy of this format string is a
-    /// divergence nobody would notice until the repair pass reported a photo missing.
-    static func fallbackFileName(creationDate: Date?, ext: String) -> String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyyMMdd_HHmmss"
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        let stamp = formatter.string(from: creationDate ?? Date())
-        return "IMG_\(stamp).\(ext)"
-    }
-}
-
-// MARK: - PhotoUploadRequest
-
-/// Everything one photo's upload is prepared from.
-struct PhotoUploadRequest {
-    let export: PhotoExport
-    let parentFolderID: String?
-    /// The upload's stable identity — see ``PhotoSyncService/uploadID(forAssetIdentifier:)``.
-    let uploadID: String
-    /// The photo's capture and edit dates, sent with the body.
-    let importMetadata: DriveImportMetadata
-    /// `false` when photo sync is Wi-Fi only: the transfer may start long after it was
-    /// prepared, on whatever network the phone has by then.
-    let allowsExpensiveNetworkAccess: Bool
-}
-
-/// The second half of an upload: sends what was prepared and returns the server's answer.
-typealias PhotoUploadSubmission = () async throws -> UploadResult
-
-/// An earlier attempt the drain expected to collect was no longer there to collect. Not a
-/// failure of the photo — it is simply prepared again, at no cost to its retry budget.
-private struct EarlierUploadVanished: Error {}
-
 // MARK: - PhotoSyncStatus
 
 enum PhotoSyncStatus: Equatable {
@@ -315,30 +126,8 @@ final class PhotoSyncService: NSObject, ObservableObject {
 
     // MARK: - UserDefaults keys
 
-    enum Keys {
-        static let enabled            = "photoSync.enabled"
-        static let folderName         = "photoSync.folderName"
-        static let folderID           = "photoSync.folderID"
-        static let includeVideos      = "photoSync.includeVideos"
-        static let wifiOnly           = "photoSync.wifiOnly"
-        static let whileChargingOnly  = "photoSync.whileChargingOnly"
-        static let anchorDate         = "photoSync.anchorDate"
-        /// How many days *before* the anchor date to reach back into the existing library.
-        /// See ``PhotoSyncService/backfillDays``.
-        static let backfillDays       = "photoSync.backfillDays"
-        /// The earliest creation date a backfill scan has already swept. Stops every launch
-        /// from re-enumerating a year of library for assets the queue already knows about.
-        static let backfillScannedFrom = "photoSync.backfillScannedFrom"
-        static let changeToken        = "photoSync.changeToken"
-        static let lastSuccessfulSync = "photoSync.lastSuccessfulSyncDate"
-        /// When a `BGTask` last handed us runtime. Separate from `lastSuccessfulSync`: it
-        /// records that iOS woke the app *at all*, which is the thing worth knowing when
-        /// photos are only moving once the app is opened by hand.
-        static let lastBackgroundRun  = "photoSync.lastBackgroundRunDate"
-        /// The last completed "Repair Photo Dates" pass, as JSON. Survives a relaunch so the
-        /// Settings screen can still say what the pass found.
-        static let lastDateRepair     = "photoSync.lastDateRepair"
-    }
+    /// Declared in `PhotoSyncCore.swift`, which the Photos extension compiles too.
+    typealias Keys = PhotoSyncKeys
 
     static let defaultFolderName = "iPhone Photos"
 
@@ -512,7 +301,8 @@ final class PhotoSyncService: NSObject, ObservableObject {
         // app with no UI just to deliver it. Collected here, the photo is marked done before that
         // process is suspended for good; left alone, the result dies with it and the photo is
         // uploaded a second time. Wired here, in `init()`, because that relaunch runs nothing else.
-        BackgroundTransferService.shared.setOrphanHandler { [weak self] transferID in
+        // Also on any session of the Photos extension iOS relaunches the app to deliver.
+        BackgroundTransferService.setPhotoSyncOrphanHandler { [weak self] transferID in
             Task { @MainActor in await self?.collectFinishedTransfer(transferID: transferID) }
         }
     }
@@ -521,6 +311,7 @@ final class PhotoSyncService: NSObject, ObservableObject {
 
     private let defaults: UserDefaults
     private let queueStore: PhotoSyncQueueStore
+    private let extensionRunLog: PhotoExtensionRunLog
     private let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "NeutrinoDrive",
                                 category: "PhotoSyncService")
     private var queue: PhotoSyncQueue
@@ -549,11 +340,15 @@ final class PhotoSyncService: NSObject, ObservableObject {
 
     // MARK: - Init
 
-    init(defaults: UserDefaults = .standard,
+    /// `defaults` is the App Group suite in production — see ``PhotoSyncDefaults/shared`` — so
+    /// the Photos extension reads the same settings.
+    init(defaults: UserDefaults = PhotoSyncDefaults.shared,
         queueStore: PhotoSyncQueueStore = PhotoSyncQueueStore(),
-        assetExporter: PhotoAssetExporting = PHKitAssetExporter()) {
+        assetExporter: PhotoAssetExporting = PHKitAssetExporter(),
+        extensionRunLog: PhotoExtensionRunLog = PhotoExtensionRunLog()) {
         self.defaults = defaults
         self.queueStore = queueStore
+        self.extensionRunLog = extensionRunLog
         self.assetExporter = assetExporter
         self.queue = queueStore.load()
         self.isEnabled = defaults.object(forKey: Keys.enabled) as? Bool ?? false
@@ -580,7 +375,10 @@ final class PhotoSyncService: NSObject, ObservableObject {
 
     var wifiOnly: Bool {
         get { defaults.object(forKey: Keys.wifiOnly) as? Bool ?? true }
-        set { defaults.set(newValue, forKey: Keys.wifiOnly) }
+        set {
+            defaults.set(newValue, forKey: Keys.wifiOnly)
+            updateExtensionRegistration()
+        }
     }
 
     var whileChargingOnly: Bool {
@@ -644,8 +442,10 @@ final class PhotoSyncService: NSObject, ObservableObject {
         defaults.object(forKey: Keys.anchorDate) as? Date ?? .distantPast
     }
 
+    /// Entries this process may prepare now. Leaves out those the Photos extension has handed
+    /// to its own session — see ``PhotoSyncQueue/Handoff``.
     private func drainableEntries() -> [PhotoSyncQueue.Entry] {
-        queue.drainable(newerThan: backlogBoundary)
+        queue.drainable(newerThan: backlogBoundary, for: .app)
     }
 
     var failedEntries: [PhotoSyncQueue.Entry] { queue.failed }
@@ -657,6 +457,10 @@ final class PhotoSyncService: NSObject, ObservableObject {
     /// running the background tasks (force-quitting the app from the switcher stops them
     /// entirely until the next manual launch), whereas a recent value points at the drain.
     var lastBackgroundRunAt: Date? { defaults.object(forKey: Keys.lastBackgroundRun) as? Date }
+
+    /// What the Photos background-upload extension did on each recent launch, oldest first.
+    /// Read fresh each time: the extension appends to it from its own process.
+    var extensionRuns: [PhotoExtensionRun] { extensionRunLog.runs() }
 
     // MARK: - Photo-date repair support
     //
@@ -695,11 +499,14 @@ final class PhotoSyncService: NSObject, ObservableObject {
     /// registered and no permission is requested, so a disabled feature is invisible in the
     /// permission prompts.
     func start() {
+        authorizationStatus = PHPhotoLibrary.authorizationStatus(for: .readWrite)
+        // Before the guard: a disabled photo sync, or narrowed access, has to switch the
+        // extension off too.
+        updateExtensionRegistration()
         guard FeatureFlags.photoAutoSync, isEnabled else {
             status = .disabled
             return
         }
-        authorizationStatus = PHPhotoLibrary.authorizationStatus(for: .readWrite)
         guard authorizationStatus == .authorized || authorizationStatus == .limited else {
             status = authorizationStatus == .denied || authorizationStatus == .restricted ? .permissionDenied : .disabled
             return
@@ -760,6 +567,7 @@ final class PhotoSyncService: NSObject, ObservableObject {
             self.status = status == .limited ? .permissionLimited : .idle
             startObservingIfNeeded()
             startNetworkMonitoring()
+            updateExtensionRegistration()
             await captureInitialChangeToken()
             if await runBackfillScanIfNeeded() > 0 {
                 await drain(ignoringPowerConstraint: false)
@@ -779,7 +587,15 @@ final class PhotoSyncService: NSObject, ObservableObject {
     private func handleDisabled() {
         stopObserving()
         stopNetworkMonitoring()
+        updateExtensionRegistration()
         status = .disabled
+    }
+
+    /// Enables or disables the Photos background-upload extension to match photo sync.
+    private func updateExtensionRegistration() {
+        PhotoUploadExtensionRegistration.update(photoSyncEnabled: FeatureFlags.photoAutoSync && isEnabled,
+                                                authorization: authorizationStatus,
+                                                wifiOnly: wifiOnly)
     }
 
     // MARK: - PhotoKit observation
@@ -832,31 +648,31 @@ final class PhotoSyncService: NSObject, ObservableObject {
     static func newIdentifiers(from assets: [PhotoAssetProviding], anchorDate: Date,
                                includeVideos: Bool, queue: PhotoSyncQueue)
     -> [(id: String, creationDate: Date, modificationDate: Date?)] {
-        assets
-            .filter { includeVideos || $0.mediaType != .video }
-            .compactMap { asset -> (String, Date, Date?)? in
-                guard let created = asset.creationDate, created >= anchorDate else { return nil }
-                guard !queue.contains(id: asset.localIdentifier) else { return nil }
-                return (asset.localIdentifier, created, asset.modificationDate)
-            }
-            .sorted { $0.1 < $1.1 }
+        PhotoSyncRules.newIdentifiers(from: assets, anchorDate: anchorDate,
+                                      includeVideos: includeVideos, queue: queue)
     }
 
     /// Enqueues every asset in `assets` that passes `newIdentifiers`, persists the queue, and
     /// returns the number newly enqueued.
     @discardableResult
     func enqueueIfNeeded(_ assets: [PhotoAssetProviding]) -> Int {
-        let newOnes = Self.newIdentifiers(from: assets, anchorDate: effectiveAnchorDate,
-                                          includeVideos: includeVideos, queue: queue)
-        for entry in newOnes {
-            queue.enqueue(id: entry.id, creationDate: entry.creationDate,
-                          modificationDate: entry.modificationDate)
+        let anchor = effectiveAnchorDate
+        let includeVideos = includeVideos
+        // Checked against the queue on disk, not this process's copy: the Photos extension may
+        // have enqueued — or finished — some of these already.
+        let added = mutateQueue { queue -> Int in
+            let newOnes = Self.newIdentifiers(from: assets, anchorDate: anchor,
+                                              includeVideos: includeVideos, queue: queue)
+            for entry in newOnes {
+                queue.enqueue(id: entry.id, creationDate: entry.creationDate,
+                              modificationDate: entry.modificationDate)
+            }
+            return newOnes.count
         }
-        if !newOnes.isEmpty {
-            persistQueue()
+        if added > 0 {
             scheduleBackgroundTask()
         }
-        return newOnes.count
+        return added
     }
 
     // MARK: - Catch-up scan
@@ -986,6 +802,8 @@ final class PhotoSyncService: NSObject, ObservableObject {
         // refresh suspends, and without the flag already set a second drain (the network
         // path monitor fires one on every change) would walk straight through this guard.
         isDraining = true
+        // The Photos extension changes the queue too; start from what is on disk.
+        reloadQueue()
         defer {
             isDraining = false
             if drainRequested {
@@ -1143,9 +961,7 @@ final class PhotoSyncService: NSObject, ObservableObject {
 
     /// Moves all `failed` entries back to `pending` and re-runs the drain loop.
     func retryFailed() {
-        queue.retryAllFailed()
-        persistQueue()
-        refreshCounts()
+        mutateQueue { $0.retryAllFailed() }
         Task { await drain(ignoringPowerConstraint: true) }
     }
 
@@ -1154,6 +970,17 @@ final class PhotoSyncService: NSObject, ObservableObject {
     /// Prepares `entry` and hands its transfer off, returning once it is on its way — not once
     /// it has arrived. The outcome is recorded by ``finishUpload(_:outcome:)`` whenever it lands.
     private func startUpload(_ entry: PhotoSyncQueue.Entry) async {
+        // Claimed on disk before any work, in the same locked step that checks nobody else
+        // has: the Photos extension drains this queue too, and a photo both prepared would
+        // reach the server twice.
+        let claimed = mutateQueue { queue -> Bool in
+            guard let current = queue.pending.first(where: { $0.id == entry.id }),
+                  !queue.isClaimed(current, byAnotherThan: .app) else { return false }
+            queue.markHandedOff(id: entry.id, to: .app)
+            return true
+        }
+        guard claimed else { return }
+
         inFlight.insert(entry.id)
         let submission: PhotoUploadSubmission
         do {
@@ -1228,12 +1055,15 @@ final class PhotoSyncService: NSObject, ObservableObject {
                 && !staleStateRetried.contains(entry.id):
             staleStateRetried.insert(entry.id)
             defaults.removeObject(forKey: Keys.folderID)
+            mutateQueue { $0.releaseHandoff(id: entry.id) }
         case .failure(UploadError.serverError(let code)) where code == 401
                 && !staleStateRetried.contains(entry.id):
             staleStateRetried.insert(entry.id)
+            mutateQueue { $0.releaseHandoff(id: entry.id) }
             await tokenRefresher?()
         case .failure(is EarlierUploadVanished):
-            break   // still pending and untouched; it is simply prepared again
+            // Still pending and otherwise untouched; it is simply prepared again.
+            mutateQueue { $0.releaseHandoff(id: entry.id) }
         case .failure(let error):
             staleStateRetried.remove(entry.id)
             recordFailure(of: entry, error)
@@ -1241,10 +1071,9 @@ final class PhotoSyncService: NSObject, ObservableObject {
     }
 
     private func recordSuccess(of entry: PhotoSyncQueue.Entry, _ result: UploadResult) async {
-        queue.markCompleted(id: entry.id, fileID: result.id)
+        mutateQueue { $0.markCompleted(id: entry.id, fileID: result.id) }
         lastSyncedAt = Date()
         defaults.set(lastSyncedAt, forKey: Keys.lastSuccessfulSync)
-        persistQueue()
 
         // After the ledger, and after the content. The photo is safe at this point, which is
         // what lets the stamp fail without consequence.
@@ -1252,15 +1081,20 @@ final class PhotoSyncService: NSObject, ObservableObject {
     }
 
     private func recordFailure(of entry: PhotoSyncQueue.Entry, _ error: Error) {
+        let permanent: Bool
+        let message: String
         switch error {
         case is OversizedAsset:
-            queue.markFailed(id: entry.id, error: "Too large for automatic backup", permanent: true)
+            permanent = true
+            message = "Too large for automatic backup"
         case let error as UploadError:
-            queue.markFailed(id: entry.id, error: error.localizedDescription, permanent: isPermanent(error))
+            permanent = isPermanent(error)
+            message = error.localizedDescription
         default:
-            queue.markFailed(id: entry.id, error: error.localizedDescription)
+            permanent = false
+            message = error.localizedDescription
         }
-        persistQueue()
+        mutateQueue { $0.markFailed(id: entry.id, error: message, permanent: permanent) }
     }
 
     // MARK: - Transfers that finish with nobody waiting
@@ -1272,6 +1106,8 @@ final class PhotoSyncService: NSObject, ObservableObject {
     /// result dies with the process is prepared and uploaded again. That is also why the
     /// relaunch is worth a drain: it is runtime, and the queue may hold more.
     func collectFinishedTransfer(transferID: String) async {
+        // From disk: the transfer may be the Photos extension's, for an entry only it enqueued.
+        reloadQueue()
         guard let assetID = Self.assetIdentifier(forTransferID: transferID),
               !inFlight.contains(assetID),
               let entry = queue.pending.first(where: { $0.id == assetID }),
@@ -1293,23 +1129,16 @@ final class PhotoSyncService: NSObject, ObservableObject {
         }
     }
 
-    /// The asset a photo-sync blob transfer id belongs to, or `nil` for any other transfer.
+    /// See ``PhotoSyncRules/assetIdentifier(forTransferID:)``.
     nonisolated static func assetIdentifier(forTransferID transferID: String) -> String? {
-        let prefix = E2EEUploader.blobTransferID(uploadID: uploadID(forAssetIdentifier: ""))
-        guard transferID.hasPrefix(prefix) else { return nil }
-        return String(transferID.dropFirst(prefix.count))
+        PhotoSyncRules.assetIdentifier(forTransferID: transferID)
     }
 
     // MARK: - Capture dates
 
-    /// The dates and provenance a photo's Drive file should carry: when the picture was taken,
-    /// when it was last edited, and the asset it came from.
+    /// See ``PhotoSyncRules/importMetadata(for:)``.
     static func importMetadata(for entry: PhotoSyncQueue.Entry) -> DriveImportMetadata {
-        DriveImportMetadata(
-            createdAt: entry.creationDate,
-            updatedAt: entry.modificationDate ?? entry.creationDate,
-            importSource: importSource(forAssetIdentifier: entry.id)
-        )
+        PhotoSyncRules.importMetadata(for: entry)
     }
 
     /// Gives the uploaded file the date the picture was taken, when the upload did not already.
@@ -1337,47 +1166,21 @@ final class PhotoSyncService: NSObject, ObservableObject {
         }
     }
 
-    /// The provenance string a photo-sync upload records on its Drive file.
-    ///
-    /// `import_source` means "came from an archive import" elsewhere, and is reused here with
-    /// a prefix rather than given a field of its own on the backend — the cheapest correct
-    /// path, and one that keeps this whole change client-side. It carries the asset identifier
-    /// so a file can always be traced back to the picture it came from.
-    /// `nonisolated` so `PhotoDateRepairPlanner` — pure, static and off the main actor — can
-    /// build the same string the upload path stamps.
+    /// See ``PhotoSyncRules/importSource(forAssetIdentifier:)``. `nonisolated` so
+    /// `PhotoDateRepairPlanner` — pure, static and off the main actor — can build the same
+    /// string the upload path stamps.
     nonisolated static func importSource(forAssetIdentifier identifier: String) -> String {
-        "photo-sync:\(identifier)"
+        PhotoSyncRules.importSource(forAssetIdentifier: identifier)
     }
 
-    /// The stable upload identity for one asset.
-    ///
-    /// Photo sync is the path that suspends most — a background drain is suspended by
-    /// definition — and it is also the only upload path whose retries are automatic, so it is
-    /// the one that most needs a retry to recognise its own interrupted attempt. The asset's
-    /// `localIdentifier` is the natural key: one asset is one logical upload, however many
-    /// attempts it takes. Shares its shape with the `import_source` stamp on purpose.
+    /// See ``PhotoSyncRules/uploadID(forAssetIdentifier:)``.
     nonisolated static func uploadID(forAssetIdentifier identifier: String) -> String {
-        importSource(forAssetIdentifier: identifier)
+        PhotoSyncRules.uploadID(forAssetIdentifier: identifier)
     }
 
-    /// Whether `error` will still fail however many times it is retried.
-    ///
-    /// 4xx means "this request was wrong", which for an upload is normally fatal — a retry
-    /// sends the identical bytes to the identical endpoint. The exceptions are the codes that
-    /// describe a *momentary* condition rather than the request:
-    ///
-    /// - **401** — the bearer token expired. `finishUpload` already refreshes and retries
-    ///   once; if one still reaches here, the next drain starts with a fresh token.
-    ///   Treating this as permanent is what quietly destroyed background sync: every photo a
-    ///   background drain touched went to `failed` on its *first* attempt, reachable only by
-    ///   tapping "Retry Failed" in Settings.
-    /// - **408 / 429** — request timeout and rate limiting, both explicitly retryable.
+    /// See ``PhotoSyncRules/isPermanent(_:)``.
     private func isPermanent(_ error: UploadError) -> Bool {
-        if case .serverError(let code) = error {
-            if code == 401 || code == 408 || code == 429 { return false }
-            return (400..<500).contains(code)
-        }
-        return false
+        PhotoSyncRules.isPermanent(error)
     }
 
     // MARK: - Folder resolution
@@ -1396,8 +1199,24 @@ final class PhotoSyncService: NSObject, ObservableObject {
 
     // MARK: - Persistence / counts
 
-    private func persistQueue() {
-        queueStore.save(queue)
+    /// Changes the queue on disk — under the lock the Photos extension takes too — and adopts
+    /// the result as this process's copy.
+    @discardableResult
+    private func mutateQueue<T>(_ body: (inout PhotoSyncQueue) -> T) -> T {
+        var latest = queue
+        let result = queueStore.update { queue -> T in
+            let result = body(&queue)
+            latest = queue
+            return result
+        }
+        queue = latest
+        refreshCounts()
+        return result
+    }
+
+    /// Adopts the queue on disk, which the Photos extension may have changed.
+    private func reloadQueue() {
+        queue = queueStore.load()
         refreshCounts()
     }
 
@@ -1429,13 +1248,8 @@ final class PhotoSyncService: NSObject, ObservableObject {
             await runCatchUpScan()
             await runBackfillScanIfNeeded()
             await drain(ignoringPowerConstraint: false, isBackgroundExpired: { state.isExpired })
-            persistQueueNow()
             if state.claimCompletion() { task.setTaskCompleted(success: !state.isExpired) }
         }
-    }
-
-    private func persistQueueNow() {
-        queueStore.save(queue)
     }
 
     /// Submits **both** background requests.
@@ -1478,7 +1292,7 @@ final class PhotoSyncService: NSObject, ObservableObject {
     func debugPendingEntry(_ id: String) -> PhotoSyncQueue.Entry? { queue.pending.first(where: { $0.id == id }) }
     /// Seeds the completed ledger, for tests of things that read it — the repair pass builds
     /// its device-side lookup from exactly these identifiers.
-    func debugMarkCompleted(_ id: String, fileID: String?) { queue.markCompleted(id: id, fileID: fileID) }
+    func debugMarkCompleted(_ id: String, fileID: String?) { mutateQueue { $0.markCompleted(id: id, fileID: fileID) } }
     /// Waits until no transfer is in flight — for tests whose drain stopped before its
     /// transfers finished, as an expired one does.
     func debugSettle() async {
