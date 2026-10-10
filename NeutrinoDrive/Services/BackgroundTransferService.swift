@@ -56,7 +56,11 @@ final class BackgroundTransferService: NSObject {
 
     enum Mode {
         /// A real `.background` session, surviving app suspension.
-        case background(identifier: String)
+        ///
+        /// `sharedContainerIdentifier` is required for a session an app extension creates:
+        /// the system stages the session's files in that App Group container, because the
+        /// extension's own container may be gone by the time a transfer finishes.
+        case background(identifier: String, sharedContainerIdentifier: String? = nil)
         /// A caller-supplied session. Used by tests (`MockURLProtocol` is never consulted by a
         /// background session, so the real path is untestable in-process) and by the
         /// `FeatureFlags.backgroundTransfers == false` kill switch.
@@ -72,6 +76,69 @@ final class BackgroundTransferService: NSObject {
             ? BackgroundTransferService(mode: .background(identifier: backgroundIdentifier))
             : BackgroundTransferService(mode: .foreground(session: .shared))
     }()
+
+    // MARK: - The Photos extension's session
+
+    /// The Photos background-upload extension's session. A separate identifier, not
+    /// ``backgroundIdentifier``: two processes connected to one background session at the same
+    /// time is undefined behaviour.
+    static let photosExtensionIdentifier = "com.neutrino.drive.photos.transfers"
+
+    /// The session the Photos extension sends photos on. Created once per extension process.
+    static func forPhotosExtension() -> BackgroundTransferService {
+        FeatureFlags.backgroundTransfers
+            ? BackgroundTransferService(mode: .background(
+                identifier: photosExtensionIdentifier,
+                sharedContainerIdentifier: SharedStorage.appGroupIdentifier))
+            : BackgroundTransferService(mode: .foreground(session: .shared))
+    }
+
+    private static let deliveryLock = NSLock()
+    /// Sessions of the Photos extension that this app process attached to, to take the results
+    /// iOS relaunched it to deliver. See ``attachForDelivery(identifier:completionHandler:)``.
+    private static var deliveries: [BackgroundTransferService] = []
+    /// What every photo-sync session in this process reports orphaned results to.
+    private static var photoSyncOrphanHandler: ((String) -> Void)?
+
+    /// Attaches this process to another process's background session, because iOS relaunched
+    /// the app to deliver that session's events.
+    ///
+    /// When the Photos extension is not running as its transfers finish, iOS hands the events
+    /// to the containing app instead, and they reach nobody unless the app connects to a session
+    /// with the same identifier. Each finished upload then lands here as an orphan, and the
+    /// photo-sync orphan handler collects it. Once the events are replayed the session is let
+    /// go, so the next launch of the extension is not sharing it with the app.
+    static func attachForDelivery(identifier: String, completionHandler: @escaping () -> Void) {
+        deliveryLock.lock()
+        let attached = deliveries.first { $0.deliveryIdentifier == identifier && !$0.isInvalidated }
+        let service = attached ?? BackgroundTransferService(
+            mode: .background(identifier: identifier,
+                              sharedContainerIdentifier: SharedStorage.appGroupIdentifier),
+            invalidatesAfterEvents: true)
+        if attached == nil { deliveries.append(service) }
+        let handler = photoSyncOrphanHandler
+        deliveryLock.unlock()
+        if let handler { service.setOrphanHandler(handler) }
+        service.handleBackgroundEvents(completionHandler: completionHandler)
+    }
+
+    /// The other processes' sessions attached here, whose results a photo sync retry may need
+    /// to collect. Empty except in an app process iOS relaunched for the Photos extension.
+    static var attachedDeliveries: [BackgroundTransferService] {
+        deliveryLock.lock()
+        defer { deliveryLock.unlock() }
+        return deliveries
+    }
+
+    /// Sets the orphan handler on ``shared`` and on every delivery session, including ones
+    /// attached later. See ``setOrphanHandler(_:)``.
+    static func setPhotoSyncOrphanHandler(_ handler: @escaping (String) -> Void) {
+        deliveryLock.lock()
+        photoSyncOrphanHandler = handler
+        let sessions = [shared] + deliveries
+        deliveryLock.unlock()
+        sessions.forEach { $0.setOrphanHandler(handler) }
+    }
 
     // MARK: - Private state
     //
@@ -107,6 +174,22 @@ final class BackgroundTransferService: NSObject {
 
     private let mode: Mode
 
+    /// Whether to let go of the session once its events have been replayed. See
+    /// ``attachForDelivery(identifier:completionHandler:)``.
+    private let invalidatesAfterEvents: Bool
+    private var invalidated = false
+
+    private var deliveryIdentifier: String? {
+        if case .background(let identifier, _) = mode { return identifier }
+        return nil
+    }
+
+    private var isInvalidated: Bool {
+        stateLock.lock()
+        defer { stateLock.unlock() }
+        return invalidated
+    }
+
     /// Delegate-less session for small request/response calls. Background sessions cannot run
     /// data tasks at all, so the sealed-key JSON round trips need a separate session regardless
     /// of which mode this service is in.
@@ -125,8 +208,9 @@ final class BackgroundTransferService: NSObject {
             // making this object the delegate.
             queue.name = "com.neutrino.drive.transfers.foreground.delegate"
             return URLSession(configuration: provided.configuration, delegate: self, delegateQueue: queue)
-        case .background(let identifier):
+        case .background(let identifier, let sharedContainerIdentifier):
             let config = URLSessionConfiguration.background(withIdentifier: identifier)
+            config.sharedContainerIdentifier = sharedContainerIdentifier
             config.isDiscretionary = false            // user-initiated; do not defer to "a good time"
             config.sessionSendsLaunchEvents = true    // relaunch us to deliver completion
             config.waitsForConnectivity = true
@@ -137,8 +221,9 @@ final class BackgroundTransferService: NSObject {
 
     // MARK: - Init
 
-    init(mode: Mode) {
+    init(mode: Mode, invalidatesAfterEvents: Bool = false) {
         self.mode = mode
+        self.invalidatesAfterEvents = invalidatesAfterEvents
         switch mode {
         case .foreground(let session):
             self.foregroundSession = session
@@ -252,6 +337,8 @@ final class BackgroundTransferService: NSObject {
 
     /// A live upload task carrying `transferID` that nobody in this process is awaiting yet.
     private func runningUploadTask(transferID: String) async -> URLSessionTask? {
+        // A session let go after delivering its events has nothing running to reattach to.
+        guard !isInvalidated else { return nil }
         let tasks = await session.allTasks
         stateLock.lock()
         defer { stateLock.unlock() }
@@ -480,7 +567,12 @@ extension BackgroundTransferService {
         stateLock.lock()
         let handler = backgroundEventsCompletionHandler
         backgroundEventsCompletionHandler = nil
+        let letGo = invalidatesAfterEvents && !invalidated
+        if letGo { invalidated = true }
         stateLock.unlock()
+        // Lets tasks still running finish rather than cancelling them; the orphans already
+        // filed stay in memory for photo sync to collect.
+        if letGo { session.finishTasksAndInvalidate() }
         // UIKit requires this on the main queue.
         DispatchQueue.main.async { handler?() }
     }

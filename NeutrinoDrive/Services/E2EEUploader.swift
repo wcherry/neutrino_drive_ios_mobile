@@ -118,11 +118,23 @@ struct E2EEUploader {
     /// Where a sealed DEK lives between the blob `POST` and the key `PUT`. See
     /// ``PendingUploadKey`` for what that gap costs when nothing persists it.
     let pendingKeys: PendingUploadKeyStore
+    /// Other sessions an earlier upload may have finished on: in an app process iOS relaunched
+    /// for the Photos extension, that extension's session. Asked only after `transferService`.
+    let deliveredTransfers: () -> [BackgroundTransferService]
 
     init(transferService: BackgroundTransferService = .shared,
-         pendingKeys: PendingUploadKeyStore = .shared) {
+         pendingKeys: PendingUploadKeyStore = .shared,
+         deliveredTransfers: @escaping () -> [BackgroundTransferService] = {
+             BackgroundTransferService.attachedDeliveries
+         }) {
         self.transferService = transferService
         self.pendingKeys = pendingKeys
+        self.deliveredTransfers = deliveredTransfers
+    }
+
+    /// The sessions an earlier upload is looked for on, in the order they are asked.
+    private var collectableTransfers: [BackgroundTransferService] {
+        [transferService] + deliveredTransfers().filter { $0 !== transferService }
     }
 
     /// Transfer identifier for an upload's blob `POST`.
@@ -218,11 +230,13 @@ struct E2EEUploader {
         if let finished = try await finishCommittedUpload(uploadID: uploadID) {
             return finished
         }
-        let response: (Data, HTTPURLResponse)?
+        var response: (Data, HTTPURLResponse)?
         do {
-            response = try await transferService.resume(
-                transferID: Self.blobTransferID(uploadID: uploadID)
-            )
+            for transfers in collectableTransfers where response == nil {
+                response = try await transfers.resume(
+                    transferID: Self.blobTransferID(uploadID: uploadID)
+                )
+            }
         } catch {
             throw UploadError.networkError(underlying: error)
         }
@@ -237,7 +251,11 @@ struct E2EEUploader {
     /// wait out a transfer still on the wire.
     func hasEarlierUpload(uploadID: String) async -> Bool {
         if pendingKeys.key(forUploadID: uploadID)?.fileID != nil { return true }
-        return await transferService.hasTransfer(transferID: Self.blobTransferID(uploadID: uploadID))
+        for transfers in collectableTransfers
+        where await transfers.hasTransfer(transferID: Self.blobTransferID(uploadID: uploadID)) {
+            return true
+        }
+        return false
     }
 
     /// Step 0 — finishes an upload a previous attempt left half-committed, or returns `nil`.
