@@ -188,7 +188,7 @@ final class VersionHistoryService: ObservableObject {
         let data: Data
         let response: URLResponse
         do {
-            (data, response) = try await session.data(for: req)
+            (data, response) = try await session.data(for: req, retry: .default)
         } catch {
             throw VersionHistoryError.networkError(underlying: error)
         }

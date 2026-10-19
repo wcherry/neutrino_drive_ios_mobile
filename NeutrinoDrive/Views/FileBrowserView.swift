@@ -19,6 +19,7 @@ struct FileBrowserView: View {
     @EnvironmentObject var driveService: DriveService
     @EnvironmentObject var authService: AuthService
     @EnvironmentObject var offlineService: OfflineService
+    @EnvironmentObject var networkMonitor: NetworkMonitor
 
     // MARK: - State
 
@@ -99,7 +100,11 @@ struct FileBrowserView: View {
         .navigationTitle(navigationTitle)
         .navigationBarTitleDisplayMode(.large)
         .toolbar { toolbarContent }
-        .task(id: "\(section.rawValue)-\(parentID ?? "root")") {
+        // Connectivity is part of the id so the folder reloads when the connection comes back.
+        // Offline it is not loaded at all: what is on screen stays, and the connectivity banner
+        // says why, rather than an "Error" alert for every folder opened.
+        .task(id: "\(section.rawValue)-\(parentID ?? "root")-\(networkMonitor.isOnline)") {
+            guard networkMonitor.isOnline else { return }
             await driveService.loadSection(section, parentID: parentID)
         }
         .modifier(MyDriveSearchModifier(isEnabled: FeatureFlags.search && section == .myDrive, searchText: $searchText))
@@ -701,5 +706,6 @@ private struct MyDriveSearchModifier: ViewModifier {
             .environmentObject(DriveService())
             .environmentObject(AuthService())
             .environmentObject(OfflineService())
+            .environmentObject(NetworkMonitor(autoStart: false))
     }
 }
