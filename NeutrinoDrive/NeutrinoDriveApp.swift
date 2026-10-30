@@ -52,6 +52,7 @@ struct NeutrinoDriveApp: App {
     @StateObject private var photoSyncService: PhotoSyncService
     @StateObject private var biometricService: BiometricAuthService
     @StateObject private var keyProvisioningService = KeyProvisioningService()
+    @StateObject private var networkMonitor = NetworkMonitor()
     @StateObject private var deviceKeyRepair: DeviceKeyRepairService
 
     @Environment(\.scenePhase) private var scenePhase
@@ -119,6 +120,7 @@ struct NeutrinoDriveApp: App {
                     .environmentObject(biometricService)
                     .environmentObject(keyProvisioningService)
                     .environmentObject(deviceKeyRepair)
+                    .environmentObject(networkMonitor)
 
                 if biometricService.shouldPresentOverlay {
                     LockScreenView(biometricService: biometricService)

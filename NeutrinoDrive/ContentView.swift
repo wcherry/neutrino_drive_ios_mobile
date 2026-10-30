@@ -1,6 +1,9 @@
 import SwiftUI
+import NeutrinoCore
+import NeutrinoUI
 
 struct ContentView: View {
+    @EnvironmentObject private var networkMonitor: NetworkMonitor
     @State private var selectedTab = 0
 
     var body: some View {
@@ -37,9 +40,13 @@ struct ContentView: View {
             }
             .tag(3)
         }
+        // Drive queues nothing made offline, so the strip promises nothing: it says that what is
+        // shown is what this device already has — the Offline tab, and folders already opened.
+        .connectivityBanner(isOnline: networkMonitor.isOnline, keepsChangesOffline: false)
     }
 }
 
 #Preview {
     ContentView()
+        .environmentObject(NetworkMonitor(autoStart: false))
 }
