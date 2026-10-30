@@ -100,6 +100,29 @@ struct PhotoSyncSettingsView: View {
                                 .foregroundStyle(.secondary)
                         }
                     }
+                    // The Photos extension's own wake-ups (#38, Phase 2). Shown while the
+                    // feature is being tried on devices: how often iOS runs it is the open
+                    // question that decides whether it can be turned on for everyone.
+                    if FeatureFlags.photoUploadExtension {
+                        let runs = photoSyncService.extensionRuns
+                        let lastDay = runs.filter { $0.startedAt > Date().addingTimeInterval(-86_400) }
+                        HStack {
+                            Text("Photos Wake-ups")
+                            Spacer()
+                            if let last = runs.last {
+                                Text("\(lastDay.count) today · \(last.startedAt, style: .relative)")
+                                    .foregroundStyle(.secondary)
+                            } else {
+                                Text("Never")
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        if let last = runs.last {
+                            Text(Self.describe(last))
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
                 } footer: {
                     if photoSyncService.lastBackgroundRunAt == nil {
                         Text("iOS decides when to run background sync, and it won't run it at all "
@@ -246,6 +269,21 @@ struct PhotoSyncSettingsView: View {
             }
             .font(.footnote)
         }
+    }
+
+    /// One line about the extension's latest run: what it did, or why it did nothing.
+    static func describe(_ run: PhotoExtensionRun) -> String {
+        let seconds = String(format: "%.1fs", run.duration)
+        if let skipped = run.skipped {
+            return "Last run (\(seconds)): did nothing — \(skipped)."
+        }
+        var parts = ["sent \(run.handedOff)", "\(run.completed) finished"]
+        if run.enqueued > 0 { parts.append("\(run.enqueued) new") }
+        if run.awaitingDownload > 0 { parts.append("\(run.awaitingDownload) waiting for iCloud") }
+        if run.leftForApp > 0 { parts.append("\(run.leftForApp) left for the app") }
+        if run.failed > 0 { parts.append("\(run.failed) failed") }
+        if run.terminated { parts.append("stopped by iOS") }
+        return "Last run (\(seconds)): " + parts.joined(separator: ", ") + "."
     }
 }
 

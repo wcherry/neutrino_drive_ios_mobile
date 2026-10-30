@@ -18,6 +18,13 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
     func application(_ application: UIApplication,
                      handleEventsForBackgroundURLSession identifier: String,
                      completionHandler: @escaping () -> Void) {
+        // The Photos extension's uploads, finished while the extension was not running. iOS
+        // brings them to the containing app; photo sync collects them from the orphan handler.
+        if identifier == BackgroundTransferService.photosExtensionIdentifier {
+            BackgroundTransferService.attachForDelivery(identifier: identifier,
+                                                        completionHandler: completionHandler)
+            return
+        }
         guard identifier == BackgroundTransferService.backgroundIdentifier else {
             completionHandler()
             return

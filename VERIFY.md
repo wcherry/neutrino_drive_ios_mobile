@@ -1,3 +1,77 @@
+# Manual Verification: photo sync extension wake-ups, Phase 2 (#38)
+
+Plan: `agent_docs/plans/2026-10-09-photo-sync-extension-wakeup.md`. Shipped **off**
+(`FeatureFlags.photoUploadExtension = false`). These steps answer the plan's spike questions
+before the flag is turned on for everyone; record the answers in the plan.
+
+## Prerequisites
+
+- A **real device on iOS 27** (the Simulator has no Photos extension host). Drive built from
+  this branch with `photoUploadExtension` set to `true`, signed in, key imported.
+- Photo Sync on with **Full Access** to the library, Wi-Fi only on, and at least one photo
+  already backed up — so the destination folder is cached.
+- Console.app filtered to the device, processes `NeutrinoDrive` and `NeutrinoDrivePhotoUpload`,
+  categories `PhotoUploadExtension`, `PhotoUploadExtensionRunner`, `PhotoSyncService`,
+  `PhotoUploadExtensionRegistration`.
+
+## Steps
+
+### Registration
+
+1. Open Drive. → Console: `enabled the Photos upload extension`. Note whether iOS showed **any**
+   prompt or banner (spike question 3).
+2. Settings → Photo Sync → change access to **Limited**, return to Drive.
+   → `disabled the Photos upload extension`. Restore Full Access; reopen Drive → enabled again.
+3. Turn Photo Sync off. → disabled. Turn it back on. → enabled.
+
+### Wake-ups (spike questions 1 and 2)
+
+1. Swipe Drive away in the app switcher, lock the phone, wait a minute.
+2. Take three photos with the Camera app. Leave the phone locked on Wi-Fi.
+   → Within minutes, Console shows `NeutrinoDrivePhotoUpload` start and log `run: 3 handed
+   off …`. Note how long after the shot the run began and how long it lasted.
+3. Without opening Drive, check the web app. → The three photos arrive, decrypt, and carry the
+   time they were taken.
+4. Open Drive → Settings → Photo Sync. → **Photos Wake-ups** shows today's runs; the line under
+   it describes the last one. Status is "Up to date" and none of the three upload again.
+5. Over a normal day of use, note the run count and the delays from step 2.
+
+### Results delivered to the app
+
+1. Take a photo with the phone on a slow link (Network Link Conditioner, "3G"), and leave it.
+   → Console: the extension hands the photo off and exits before it finishes. Then
+   `NeutrinoDrive` launches in the background (`handleEventsForBackgroundURLSession` for
+   `com.neutrino.drive.photos.transfers`) and the photo is marked done. Drive's Settings shows it
+   synced without the app having been opened.
+
+### iCloud originals
+
+1. With "Optimize iPhone Storage" on, pick an old photo that is not on the device and include it
+   (Include Older Photos → All Photos), then lock the phone.
+   → An extension run reports `1 awaiting download`; a later run sends it. No failed attempts.
+
+### Large files
+
+1. Record a 30-second 4K video and lock the phone.
+   → The extension run reports `1 left for the app`. The video uploads the next time the app
+   runs (open it, or its background refresh), exactly once.
+
+### No duplicates
+
+1. Take ten photos and immediately open Drive, so the app and the extension both run.
+   → Ten files on the server, not more. Console shows each photo claimed by one process only.
+
+### Kill switch
+
+1. Build with `photoUploadExtension = false` and open Drive.
+   → `disabled the Photos upload extension`; taking photos no longer launches the extension.
+
+## Cleanup
+
+- Set `photoUploadExtension` back to `false` unless the spike answers say otherwise.
+
+---
+
 # Manual Verification: photo sync latency, Phase 1 (#38)
 
 Design: `agent_docs/research/2026-10-09-photo-sync-latency.md`. Backend half:
