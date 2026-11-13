@@ -200,15 +200,9 @@ final class PHKitAssetExporter: PhotoAssetExporting {
             ?? resources.first(where: { $0.type == .pairedVideo })
     }
 
-    /// The clip is named after its still, never after itself: the shared stem is how a still and
-    /// its clip are paired when nothing else links them (Apple's own export, Google Takeout and
-    /// the web's `pairMotionPhotos` all rely on it). `IMG_1234.HEIC` + `IMG_1234.MOV` →
-    /// `IMG_1234.MOV`; a clip PhotoKit named differently (an edited `FullSizeRender.mov`) still
-    /// gets the still's stem.
+    /// See ``LivePhotoMotionRules/pairedVideoFileName(stillName:videoName:)``.
     static func pairedVideoFileName(stillName: String, videoName: String) -> String {
-        let stem = (stillName as NSString).deletingPathExtension
-        let ext = (videoName as NSString).pathExtension
-        return "\(stem).\(ext.isEmpty ? "MOV" : ext)"
+        LivePhotoMotionRules.pairedVideoFileName(stillName: stillName, videoName: videoName)
     }
 
     /// The name an asset is uploaded under: its primary resource's `originalFilename`, or the

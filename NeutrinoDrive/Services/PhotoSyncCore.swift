@@ -38,7 +38,7 @@ enum PhotoSyncKeys {
     static let lastDateRepair     = "photoSync.lastDateRepair"
     /// Whether a Live Photo's paired video is uploaded beside its still (#42). Independent of
     /// `includeVideos`: the motion is part of a photo, not a video. On by default.
-    static let keepLivePhotoMotion = "photoSync.keepLivePhotoMotion"
+    static let keepLivePhotoMotion = LivePhotoMotionRules.settingKey
     /// The last completed "Add Live Photo Motion" pass, as JSON.
     static let lastMotionBackfill = "photoSync.lastMotionBackfill"
 
@@ -51,7 +51,7 @@ enum PhotoSyncKeys {
 
     /// `keepLivePhotoMotion` as stored, with its default.
     static func keepsLivePhotoMotion(_ defaults: UserDefaults) -> Bool {
-        defaults.object(forKey: keepLivePhotoMotion) as? Bool ?? true
+        LivePhotoMotionRules.keepsMotion(defaults)
     }
 }
 
