@@ -150,6 +150,10 @@ final class PhotoSyncService: NSObject, ObservableObject {
     @Published private(set) var lastSyncedAt: Date?
     @Published private(set) var authorizationStatus: PHAuthorizationStatus = .notDetermined
 
+    /// Progress of the "Add Earlier Photos" pass (#45). Settable: the pass lives in
+    /// `NeutrinoPhotosRegistration.swift`.
+    @Published var photosRegistrationState: PhotosRegistrationState = .idle
+
     /// Progress of the "Add Live Photo Motion" pass. Settable for the same reason as
     /// `dateRepairState`: the pass lives in `LivePhotoMotionBackfill.swift`.
     @Published var motionBackfillState: LivePhotoMotionBackfillState = .idle
@@ -241,6 +245,13 @@ final class PhotoSyncService: NSObject, ObservableObject {
     /// What the motion pass found, held between checking and the user confirming.
     var pendingMotionPlan: LivePhotoMotionBackfillPlanner.Plan?
 
+    /// Registers uploads with the Neutrino Photos library (#45). Wired to `driveService` in
+    /// `configure`; tests inject a fake. Weak, like `driveService`.
+    weak var photoRegistrar: PhotoLibraryRegistering?
+
+    /// What the library knows about an asset that registration records. PhotoKit by default.
+    var assetFactsProvider: PhotoAssetFactsProviding = PHKitPhotoAssetFactsProvider()
+
     /// Exports a `PHAsset.localIdentifier` to bytes. Defaults to the real PhotoKit-backed
     /// exporter; tests inject a fake.
     var assetExporter: PhotoAssetExporting
@@ -297,6 +308,7 @@ final class PhotoSyncService: NSObject, ObservableObject {
                 return result
             }
         }
+        photoRegistrar = driveService
         importMetadataStamper = { [weak driveService] fileID, metadata in
             guard let driveService else { throw DriveError.notAuthenticated }
             try await driveService.setImportMetadata(fileID: fileID, metadata: metadata)
@@ -398,6 +410,39 @@ final class PhotoSyncService: NSObject, ObservableObject {
             if !newValue {
                 mutateQueue { $0.removeMotionEntries() }
             }
+        }
+    }
+
+    /// Whether uploads are also registered with the Neutrino Photos library (#45). Off by
+    /// default, because Neutrino Photos can back up the library itself, and running both would
+    /// store every photo twice. Turning it on applies to uploads from then on; "Add Earlier
+    /// Photos" takes in the rest. Turning it off stops waiting registrations, and leaves photos
+    /// already in Neutrino Photos where they are.
+    var showInNeutrinoPhotos: Bool {
+        get { Keys.showsInNeutrinoPhotos(defaults) }
+        set {
+            guard newValue != showInNeutrinoPhotos else { return }
+            objectWillChange.send()
+            defaults.set(newValue, forKey: Keys.showInNeutrinoPhotos)
+            if !newValue {
+                mutateQueue { $0.clearAwaitingRegistrations() }
+            }
+        }
+    }
+
+    /// The last completed "Add Earlier Photos" pass, so Settings can report it after a relaunch.
+    var lastPhotosRegistration: PhotosRegistrationReport? {
+        get {
+            guard let data = defaults.data(forKey: Keys.lastPhotosRegistration) else { return nil }
+            return try? JSONDecoder.photoSync.decode(PhotosRegistrationReport.self, from: data)
+        }
+        set {
+            objectWillChange.send()
+            guard let newValue, let data = try? JSONEncoder.photoSync.encode(newValue) else {
+                defaults.removeObject(forKey: Keys.lastPhotosRegistration)
+                return
+            }
+            defaults.set(data, forKey: Keys.lastPhotosRegistration)
         }
     }
 
@@ -931,6 +976,12 @@ final class PhotoSyncService: NSObject, ObservableObject {
             await waitForDrainEvent()
         }
 
+        // Metadata only, and cheap when nothing is waiting. Takes in the Photos extension's
+        // uploads too, which it marks but can't register itself (#45).
+        if showInNeutrinoPhotos, !drainAssertionExpired, !(isBackgroundExpired?() ?? false) {
+            await registerWaitingPhotos()
+        }
+
         refreshCounts()
         if pendingCount == 0 {
             status = failedCount > 0 ? .failed(count: failedCount) : .idle
@@ -1132,7 +1183,8 @@ final class PhotoSyncService: NSObject, ObservableObject {
     }
 
     private func recordSuccess(of entry: PhotoSyncQueue.Entry, _ result: UploadResult) async {
-        mutateQueue { $0.markCompleted(id: entry.id, fileID: result.id) }
+        let register = showInNeutrinoPhotos
+        mutateQueue { $0.markCompleted(id: entry.id, fileID: result.id, registerInPhotos: register) }
         lastSyncedAt = Date()
         defaults.set(lastSyncedAt, forKey: Keys.lastSuccessfulSync)
 

@@ -41,13 +41,24 @@ enum PhotoSyncKeys {
     static let keepLivePhotoMotion = LivePhotoMotionRules.settingKey
     /// The last completed "Add Live Photo Motion" pass, as JSON.
     static let lastMotionBackfill = "photoSync.lastMotionBackfill"
+    /// Whether photo-sync uploads are also registered with the Neutrino Photos library (#45).
+    /// Off by default: a user who also runs Neutrino Photos' own backup would otherwise get every
+    /// photo twice.
+    static let showInNeutrinoPhotos = "photoSync.showInNeutrinoPhotos"
+    /// The last completed "Add Earlier Photos" pass, as JSON.
+    static let lastPhotosRegistration = "photoSync.lastPhotosRegistration"
 
     /// Every key above, for ``PhotoSyncDefaults/migrate(from:to:)``.
     static let all = [
         enabled, folderName, folderID, includeVideos, wifiOnly, whileChargingOnly, anchorDate,
         backfillDays, backfillScannedFrom, changeToken, lastSuccessfulSync, lastBackgroundRun,
-        lastDateRepair, keepLivePhotoMotion, lastMotionBackfill,
+        lastDateRepair, keepLivePhotoMotion, lastMotionBackfill, showInNeutrinoPhotos,
+        lastPhotosRegistration,
     ]
+
+    static func showsInNeutrinoPhotos(_ defaults: UserDefaults) -> Bool {
+        defaults.bool(forKey: showInNeutrinoPhotos)
+    }
 
     /// `keepLivePhotoMotion` as stored, with its default.
     static func keepsLivePhotoMotion(_ defaults: UserDefaults) -> Bool {

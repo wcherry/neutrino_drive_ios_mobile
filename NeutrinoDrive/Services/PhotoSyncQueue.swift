@@ -94,10 +94,20 @@ struct PhotoSyncQueue: Codable, Equatable {
         /// The Drive file this asset was uploaded as, or `nil` for a completion recorded
         /// before the ledger kept one. See the migration in ``PhotoSyncQueue/init(from:)``.
         var fileID: String?
+        /// The Neutrino Photos record this file was registered as (#45), once it has been.
+        var photoID: String?
+        /// Waiting to be registered with Neutrino Photos. Set when an upload completes with
+        /// "Show in Neutrino Photos" on — by whichever process uploaded it — and cleared by the
+        /// app once registered. Optional, like every field added here, so older ledgers decode.
+        var awaitingPhotoRegistration: Bool?
 
-        init(fileID: String? = nil) {
+        init(fileID: String? = nil, photoID: String? = nil, awaitingPhotoRegistration: Bool? = nil) {
             self.fileID = fileID
+            self.photoID = photoID
+            self.awaitingPhotoRegistration = awaitingPhotoRegistration
         }
+
+        var isAwaitingPhotoRegistration: Bool { awaitingPhotoRegistration == true && photoID == nil }
     }
 
     // MARK: - Collections
@@ -230,9 +240,45 @@ struct PhotoSyncQueue: Codable, Equatable {
     /// - Parameter fileID: the uploaded file's id. `nil` only for a caller that genuinely does
     ///   not have one; every real upload does, and throwing it away is what issue #31 was
     ///   partly about.
-    mutating func markCompleted(id: String, fileID: String? = nil) {
+    mutating func markCompleted(id: String, fileID: String? = nil, registerInPhotos: Bool = false) {
         pending.removeAll { $0.id == id }
-        completed[id] = CompletedUpload(fileID: fileID)
+        completed[id] = CompletedUpload(fileID: fileID,
+                                        awaitingPhotoRegistration: registerInPhotos ? true : nil)
+    }
+
+    // MARK: - Neutrino Photos registration (#45)
+
+    /// Records that `id`'s file is now the Neutrino Photos record `photoID`.
+    mutating func markRegistered(id: String, photoID: String) {
+        guard var record = completed[id] else { return }
+        record.photoID = photoID
+        record.awaitingPhotoRegistration = nil
+        completed[id] = record
+    }
+
+    /// Stops waiting to register `id` — its file is gone, or the setting was turned off.
+    mutating func stopAwaitingRegistration(id: String) {
+        completed[id]?.awaitingPhotoRegistration = nil
+    }
+
+    /// Marks every uploaded file not yet in Neutrino Photos as waiting to be, for the
+    /// "Add Earlier Photos" pass. Returns how many were marked.
+    @discardableResult
+    mutating func markAllAwaitingRegistration() -> Int {
+        var marked = 0
+        for (id, record) in completed where record.photoID == nil && record.fileID != nil
+            && record.awaitingPhotoRegistration != true {
+            completed[id]?.awaitingPhotoRegistration = true
+            marked += 1
+        }
+        return marked
+    }
+
+    /// Clears every waiting registration, for when "Show in Neutrino Photos" is turned off.
+    mutating func clearAwaitingRegistrations() {
+        for id in completed.keys where completed[id]?.awaitingPhotoRegistration != nil {
+            completed[id]?.awaitingPhotoRegistration = nil
+        }
     }
 
     /// The Drive file `id` was uploaded as, or `nil` if it has not completed or completed

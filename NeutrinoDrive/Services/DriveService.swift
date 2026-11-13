@@ -195,6 +195,41 @@ final class DriveService: ObservableObject {
         )
     }
 
+    // MARK: - Neutrino Photos library (#45)
+
+    /// Registers an uploaded file with the Neutrino Photos library and returns its record.
+    ///
+    /// Idempotent server-side: a file already registered answers with its existing record,
+    /// *without* applying `metadata` — the caller checks the returned metadata and merges if its
+    /// keys are missing (see `PhotoLibraryRegistrar`).
+    ///
+    /// - Parameter captureDate: sent in the server's zone-less UTC `%Y-%m-%dT%H:%M:%S` shape;
+    ///   anything else is silently dropped there and the photo files itself under its upload date.
+    func registerPhoto(fileID: String, captureDate: Date?,
+                       metadata: [String: Any]) async throws -> LibraryPhoto {
+        var body: [String: Any] = ["fileId": fileID, "metadata": metadata]
+        if let captureDate { body["captureDate"] = PhotoLibraryMetadata.captureDateString(captureDate) }
+        var req = try request(method: "POST", path: "/api/v1/photos")
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = try JSONSerialization.data(withJSONObject: body)
+        return try LibraryPhoto(json: try await performData(req))
+    }
+
+    /// One Neutrino Photos record, with its metadata document as stored.
+    func libraryPhoto(id: String) async throws -> LibraryPhoto {
+        let req = try request(method: "GET", path: "/api/v1/photos/\(id)")
+        return try LibraryPhoto(json: try await performData(req))
+    }
+
+    /// Replaces a Neutrino Photos record's whole metadata document. Callers merge first: the
+    /// server keeps nothing it isn't sent.
+    func replacePhotoMetadata(id: String, metadata: [String: Any]) async throws {
+        var req = try request(method: "PUT", path: "/api/v1/photos/\(id)/metadata")
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = try JSONSerialization.data(withJSONObject: metadata)
+        _ = try await performData(req)
+    }
+
     // MARK: - Raw folder paging
 
     /// One page of a folder's files, straight from the server and without touching `allItems`.
@@ -708,6 +743,11 @@ final class DriveService: ObservableObject {
 
     /// Same as `perform` but for endpoints that return no body.
     private func performVoid(_ req: URLRequest) async throws {
+        _ = try await performData(req)
+    }
+
+    /// Same as `perform`, returning the raw body — for free-form JSON no `Codable` type fits.
+    private func performData(_ req: URLRequest) async throws -> Data {
         let req = try await authorized(req)
         logger.debug("--> \(req.httpMethod ?? "?", privacy: .public) \(req.url?.path ?? "?", privacy: .public)")
         let data: Data
@@ -727,6 +767,7 @@ final class DriveService: ObservableObject {
             logger.error("server error \(http.statusCode) \(req.url?.path ?? "?", privacy: .public): \(body, privacy: .public)")
             throw DriveError.serverError(statusCode: http.statusCode)
         }
+        return data
     }
 
     /// Calls `refreshTokenIfNeeded`, then injects the fresh Bearer token into the request.

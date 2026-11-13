@@ -156,6 +156,7 @@ struct PhotoSyncSettingsView: View {
                     Text("Turning photo backup off leaves already-uploaded photos in Drive.")
                 }
 
+                neutrinoPhotosSection
                 motionSection
                 repairSection
             }
@@ -175,6 +176,50 @@ struct PhotoSyncSettingsView: View {
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("Neutrino Drive needs photo library access to back up new photos. Enable access in iOS Settings.")
+        }
+    }
+
+    // MARK: - Neutrino Photos
+
+    /// Registers backed-up photos with the Neutrino Photos library (#45). Opt-in.
+    @ViewBuilder
+    private var neutrinoPhotosSection: some View {
+        Section {
+            Toggle("Show in Neutrino Photos", isOn: Binding(
+                get: { photoSyncService.showInNeutrinoPhotos },
+                set: { photoSyncService.showInNeutrinoPhotos = $0 }
+            ))
+            if photoSyncService.showInNeutrinoPhotos {
+                Button("Add Earlier Photos") {
+                    Task { await photoSyncService.addEarlierPhotosToNeutrinoPhotos() }
+                }
+                .disabled(photoSyncService.photosRegistrationState.isRunning)
+
+                switch photoSyncService.photosRegistrationState {
+                case .running:
+                    HStack {
+                        ProgressView().controlSize(.small)
+                        Text("Adding\u{2026}").foregroundStyle(.secondary)
+                    }
+                case .finished(let report):
+                    Text(report.summary).foregroundStyle(.secondary)
+                case .failed(let message):
+                    Label(message, systemImage: "exclamationmark.triangle.fill")
+                        .font(.footnote)
+                        .foregroundStyle(.orange)
+                case .idle:
+                    if let last = photoSyncService.lastPhotosRegistration {
+                        Text(last.summary).font(.footnote).foregroundStyle(.secondary)
+                    }
+                }
+            }
+        } header: {
+            Text("Neutrino Photos")
+        } footer: {
+            Text("Also list backed-up photos in Neutrino Photos, on the web and on your devices, "
+                 + "with Live Photos playing as Live Photos. Neutrino Photos can back up this "
+                 + "library itself: use one or the other, not both, or each photo is stored twice. "
+                 + "Add Earlier Photos takes in what was backed up before you turned this on.")
         }
     }
 
