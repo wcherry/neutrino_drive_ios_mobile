@@ -147,6 +147,9 @@ final class PhotoSyncService: NSObject, ObservableObject {
     @Published private(set) var status: PhotoSyncStatus = .disabled
     @Published private(set) var pendingCount: Int = 0
     @Published private(set) var failedCount: Int = 0
+    /// Photos already prepared and handed to iOS, by the app or the Photos extension, whose
+    /// transfers haven't reported back. What separates "waiting for iOS" from "not started".
+    @Published private(set) var handedOffCount: Int = 0
     @Published private(set) var lastSyncedAt: Date?
     @Published private(set) var authorizationStatus: PHAuthorizationStatus = .notDetermined
 
@@ -215,6 +218,30 @@ final class PhotoSyncService: NSObject, ObservableObject {
     /// send. Collecting that is cheap and preparing again is not — and sending again would
     /// make a second file. Wired to `uploadService` in `configure`; tests leave it `nil`.
     var earlierUploadCollector: ((String) async -> PhotoUploadSubmission?)?
+
+    /// How many photos the foreground drain prepares at once (#38, Phase 3). Background windows
+    /// prepare one at a time, and a video or RAW original always goes alone — see
+    /// ``needsPreparingAlone``. Settable for tests.
+    var maxConcurrentPrepares = 3
+
+    /// Whether the app is frontmost, where several prepares at once are worth their memory.
+    var isForegroundProvider: () -> Bool = { UIApplication.shared.applicationState == .active }
+
+    /// Whether an entry must be prepared with nothing else alongside: a video, or a RAW original,
+    /// or anything PhotoKit says is over ``largeAssetBytes``. A Live Photo's clip is a few
+    /// megabytes and doesn't count. Defaults to PhotoKit; tests inject.
+    var needsPreparingAlone: (String) -> Bool = { entryID in
+        guard !PhotoSyncRules.parseEntryID(entryID).isMotion,
+              let resource = PHKitAssetExporter.uploadResource(forEntryID: entryID) else { return false }
+        let type = UTType(resource.uniformTypeIdentifier)
+        if type?.conforms(to: .movie) == true || type?.conforms(to: .rawImage) == true { return true }
+        if #available(iOS 27, *), let size = resource.dataSize { return Int64(size) > PhotoSyncService.largeAssetBytes }
+        return false
+    }
+
+    /// Over this, an asset is prepared on its own. A 48 MP HEIC is well under; ProRAW and video
+    /// are over, and are caught by type before their size is known.
+    nonisolated static let largeAssetBytes: Int64 = 50 * 1024 * 1024
 
     /// How many prepared uploads may be waiting on the network at once.
     ///
@@ -345,6 +372,11 @@ final class PhotoSyncService: NSObject, ObservableObject {
     /// Entries with a transfer this process is waiting on. Never prepared a second time while
     /// listed here; the drain and ``collectFinishedTransfer(transferID:)`` both check it.
     private var inFlight: Set<String> = []
+    /// Entries the drain has started preparing and not yet handed off. Overlaps `inFlight` once a
+    /// prepare claims its entry; tracked separately because a prepare can end without one.
+    private var preparing: Set<String> = []
+    /// A video or RAW original is being prepared, and nothing else may start until it's done.
+    private var preparingAlone = false
     /// A drain parked until something it is waiting on changes. See ``wakeDrain()``.
     private var drainWaiters: [CheckedContinuation<Void, Never>] = []
     /// Entries that already had their one free retry for a stale folder id or token.
@@ -952,27 +984,52 @@ final class PhotoSyncService: NSObject, ObservableObject {
         var uploadedAny = false
         let total = drainableEntries().count
         var index = 0
+        // Several photos are prepared at once in the foreground (#38, Phase 3): the export waits
+        // on PhotoKit and the encryption runs off the main actor, so they genuinely overlap. One
+        // at a time in a background window, as before.
+        let prepareLimit = isBackgroundExpired == nil && isForegroundProvider()
+            ? max(1, maxConcurrentPrepares) : 1
+        let preparable = { [unowned self] (entry: PhotoSyncQueue.Entry) in
+            !inFlight.contains(entry.id) && !preparing.contains(entry.id)
+        }
         while true {
             if drainAssertionExpired { break }
             if let isBackgroundExpired, isBackgroundExpired() { break }
-            if inFlight.count < maxTransfersInFlight,
-               let entry = drainableEntries().first(where: { !inFlight.contains($0.id) }) {
+            // A prepare that hasn't claimed its entry yet will be a transfer, so it counts.
+            if inFlight.union(preparing).count < maxTransfersInFlight, preparing.count < prepareLimit,
+               !preparingAlone,
+               let entry = drainableEntries().first(where: preparable) {
+                // A video or a RAW original is prepared with nothing else alongside: encryption
+                // holds about three copies of it, and three of those at once is what gets a
+                // process killed.
+                let alone = needsPreparingAlone(entry.id)
+                if alone && !preparing.isEmpty {
+                    await waitForDrainEvent()
+                    continue
+                }
                 index += 1
                 // `max`: a retry is counted again, and must not read "4 of 3".
                 status = .uploading(name: entry.id, index: index, total: max(total, index))
-                await startUpload(entry)
+                preparing.insert(entry.id)
+                if alone { preparingAlone = true }
                 uploadedAny = true
+                Task {
+                    await self.startUpload(entry)
+                    self.preparing.remove(entry.id)
+                    if alone { self.preparingAlone = false }
+                    self.wakeDrain()
+                }
                 continue
             }
-            // Nothing more to prepare, or no room for it. Wait for a transfer to finish — it
-            // may free a slot, or come back asking to be prepared again.
-            guard !inFlight.isEmpty else { break }
+            // Nothing more to prepare, or no room for it. Wait for a prepare or a transfer to
+            // finish — it may free a slot, or come back asking to be prepared again.
+            guard !inFlight.isEmpty || !preparing.isEmpty else { break }
             // Except in a `BGTask` with nothing left to prepare: the transfers are iOS's now,
             // and their results are collected whenever they land. Holding the task open to
             // watch them would only run it into its expiry, which iOS counts against us.
-            if isBackgroundExpired != nil,
-               !drainableEntries().contains(where: { !inFlight.contains($0.id) }) { break }
-            status = .transferring(count: inFlight.count)
+            if isBackgroundExpired != nil, preparing.isEmpty,
+               !drainableEntries().contains(where: preparable) { break }
+            if preparing.isEmpty { status = .transferring(count: inFlight.count) }
             await waitForDrainEvent()
         }
 
@@ -1337,6 +1394,7 @@ final class PhotoSyncService: NSObject, ObservableObject {
     private func refreshCounts() {
         pendingCount = queue.pending.count
         failedCount = queue.failed.count
+        handedOffCount = queue.handedOffCount()
     }
 
     // MARK: - Background task
@@ -1410,7 +1468,7 @@ final class PhotoSyncService: NSObject, ObservableObject {
     /// Waits until no transfer is in flight — for tests whose drain stopped before its
     /// transfers finished, as an expired one does.
     func debugSettle() async {
-        while !inFlight.isEmpty { await waitForDrainEvent() }
+        while !inFlight.isEmpty || !preparing.isEmpty { await waitForDrainEvent() }
     }
     #endif
 }

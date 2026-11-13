@@ -226,6 +226,15 @@ struct PhotoSyncQueue: Codable, Equatable {
         pending[index].handoff = Handoff(owner: owner, at: now)
     }
 
+    /// Pending entries handed to a background session (by either process) whose claim is still
+    /// live: prepared, and waiting on iOS to carry the transfer.
+    func handedOffCount(asOf now: Date = Date()) -> Int {
+        pending.filter { entry in
+            guard let handoff = entry.handoff else { return false }
+            return now.timeIntervalSince(handoff.at) < Self.handoffLease
+        }.count
+    }
+
     /// Drops the claim on `id`, for a transfer that ended without settling the entry — a stale
     /// token or folder, or an asset left for the other process.
     mutating func releaseHandoff(id: String) {
