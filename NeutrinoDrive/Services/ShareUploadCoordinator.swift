@@ -73,6 +73,10 @@ protocol ShareAttachment {
     /// Best-effort display name, used for the result list and as the upload filename.
     var suggestedName: String { get }
 
+    /// The name the sender actually suggested, if any — what the upload is named from, with
+    /// the file's real extension added (#49). `suggestedName` keeps a display fallback.
+    var providerSuggestedName: String? { get }
+
     /// Materialises the attachment as a **file on disk**, without loading it into memory.
     ///
     /// This is `loadFileRepresentation`, not `loadDataRepresentation`, specifically so the size
@@ -88,6 +92,7 @@ protocol ShareAttachment {
 
 extension ShareAttachment {
     func loadLivePhoto() async -> LivePhotoFiles? { nil }
+    var providerSuggestedName: String? { suggestedName }
 }
 
 // MARK: - ShareItemOutcome
@@ -211,7 +216,8 @@ final class ShareUploadCoordinator {
 
         if keepsLivePhotoMotion(), let live = await attachment.loadLivePhoto() {
             defer { try? FileManager.default.removeItem(at: live.directory) }
-            return await uploadLivePhoto(live, suggestedName: name)
+            return await uploadLivePhoto(live, suggestedName: name,
+                                         providerSuggestedName: attachment.providerSuggestedName)
         }
 
         let fileURL: URL
@@ -243,7 +249,15 @@ final class ShareUploadCoordinator {
             guard let uploadHandler else {
                 return ShareItemResult(name: name, outcome: .failed(message: UploadError.notAuthenticated.localizedDescription))
             }
-            let result = try await uploadHandler(data, name, mimeType, nil)
+            // Named with the bytes' own extension: a sender's suggestion is often `IMG_1234`
+            // for an `IMG_1234.HEIC` (#49). The result list keeps showing `name`.
+            let uploadName = UploadFileNaming.name(
+                suggested: attachment.providerSuggestedName,
+                fileExtension: fileURL.pathExtension,
+                loadedFileName: fileURL.lastPathComponent,
+                fallbackStem: { UploadFileNaming.sharedFallbackStem() }
+            )
+            let result = try await uploadHandler(data, uploadName, mimeType, nil)
             return ShareItemResult(name: name, outcome: .uploaded(id: result.id))
         } catch {
             logger.error("upload failed for \(name, privacy: .public): \(error, privacy: .public)")
@@ -262,8 +276,9 @@ extension ShareUploadCoordinator {
     ///
     /// Both halves count against ``ShareLimits/maxItemBytes``. A still that fits on its own is
     /// still uploaded when the pair doesn't, and the item says the motion was left out.
-    fileprivate func uploadLivePhoto(_ live: LivePhotoFiles, suggestedName: String) async -> ShareItemResult {
-        let stillName = Self.stillFileName(suggested: suggestedName, file: live.still)
+    fileprivate func uploadLivePhoto(_ live: LivePhotoFiles, suggestedName: String,
+                                     providerSuggestedName: String?) async -> ShareItemResult {
+        let stillName = Self.stillFileName(suggested: providerSuggestedName, file: live.still)
         let clipName = LivePhotoMotionRules.pairedVideoFileName(stillName: stillName,
                                                                 videoName: live.clip.lastPathComponent)
         let stillSize = fileSizeProvider(live.still) ?? 0
@@ -308,17 +323,12 @@ extension ShareUploadCoordinator {
     }
 
     /// The still's upload name: the share's suggested name (`IMG_1234`) with the still's own
-    /// extension, so the clip can take the same stem. A suggestion that already ends in an image
-    /// extension is kept; with no suggestion, the bundle's own file name.
-    static func stillFileName(suggested: String, file: URL) -> String {
-        let ext = file.pathExtension
-        let trimmed = suggested.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return file.lastPathComponent }
-        let existing = (trimmed as NSString).pathExtension
-        if !existing.isEmpty, UTType(filenameExtension: existing)?.conforms(to: .image) == true {
-            return trimmed
-        }
-        return ext.isEmpty ? trimmed : "\(trimmed).\(ext)"
+    /// extension, so the clip can take the same stem. The same rule as every other upload —
+    /// see ``UploadFileNaming`` — so a Live Photo's still is named alike with motion on or off.
+    static func stillFileName(suggested: String?, file: URL) -> String {
+        UploadFileNaming.name(suggested: suggested, fileExtension: file.pathExtension,
+                              loadedFileName: file.lastPathComponent,
+                              fallbackStem: { UploadFileNaming.sharedFallbackStem() })
     }
 }
 
@@ -340,6 +350,8 @@ struct ItemProviderAttachment: ShareAttachment {
     var suggestedName: String {
         provider.suggestedName ?? "Shared \(Int(Date().timeIntervalSince1970))"
     }
+
+    var providerSuggestedName: String? { provider.suggestedName }
 
     func loadFile() async throws -> URL {
         try await Self.copyFileRepresentation(of: provider, type: typeIdentifier)

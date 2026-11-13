@@ -162,6 +162,8 @@ targets:
       # The Keep Live Photo Motion setting and the clip-naming rule (#44), without the sync
       # queue and PhotoKit that `PhotoSyncCore.swift` and `PhotoAssetExporter.swift` bring.
       - path: NeutrinoDrive/Services/LivePhotoMotionRules.swift
+      # How an upload is named from a sender's suggestion (#49), shared with the app's pickers.
+      - path: NeutrinoDrive/Services/UploadFileNaming.swift
     dependencies:
       - package: swift-sodium
         product: Sodium
