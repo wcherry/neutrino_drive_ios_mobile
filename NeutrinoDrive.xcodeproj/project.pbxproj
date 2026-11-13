@@ -95,6 +95,7 @@
 		8E3BB49E59A1DE976BF15C75 /* PhotoSyncCore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0EE6A34B155499F3EC8B5A7D /* PhotoSyncCore.swift */; };
 		8EE0DFBAD8BB90036B8DBD11 /* NeutrinoAuth in Frameworks */ = {isa = PBXBuildFile; productRef = 17E60A0E1DE123D4F040BC4F /* NeutrinoAuth */; };
 		8F6466131DF02117A3F1555B /* TestJWT.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6CA160AA5CFEE2D7364DE6B8 /* TestJWT.swift */; };
+		8FF3C7D9DAE3F046D5BC8A95 /* PhotoSyncConcurrencyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 806C01B9C1FB69D03E343DBE /* PhotoSyncConcurrencyTests.swift */; };
 		98A677398FA74C9534C8CBB6 /* VersionHistorySheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD20A690770D70A67B5BDD4E /* VersionHistorySheet.swift */; };
 		99EF38075C56FB5F28A0AD2A /* KeyQRDecryptServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 69BA21EB1245B8848A89C2BF /* KeyQRDecryptServiceTests.swift */; };
 		9A19DF8556C44AD8D37D3695 /* CreateFolderSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = ACF13539E1CDAD54D5F123C8 /* CreateFolderSheet.swift */; };
@@ -266,6 +267,7 @@
 		79A7A0E78EC06A9490BA2757 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		7D431C1F85FA52F2C0BE92A9 /* PhotoSyncHandoffTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoSyncHandoffTests.swift; sourceTree = "<group>"; };
 		7D8E929ED50294D7EE256659 /* DownloadServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DownloadServiceTests.swift; sourceTree = "<group>"; };
+		806C01B9C1FB69D03E343DBE /* PhotoSyncConcurrencyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoSyncConcurrencyTests.swift; sourceTree = "<group>"; };
 		8216DBB3C23F98046D4153A3 /* CompanionAppLauncher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompanionAppLauncher.swift; sourceTree = "<group>"; };
 		85258692147558E2CC47B4E4 /* DeepLinkRouterTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeepLinkRouterTests.swift; sourceTree = "<group>"; };
 		8834B35CB52B70D4F1BA48A6 /* DriveItemTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DriveItemTests.swift; sourceTree = "<group>"; };
@@ -535,6 +537,7 @@
 				A9D327F0E614DA668C3FFD6D /* OfflineServiceTests.swift */,
 				14183A4A9BC4E774C6D77BD1 /* PendingUploadKeyStoreTests.swift */,
 				6AA1F9E6C39B45D29C33EF1E /* PhotoDateRepairTests.swift */,
+				806C01B9C1FB69D03E343DBE /* PhotoSyncConcurrencyTests.swift */,
 				7D431C1F85FA52F2C0BE92A9 /* PhotoSyncHandoffTests.swift */,
 				9F7CBDF1179B0B4EFACCB2C3 /* PhotoSyncQueueTests.swift */,
 				6A582F8B0E924BC7F78C9733 /* PhotoSyncServiceTests.swift */,
@@ -858,6 +861,7 @@
 				80359F913466643E0C14FB69 /* OfflineServiceTests.swift in Sources */,
 				2C297BEC6A18E95AB8BD4884 /* PendingUploadKeyStoreTests.swift in Sources */,
 				D1D99A520E9395E04B1B7694 /* PhotoDateRepairTests.swift in Sources */,
+				8FF3C7D9DAE3F046D5BC8A95 /* PhotoSyncConcurrencyTests.swift in Sources */,
 				496B3FE5EC9356DCD7762927 /* PhotoSyncHandoffTests.swift in Sources */,
 				65879C3FC4AB6E23CE34C75B /* PhotoSyncQueueTests.swift in Sources */,
 				07F648E2CD3255BFBB976CE2 /* PhotoSyncServiceTests.swift in Sources */,

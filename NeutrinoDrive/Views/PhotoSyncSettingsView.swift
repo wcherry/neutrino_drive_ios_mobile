@@ -91,6 +91,17 @@ struct PhotoSyncSettingsView: View {
                         Text(photoSyncService.status.displayText)
                             .foregroundStyle(.secondary)
                     }
+                    // Prepared and handed to iOS, which carries the transfer on its own schedule
+                    // — "waiting for iOS", as opposed to "not started" (#38).
+                    if photoSyncService.handedOffCount > 0 {
+                        HStack {
+                            Text("Waiting on iOS")
+                            Spacer()
+                            Text("\(photoSyncService.handedOffCount)")
+                                .foregroundStyle(.secondary)
+                                .monospacedDigit()
+                        }
+                    }
                     if let lastSyncedAt = photoSyncService.lastSyncedAt {
                         HStack {
                             Text("Last Synced")
