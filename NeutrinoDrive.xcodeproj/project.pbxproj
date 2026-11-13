@@ -64,6 +64,7 @@
 		65879C3FC4AB6E23CE34C75B /* PhotoSyncQueueTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9F7CBDF1179B0B4EFACCB2C3 /* PhotoSyncQueueTests.swift */; };
 		67946B0EEBBBDB5B54C80E4B /* AuthServiceTwoFactorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A8D2A6AC1A08A9C3B93BA3F /* AuthServiceTwoFactorTests.swift */; };
 		67A59774AAC56E1CADC2ECFD /* ShareUploadCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = F374ECD6F62965B1D404D98A /* ShareUploadCoordinator.swift */; };
+		67BADB0A413E86E70AD2126B /* NeutrinoPhotosRegistrationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B661DF75525994B747201A89 /* NeutrinoPhotosRegistrationTests.swift */; };
 		67FE7B95DCE2398E17E38339 /* ShareViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2D5320FC68012C09A76FD3F8 /* ShareViewController.swift */; };
 		690F26E747D4DA457D331F5F /* NeutrinoDriveApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 25F1F0EE30A126A464CB4744 /* NeutrinoDriveApp.swift */; };
 		6A9DA270EA79CC822AE5C681 /* RecoveryKitTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F32393495CDF0C0093EC96A /* RecoveryKitTests.swift */; };
@@ -113,6 +114,7 @@
 		B712ECD01D50298923D94BA6 /* DriveServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E75AF3C358204F5340F0827 /* DriveServiceTests.swift */; };
 		B743568FB1846E1308C91B44 /* Sodium in Frameworks */ = {isa = PBXBuildFile; productRef = 3F1DDA8015BF9037DFC8F823 /* Sodium */; };
 		B88EBD4DA680E13365EC3C85 /* DownloadServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7D8E929ED50294D7EE256659 /* DownloadServiceTests.swift */; };
+		BF19DF2B1BF8FCDD2221A2C1 /* NeutrinoPhotosRegistration.swift in Sources */ = {isa = PBXBuildFile; fileRef = 398BB0E1377B5747E1E14187 /* NeutrinoPhotosRegistration.swift */; };
 		C05DBAA6ABC844B145C4CE8B /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E3985D05C9C065C11E2FAFB0 /* ContentView.swift */; };
 		C1C0FD03CF16FB5E9E1A3166 /* VersionHistoryServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F7F1554986712BAA1146EC5 /* VersionHistoryServiceTests.swift */; };
 		C2BD79A9AC74C4C357351800 /* NeutrinoCrypto in Frameworks */ = {isa = PBXBuildFile; productRef = 7E0423B0635905981DBB5C6A /* NeutrinoCrypto */; };
@@ -230,6 +232,7 @@
 		36307D854C329925CE489930 /* LocalSearchIndex.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalSearchIndex.swift; sourceTree = "<group>"; };
 		372C73E6E1ACB5CC044D4FD3 /* NeutrinoDriveShare.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = NeutrinoDriveShare.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		3848E2E1A8F52106B1ECEB94 /* BackgroundTransferServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackgroundTransferServiceTests.swift; sourceTree = "<group>"; };
+		398BB0E1377B5747E1E14187 /* NeutrinoPhotosRegistration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NeutrinoPhotosRegistration.swift; sourceTree = "<group>"; };
 		3ADD7A2E9C27197434FE3A0A /* SharingService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SharingService.swift; sourceTree = "<group>"; };
 		3C6D8A297D25380ECD262C81 /* OfflineFile.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OfflineFile.swift; sourceTree = "<group>"; };
 		3EB651419CBEB1C389962E4A /* NeutrinoAppLinkTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NeutrinoAppLinkTests.swift; sourceTree = "<group>"; };
@@ -287,6 +290,7 @@
 		AFDC3F2E1EDDF4169DEA3706 /* FileBrowserView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileBrowserView.swift; sourceTree = "<group>"; };
 		B26E1359A44257FD9EBE9408 /* PendingUploadKeyStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PendingUploadKeyStore.swift; sourceTree = "<group>"; };
 		B3D07A84E1BF11CE2C7A187A /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		B661DF75525994B747201A89 /* NeutrinoPhotosRegistrationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NeutrinoPhotosRegistrationTests.swift; sourceTree = "<group>"; };
 		BBAF5D07C650FCC3CBE7E15F /* NeutrinoDrive.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = NeutrinoDrive.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		BC62700E5B23F87ED36A13B3 /* NeutrinoDrivePhotoUpload.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = NeutrinoDrivePhotoUpload.entitlements; sourceTree = "<group>"; };
 		BE36F23B5D81EEC1E84E1A77 /* UploadSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UploadSheet.swift; sourceTree = "<group>"; };
@@ -431,6 +435,7 @@
 				E3F30B4EB5FE97F8A20440F5 /* LivePhotoMotionBackfill.swift */,
 				D105A6D19444859CA480E976 /* LivePhotoMotionRules.swift */,
 				36307D854C329925CE489930 /* LocalSearchIndex.swift */,
+				398BB0E1377B5747E1E14187 /* NeutrinoPhotosRegistration.swift */,
 				133D81CEFB2A25FC07B29499 /* OfflineService.swift */,
 				B26E1359A44257FD9EBE9408 /* PendingUploadKeyStore.swift */,
 				F1189531C770C43F8CA12ADB /* PhotoAssetExporter.swift */,
@@ -526,6 +531,7 @@
 				A42B78170F8B9D6672E183A7 /* LocalSearchIndexTests.swift */,
 				965E54926CB9E957E39C2117 /* MockURLProtocol.swift */,
 				3EB651419CBEB1C389962E4A /* NeutrinoAppLinkTests.swift */,
+				B661DF75525994B747201A89 /* NeutrinoPhotosRegistrationTests.swift */,
 				A9D327F0E614DA668C3FFD6D /* OfflineServiceTests.swift */,
 				14183A4A9BC4E774C6D77BD1 /* PendingUploadKeyStoreTests.swift */,
 				6AA1F9E6C39B45D29C33EF1E /* PhotoDateRepairTests.swift */,
@@ -761,6 +767,7 @@
 				A4309A73D2D6CB256BD96435 /* MoveSheet.swift in Sources */,
 				690F26E747D4DA457D331F5F /* NeutrinoDriveApp.swift in Sources */,
 				073E8D2DE0797446D3138732 /* NeutrinoFileViewer.swift in Sources */,
+				BF19DF2B1BF8FCDD2221A2C1 /* NeutrinoPhotosRegistration.swift in Sources */,
 				CE253EA5C208A2BAFA023848 /* OfflineFile.swift in Sources */,
 				56D2621B530223F4F2178BE6 /* OfflineService.swift in Sources */,
 				0D8546209C37EA2B1F178E91 /* OfflineView.swift in Sources */,
@@ -847,6 +854,7 @@
 				AFDC33DC6CB9F4366E9D9E04 /* LocalSearchIndexTests.swift in Sources */,
 				7B51774A66E6E2B6B36084D0 /* MockURLProtocol.swift in Sources */,
 				141F4B2FB7C98FCE44A97FE2 /* NeutrinoAppLinkTests.swift in Sources */,
+				67BADB0A413E86E70AD2126B /* NeutrinoPhotosRegistrationTests.swift in Sources */,
 				80359F913466643E0C14FB69 /* OfflineServiceTests.swift in Sources */,
 				2C297BEC6A18E95AB8BD4884 /* PendingUploadKeyStoreTests.swift in Sources */,
 				D1D99A520E9395E04B1B7694 /* PhotoDateRepairTests.swift in Sources */,

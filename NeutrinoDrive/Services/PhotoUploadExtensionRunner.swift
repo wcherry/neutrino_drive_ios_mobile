@@ -384,7 +384,9 @@ final class PhotoUploadExtensionRunner {
 
         switch outcome {
         case .success(let result):
-            queueStore.update { $0.markCompleted(id: entry.id, fileID: result.id) }
+            // Registered with Neutrino Photos by the app, which has the API client (#45).
+            let register = PhotoSyncKeys.showsInNeutrinoPhotos(defaults)
+            queueStore.update { $0.markCompleted(id: entry.id, fileID: result.id, registerInPhotos: register) }
             defaults.set(now(), forKey: PhotoSyncKeys.lastSuccessfulSync)
             current.completed += 1
         // Each of these is left for a later run — passed over in this one, which would only
