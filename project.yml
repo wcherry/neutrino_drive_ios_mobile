@@ -159,6 +159,9 @@ targets:
       - path: NeutrinoDrive/Services/ThumbnailGenerator.swift
       - path: NeutrinoDrive/Services/BackgroundTransferService.swift
       - path: NeutrinoDrive/Services/ShareUploadCoordinator.swift
+      # The Keep Live Photo Motion setting and the clip-naming rule (#44), without the sync
+      # queue and PhotoKit that `PhotoSyncCore.swift` and `PhotoAssetExporter.swift` bring.
+      - path: NeutrinoDrive/Services/LivePhotoMotionRules.swift
     dependencies:
       - package: swift-sodium
         product: Sodium
@@ -228,6 +231,7 @@ targets:
       - path: NeutrinoDrive/Services/ThumbnailGenerator.swift
       - path: NeutrinoDrive/Services/BackgroundTransferService.swift
       - path: NeutrinoDrive/Services/PhotoSyncCore.swift
+      - path: NeutrinoDrive/Services/LivePhotoMotionRules.swift
       - path: NeutrinoDrive/Services/PhotoSyncQueue.swift
       - path: NeutrinoDrive/Services/PhotoAssetExporter.swift
       - path: NeutrinoDrive/Services/PhotoUploadExtensionRunner.swift

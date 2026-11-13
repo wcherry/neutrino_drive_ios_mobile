@@ -25,6 +25,44 @@ enum ShareLimits {
     static let maxItemBytes: Int64 = 25 * 1024 * 1024
 
     static let oversizeMessage = "Too large to share — upload it from the Neutrino Drive app instead."
+
+    /// A Live Photo whose still fits but whose still and clip together don't.
+    static let motionTooLargeMessage = "Photo uploaded without its Live Photo motion, which was too large to share. "
+        + "Turn on Photo Sync, or upload it from the Neutrino Drive app, to keep the motion."
+}
+
+// MARK: - LivePhotoFiles
+
+/// A Live Photo's two halves, materialised on disk from its `com.apple.live-photo-bundle`.
+struct LivePhotoFiles {
+    /// What to delete afterwards: the copy of the whole bundle.
+    let directory: URL
+    let still: URL
+    let clip: URL
+
+    /// Finds the still and the clip in a copied Live Photo bundle: the first image file and the
+    /// first movie file, wherever they sit inside it.
+    ///
+    /// **Undocumented.** Apple doesn't describe the bundle's layout, and senders other than
+    /// Photos may fill it differently, so this looks by type rather than by name and returns
+    /// `nil` unless it finds exactly what it needs. `nil` means "share the still alone, as
+    /// before" — never a failed share. Check on a device what Photos actually puts here.
+    static func find(in bundle: URL, deleting directory: URL) -> LivePhotoFiles? {
+        guard let enumerator = FileManager.default.enumerator(
+            at: bundle, includingPropertiesForKeys: [.isRegularFileKey],
+            options: [.skipsHiddenFiles]
+        ) else { return nil }
+        var still: URL?
+        var clip: URL?
+        for case let url as URL in enumerator {
+            guard (try? url.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true,
+                  let type = UTType(filenameExtension: url.pathExtension) else { continue }
+            if still == nil, type.conforms(to: .image) { still = url }
+            if clip == nil, type.conforms(to: .movie) { clip = url }
+        }
+        guard let still, let clip else { return nil }
+        return LivePhotoFiles(directory: directory, still: still, clip: clip)
+    }
 }
 
 // MARK: - ShareAttachment
@@ -42,12 +80,23 @@ protocol ShareAttachment {
     /// it the other way round would mean a 400 MB video is already resident by the time it is
     /// rejected for being too large.
     func loadFile() async throws -> URL
+
+    /// The still and clip of a shared Live Photo, or `nil` when this isn't one or its bundle
+    /// can't be read — in which case ``loadFile()`` is used as before.
+    func loadLivePhoto() async -> LivePhotoFiles?
+}
+
+extension ShareAttachment {
+    func loadLivePhoto() async -> LivePhotoFiles? { nil }
 }
 
 // MARK: - ShareItemOutcome
 
 enum ShareItemOutcome: Equatable {
     case uploaded(id: String)
+    /// A Live Photo whose photo is in Drive but whose motion isn't (too large, or its upload
+    /// failed). Not a success: the user shared a Live Photo and got a still.
+    case partlyUploaded(id: String, message: String)
     case failed(message: String)
 
     var isSuccess: Bool {
@@ -98,6 +147,8 @@ final class ShareUploadCoordinator {
     /// Keychain-backed checks.
     var hasStoredKeysProvider: () -> Bool = { SharedStorage.hasStoredKeys() }
     var hasAccessTokenProvider: () -> Bool = { SharedStorage.accessToken() != nil }
+    /// **Keep Live Photo Motion**, from the App Group defaults the app's Settings writes.
+    var keepsLivePhotoMotion: () -> Bool = { LivePhotoMotionRules.keepsMotion(SharedStorage.defaults) }
 
     /// Overridable upload hook. Production wires it to `E2EEUploader`; tests substitute a fake
     /// so no bytes leave the process.
@@ -158,6 +209,11 @@ final class ShareUploadCoordinator {
     private func upload(_ attachment: ShareAttachment) async -> ShareItemResult {
         let name = attachment.suggestedName
 
+        if keepsLivePhotoMotion(), let live = await attachment.loadLivePhoto() {
+            defer { try? FileManager.default.removeItem(at: live.directory) }
+            return await uploadLivePhoto(live, suggestedName: name)
+        }
+
         let fileURL: URL
         do {
             fileURL = try await attachment.loadFile()
@@ -196,19 +252,118 @@ final class ShareUploadCoordinator {
     }
 }
 
+// MARK: - Live Photos
+
+extension ShareUploadCoordinator {
+
+    /// Uploads a Live Photo as two files in the same folder, still then clip, both byte for
+    /// byte, so the clip's content identifier still pairs it with the still (#44). Reported as
+    /// one item: the user shared one photo.
+    ///
+    /// Both halves count against ``ShareLimits/maxItemBytes``. A still that fits on its own is
+    /// still uploaded when the pair doesn't, and the item says the motion was left out.
+    fileprivate func uploadLivePhoto(_ live: LivePhotoFiles, suggestedName: String) async -> ShareItemResult {
+        let stillName = Self.stillFileName(suggested: suggestedName, file: live.still)
+        let clipName = LivePhotoMotionRules.pairedVideoFileName(stillName: stillName,
+                                                                videoName: live.clip.lastPathComponent)
+        let stillSize = fileSizeProvider(live.still) ?? 0
+        let clipSize = fileSizeProvider(live.clip) ?? 0
+        if stillSize > maxItemBytes {
+            return ShareItemResult(name: suggestedName, outcome: .failed(message: ShareLimits.oversizeMessage))
+        }
+
+        let stillID: String
+        do {
+            stillID = try await uploadFile(live.still, as: stillName)
+        } catch {
+            logger.error("upload failed for \(stillName, privacy: .public): \(error, privacy: .public)")
+            return ShareItemResult(name: suggestedName, outcome: .failed(message: error.localizedDescription))
+        }
+
+        if stillSize + clipSize > maxItemBytes {
+            logger.info("\(stillName, privacy: .public): motion left out, \(stillSize + clipSize) bytes with the clip")
+            return ShareItemResult(name: suggestedName,
+                                   outcome: .partlyUploaded(id: stillID, message: ShareLimits.motionTooLargeMessage))
+        }
+        do {
+            _ = try await uploadFile(live.clip, as: clipName)
+            return ShareItemResult(name: suggestedName, outcome: .uploaded(id: stillID))
+        } catch {
+            // The still is in Drive; sending it again would only make a second copy.
+            logger.error("motion upload failed for \(clipName, privacy: .public): \(error, privacy: .public)")
+            return ShareItemResult(name: suggestedName, outcome: .partlyUploaded(
+                id: stillID,
+                message: "Photo uploaded, but its Live Photo motion didn't: \(error.localizedDescription)"
+            ))
+        }
+    }
+
+    /// Reads `file` and uploads it as `name`, returning the new file's id.
+    private func uploadFile(_ file: URL, as name: String) async throws -> String {
+        guard let uploadHandler else { throw UploadError.notAuthenticated }
+        let data = try Data(contentsOf: file, options: .mappedIfSafe)
+        let mimeType = UTType(filenameExtension: file.pathExtension)?.preferredMIMEType
+            ?? "application/octet-stream"
+        return try await uploadHandler(data, name, mimeType, nil).id
+    }
+
+    /// The still's upload name: the share's suggested name (`IMG_1234`) with the still's own
+    /// extension, so the clip can take the same stem. A suggestion that already ends in an image
+    /// extension is kept; with no suggestion, the bundle's own file name.
+    static func stillFileName(suggested: String, file: URL) -> String {
+        let ext = file.pathExtension
+        let trimmed = suggested.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return file.lastPathComponent }
+        let existing = (trimmed as NSString).pathExtension
+        if !existing.isEmpty, UTType(filenameExtension: existing)?.conforms(to: .image) == true {
+            return trimmed
+        }
+        return ext.isEmpty ? trimmed : "\(trimmed).\(ext)"
+    }
+}
+
 // MARK: - ItemProviderAttachment
 
 /// Production ``ShareAttachment`` backed by `NSItemProvider`.
 struct ItemProviderAttachment: ShareAttachment {
 
+    /// The type a Live Photo's file representation comes as: a directory holding the still and
+    /// the clip. Not `UTType.livePhoto` (`com.apple.live-photo`), which is the in-memory
+    /// `PHLivePhoto` object rather than a file.
+    static let livePhotoBundleType = "com.apple.live-photo-bundle"
+
     let provider: NSItemProvider
     let typeIdentifier: String
+    /// ``livePhotoBundleType`` when the provider offers one, so the share can carry the motion.
+    var livePhotoTypeIdentifier: String? = nil
 
     var suggestedName: String {
         provider.suggestedName ?? "Shared \(Int(Date().timeIntervalSince1970))"
     }
 
     func loadFile() async throws -> URL {
+        try await Self.copyFileRepresentation(of: provider, type: typeIdentifier)
+    }
+
+    func loadLivePhoto() async -> LivePhotoFiles? {
+        guard let livePhotoTypeIdentifier else { return nil }
+        do {
+            let bundle = try await Self.copyFileRepresentation(of: provider, type: livePhotoTypeIdentifier)
+            let directory = bundle.deletingLastPathComponent()
+            guard let files = LivePhotoFiles.find(in: bundle, deleting: directory) else {
+                try? FileManager.default.removeItem(at: directory)
+                return nil
+            }
+            return files
+        } catch {
+            // No motion is better than no photo: the caller falls back to the still.
+            return nil
+        }
+    }
+
+    /// Copies a file representation somewhere this process owns. Works for a directory (a Live
+    /// Photo bundle) as well as a file: `copyItem` copies recursively.
+    private static func copyFileRepresentation(of provider: NSItemProvider, type typeIdentifier: String) async throws -> URL {
         try await withCheckedThrowingContinuation { continuation in
             provider.loadFileRepresentation(forTypeIdentifier: typeIdentifier) { url, error in
                 if let error {
