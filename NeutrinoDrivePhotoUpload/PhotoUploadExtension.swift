@@ -61,9 +61,8 @@ final class PhotoUploadExtension: PHBackgroundResourceUploadJobExtension {
         runner.configure(uploader: E2EEUploader(transferService: Self.transfers,
                                                 deliveredTransfers: { [] }))
         runner.tokenRefresher = { await AuthService().refreshTokenIfNeeded() }
-        runner.assetSizeProvider = { identifier in
-            guard let asset = PHAsset.fetchAssets(withLocalIdentifiers: [identifier], options: nil).firstObject,
-                  let resource = PHKitAssetExporter.primaryResource(for: asset),
+        runner.assetSizeProvider = { entryID in
+            guard let resource = PHKitAssetExporter.uploadResource(forEntryID: entryID),
                   let size = resource.dataSize else { return nil }
             return Int64(size)
         }
@@ -81,13 +80,18 @@ final class PhotoUploadExtension: PHBackgroundResourceUploadJobExtension {
 
     /// Asks the system to bring an iCloud-only original onto the device, unless a job for it is
     /// already waiting. A later run then exports it without the network.
+    ///
+    /// `identifier` is a queue entry id: for a Live Photo's `#motion` entry the resource is its
+    /// clip, a different resource of the same asset, so a waiting job only counts when it is for
+    /// the same asset *and* the same kind of resource.
     private func requestDownload(of identifier: String) async {
-        guard let asset = PHAsset.fetchAssets(withLocalIdentifiers: [identifier], options: nil).firstObject,
-              let resource = PHKitAssetExporter.primaryResource(for: asset) else { return }
+        guard let resource = PHKitAssetExporter.uploadResource(forEntryID: identifier) else { return }
         let waiting = PHAssetResourceUploadJob.fetchJobs(action: .process, options: nil)
         var alreadyRequested = false
         waiting.enumerateObjects { job, _, stop in
-            if PHAssetResource.assetResource(forUploadJob: job)?.assetLocalIdentifier == identifier {
+            if let pending = PHAssetResource.assetResource(forUploadJob: job),
+               pending.assetLocalIdentifier == resource.assetLocalIdentifier,
+               pending.type == resource.type {
                 alreadyRequested = true
                 stop.pointee = true
             }

@@ -123,6 +123,7 @@
 		D6A29D3E155AD354D9E47CD2 /* ThumbnailGeneratorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 06934885FCF8AEA048000F6B /* ThumbnailGeneratorTests.swift */; };
 		D6EEA87B8D67254543DE4CAB /* NeutrinoCore in Frameworks */ = {isa = PBXBuildFile; productRef = 1FD83C7D0B31C310425EBEA2 /* NeutrinoCore */; };
 		DA5D08204C931BE6965C5D6B /* DriveItem.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F9EEBB608D849ADEBE786FB /* DriveItem.swift */; };
+		DEE3E083D3D824B7AADB5639 /* LivePhotoMotionBackfill.swift in Sources */ = {isa = PBXBuildFile; fileRef = E3F30B4EB5FE97F8A20440F5 /* LivePhotoMotionBackfill.swift */; };
 		E0BBDFECED1E767B2A45268F /* SearchIndexSyncService.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC412D2F519A0B34BA41651E /* SearchIndexSyncService.swift */; };
 		E241253B65D070E9BD84CE94 /* E2EEUploader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 92DB4C10254E37F3C8B82159 /* E2EEUploader.swift */; };
 		E766E9C9B8616693FED49BA8 /* PhotoUploadExtensionRunner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 34C3A93D8F25B1F23794CE13 /* PhotoUploadExtensionRunner.swift */; };
@@ -135,6 +136,7 @@
 		F42635C89114C7FAFBD84773 /* PhotoAssetExporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1189531C770C43F8CA12ADB /* PhotoAssetExporter.swift */; };
 		F56485D06BE57E7DA817CC9E /* SearchIndexTokenizer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 124D0F2836AA1C4105FD8F6C /* SearchIndexTokenizer.swift */; };
 		F5A3194F7AC59E856D828A8E /* SearchServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F89DB4C4E5203C9B985669D8 /* SearchServiceTests.swift */; };
+		F63FE9DE164114A1600F2888 /* LivePhotoMotionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 515F4680DD79D9C859D89851 /* LivePhotoMotionTests.swift */; };
 		F72D32E65C948E5D0F5F584B /* LocalSearchIndex.swift in Sources */ = {isa = PBXBuildFile; fileRef = 36307D854C329925CE489930 /* LocalSearchIndex.swift */; };
 		F7889A9C8B773AE5D43BA085 /* SealedKeyCryptoTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0BC10848134DEC435F1F7763 /* SealedKeyCryptoTests.swift */; };
 		F983AB0DA22DE3641618E1B5 /* PickedMediaLoaderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F9BBD895839E5BD86756064E /* PickedMediaLoaderTests.swift */; };
@@ -230,6 +232,7 @@
 		4B514FE69A64EC64CE2EE893 /* PhotoSyncSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoSyncSettingsView.swift; sourceTree = "<group>"; };
 		4E75AF3C358204F5340F0827 /* DriveServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DriveServiceTests.swift; sourceTree = "<group>"; };
 		4F9EEBB608D849ADEBE786FB /* DriveItem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DriveItem.swift; sourceTree = "<group>"; };
+		515F4680DD79D9C859D89851 /* LivePhotoMotionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LivePhotoMotionTests.swift; sourceTree = "<group>"; };
 		579B566CA7125E5E873C3BC0 /* PhotoUploadExtensionRunnerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoUploadExtensionRunnerTests.swift; sourceTree = "<group>"; };
 		590E72C929910D24827A0391 /* NeutrinoFileViewer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NeutrinoFileViewer.swift; sourceTree = "<group>"; };
 		5BD5E2B80EABE8729C6CD36D /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
@@ -292,6 +295,7 @@
 		DC81812A792AB4ED231880D0 /* PhotoDateRepair.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoDateRepair.swift; sourceTree = "<group>"; };
 		E057910348FA5DD56CAF3BA2 /* UploadServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UploadServiceTests.swift; sourceTree = "<group>"; };
 		E3985D05C9C065C11E2FAFB0 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		E3F30B4EB5FE97F8A20440F5 /* LivePhotoMotionBackfill.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LivePhotoMotionBackfill.swift; sourceTree = "<group>"; };
 		E8623DF607611C4B918D550F /* NeutrinoDriveShare.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = NeutrinoDriveShare.entitlements; sourceTree = "<group>"; };
 		E8D0E9F67E4BA7F2D9EAEB50 /* BiometricSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BiometricSettingsView.swift; sourceTree = "<group>"; };
 		E9E380C43E2F17633F9BE953 /* ShareSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareSheet.swift; sourceTree = "<group>"; };
@@ -413,6 +417,7 @@
 				00D351BC7EA7CA886AEB31CA /* DownloadService.swift */,
 				F47172C7892BED92B27EEB8A /* DriveService.swift */,
 				92DB4C10254E37F3C8B82159 /* E2EEUploader.swift */,
+				E3F30B4EB5FE97F8A20440F5 /* LivePhotoMotionBackfill.swift */,
 				36307D854C329925CE489930 /* LocalSearchIndex.swift */,
 				133D81CEFB2A25FC07B29499 /* OfflineService.swift */,
 				B26E1359A44257FD9EBE9408 /* PendingUploadKeyStore.swift */,
@@ -504,6 +509,7 @@
 				44DC6CCE3927256F0843DE3F /* KeyFileServiceTests.swift */,
 				6E9DB7865AEED70BD34195A9 /* KeyImportServiceTests.swift */,
 				69BA21EB1245B8848A89C2BF /* KeyQRDecryptServiceTests.swift */,
+				515F4680DD79D9C859D89851 /* LivePhotoMotionTests.swift */,
 				A42B78170F8B9D6672E183A7 /* LocalSearchIndexTests.swift */,
 				965E54926CB9E957E39C2117 /* MockURLProtocol.swift */,
 				3EB651419CBEB1C389962E4A /* NeutrinoAppLinkTests.swift */,
@@ -732,6 +738,7 @@
 				6B69A2B077D27029DD7924B9 /* FileBrowserView.swift in Sources */,
 				6363B4D2DB17A9276F46B17A /* FileRowView.swift in Sources */,
 				3BD6B2A2583353EF5D435FE8 /* FilesView.swift in Sources */,
+				DEE3E083D3D824B7AADB5639 /* LivePhotoMotionBackfill.swift in Sources */,
 				F72D32E65C948E5D0F5F584B /* LocalSearchIndex.swift in Sources */,
 				A4309A73D2D6CB256BD96435 /* MoveSheet.swift in Sources */,
 				690F26E747D4DA457D331F5F /* NeutrinoDriveApp.swift in Sources */,
@@ -816,6 +823,7 @@
 				C823CEBBB11E783512FE5286 /* KeyImportServiceTests.swift in Sources */,
 				99EF38075C56FB5F28A0AD2A /* KeyQRDecryptServiceTests.swift in Sources */,
 				47335AA514E3DF49C3867543 /* KeychainServiceTests.swift in Sources */,
+				F63FE9DE164114A1600F2888 /* LivePhotoMotionTests.swift in Sources */,
 				AFDC33DC6CB9F4366E9D9E04 /* LocalSearchIndexTests.swift in Sources */,
 				7B51774A66E6E2B6B36084D0 /* MockURLProtocol.swift in Sources */,
 				141F4B2FB7C98FCE44A97FE2 /* NeutrinoAppLinkTests.swift in Sources */,

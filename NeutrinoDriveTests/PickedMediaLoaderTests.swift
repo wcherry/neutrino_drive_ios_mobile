@@ -153,7 +153,9 @@ final class PickedMediaLoaderTests: XCTestCase {
         let item = FakePickedItem(assetIdentifier: "ASSET-1", suggestedName: "IMG_0001",
                                   registeredTypeIdentifiers: [UTType.heic.identifier],
                                   fileBytes: Data([9]), fileExtension: "heic")
-        let media = try await loader.load(item)
+        let loaded = try await loader.load(item)
+        XCTAssertEqual(loaded.count, 1)
+        let media = loaded[0]
 
         XCTAssertEqual(media.data, Data([1, 2, 3]))
         XCTAssertEqual(media.fileName, "IMG_0001.HEIC")
@@ -173,7 +175,9 @@ final class PickedMediaLoaderTests: XCTestCase {
         let item = FakePickedItem(assetIdentifier: "ASSET-2", suggestedName: "IMG_0002",
                                   registeredTypeIdentifiers: [UTType.jpeg.identifier],
                                   fileBytes: original, fileExtension: "jpg")
-        let media = try await loader.load(item)
+        let loaded = try await loader.load(item)
+        XCTAssertEqual(loaded.count, 1)
+        let media = loaded[0]
 
         XCTAssertEqual(media.data, original, "the picked file must be uploaded byte for byte")
         XCTAssertEqual(media.fileName, "IMG_0002.jpeg")
@@ -194,7 +198,9 @@ final class PickedMediaLoaderTests: XCTestCase {
         let item = FakePickedItem(assetIdentifier: "ASSET-3", suggestedName: nil,
                                   registeredTypeIdentifiers: [UTType.jpeg.identifier],
                                   fileBytes: original, fileExtension: "jpg")
-        let media = try await loader.load(item)
+        let loaded = try await loader.load(item)
+        XCTAssertEqual(loaded.count, 1)
+        let media = loaded[0]
 
         XCTAssertEqual(media.data, original)
         XCTAssertNil(media.importMetadata, "no EXIF date means the upload's own date")

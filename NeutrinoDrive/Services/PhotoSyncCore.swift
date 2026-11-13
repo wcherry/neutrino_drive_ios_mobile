@@ -36,13 +36,23 @@ enum PhotoSyncKeys {
     /// The last completed "Repair Photo Dates" pass, as JSON. Survives a relaunch so the
     /// Settings screen can still say what the pass found.
     static let lastDateRepair     = "photoSync.lastDateRepair"
+    /// Whether a Live Photo's paired video is uploaded beside its still (#42). Independent of
+    /// `includeVideos`: the motion is part of a photo, not a video. On by default.
+    static let keepLivePhotoMotion = "photoSync.keepLivePhotoMotion"
+    /// The last completed "Add Live Photo Motion" pass, as JSON.
+    static let lastMotionBackfill = "photoSync.lastMotionBackfill"
 
     /// Every key above, for ``PhotoSyncDefaults/migrate(from:to:)``.
     static let all = [
         enabled, folderName, folderID, includeVideos, wifiOnly, whileChargingOnly, anchorDate,
         backfillDays, backfillScannedFrom, changeToken, lastSuccessfulSync, lastBackgroundRun,
-        lastDateRepair,
+        lastDateRepair, keepLivePhotoMotion, lastMotionBackfill,
     ]
+
+    /// `keepLivePhotoMotion` as stored, with its default.
+    static func keepsLivePhotoMotion(_ defaults: UserDefaults) -> Bool {
+        defaults.object(forKey: keepLivePhotoMotion) as? Bool ?? true
+    }
 }
 
 // MARK: - PhotoSyncDefaults
@@ -128,19 +138,56 @@ enum PhotoSyncRules {
         return String(transferID.dropFirst(prefix.count))
     }
 
-    /// Returns the identifiers from `assets` that are not already known to `queue` and were
-    /// created on/after `anchorDate`, oldest-first.
+    // MARK: Live Photo motion entries
+
+    /// What marks a queue entry as a Live Photo's paired video rather than the asset itself.
+    ///
+    /// The motion is queued as an entry of its own, `<localIdentifier>#motion`, so everything
+    /// keyed by an entry's id applies to it unchanged: its own upload id and background
+    /// transfer, its own claim between the app and the extension, its own retries, and an
+    /// `import_source` of `photo-sync:<localIdentifier>#motion`. A clip that fails is retried
+    /// on its own and never sends the still a second time. `#` can't appear in a
+    /// `PHAsset.localIdentifier` (`<UUID>/L0/001`).
+    static let motionSuffix = "#motion"
+
+    static func motionEntryID(forAssetIdentifier identifier: String) -> String {
+        identifier + motionSuffix
+    }
+
+    /// The asset an entry id belongs to, and whether the entry is that asset's motion.
+    static func parseEntryID(_ entryID: String) -> (assetIdentifier: String, isMotion: Bool) {
+        guard entryID.hasSuffix(motionSuffix) else { return (entryID, false) }
+        return (String(entryID.dropLast(motionSuffix.count)), true)
+    }
+
+    /// Returns the entries to enqueue for `assets`: every asset not already known to `queue` and
+    /// created on/after `anchorDate`, oldest-first, each Live Photo followed by its motion when
+    /// `keepLivePhotoMotion` is on.
+    ///
+    /// Motion is only added alongside a still that is itself new. Every scan here runs over the
+    /// whole window since the anchor, and adding motion for stills already uploaded would quietly
+    /// start uploading the motion of every Live Photo backed up before #42 — that is the
+    /// "Add Live Photo Motion" pass's job, which asks first.
     static func newIdentifiers(from assets: [PhotoAssetProviding], anchorDate: Date,
-                               includeVideos: Bool, queue: PhotoSyncQueue)
+                               includeVideos: Bool, keepLivePhotoMotion: Bool = false,
+                               queue: PhotoSyncQueue)
     -> [(id: String, creationDate: Date, modificationDate: Date?)] {
         assets
             .filter { includeVideos || $0.mediaType != .video }
-            .compactMap { asset -> (String, Date, Date?)? in
-                guard let created = asset.creationDate, created >= anchorDate else { return nil }
-                guard !queue.contains(id: asset.localIdentifier) else { return nil }
-                return (asset.localIdentifier, created, asset.modificationDate)
+            .flatMap { asset -> [(id: String, creationDate: Date, modificationDate: Date?)] in
+                guard let created = asset.creationDate, created >= anchorDate else { return [] }
+                guard !queue.contains(id: asset.localIdentifier) else { return [] }
+                var entries = [(id: asset.localIdentifier, creationDate: created,
+                                modificationDate: asset.modificationDate)]
+                let motionID = motionEntryID(forAssetIdentifier: asset.localIdentifier)
+                if keepLivePhotoMotion, asset.mediaSubtypes.contains(.photoLive),
+                   !queue.contains(id: motionID) {
+                    entries.append((motionID, created, asset.modificationDate))
+                }
+                return entries
             }
-            .sorted { $0.1 < $1.1 }
+            // Ties broken by id, so a still always comes before its own motion.
+            .sorted { ($0.creationDate, $0.id) < ($1.creationDate, $1.id) }
     }
 
     /// Whether `error` will still fail however many times it is retried.
