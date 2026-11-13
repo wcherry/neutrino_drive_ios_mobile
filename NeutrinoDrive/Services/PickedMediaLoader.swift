@@ -217,16 +217,11 @@ struct PickedMediaLoader {
     /// as it is; no name at all → the exporter's `IMG_<yyyyMMdd_HHmmss>` fallback.
     static func fileName(suggested: String?, type: UTType, fallbackDate: Date) -> String {
         let ext = type.preferredFilenameExtension ?? "bin"
-        guard let suggested = suggested?.trimmingCharacters(in: .whitespacesAndNewlines),
-              !suggested.isEmpty else {
-            return PHKitAssetExporter.fallbackFileName(creationDate: fallbackDate, ext: ext)
-        }
-        let existing = (suggested as NSString).pathExtension
-        if !existing.isEmpty, let existingType = UTType(filenameExtension: existing),
-           existingType.conforms(to: type) || type.conforms(to: existingType) {
-            return suggested
-        }
-        return "\(suggested).\(ext)"
+        // The shared rule (#49); only the fallback is this path's own.
+        return UploadFileNaming.name(suggested: suggested, fileExtension: ext, fallbackStem: {
+            (PHKitAssetExporter.fallbackFileName(creationDate: fallbackDate, ext: ext) as NSString)
+                .deletingPathExtension
+        })
     }
 
     /// EXIF `DateTimeOriginal`, honouring `OffsetTimeOriginal` when the camera wrote one and
