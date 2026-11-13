@@ -133,7 +133,13 @@ struct FileBrowserView: View {
             }
         }
         .sheet(isPresented: $showUpload) {
-            UploadSheet(isPresented: $showUpload, parentFolderID: parentID) { result in
+            UploadSheet(
+                isPresented: $showUpload,
+                parentFolderID: parentID,
+                stampImportMetadata: { [driveService] fileID, metadata in
+                    try await driveService.setImportMetadata(fileID: fileID, metadata: metadata)
+                }
+            ) { result in
                 driveService.fileWasUploaded(result)
             }
         }

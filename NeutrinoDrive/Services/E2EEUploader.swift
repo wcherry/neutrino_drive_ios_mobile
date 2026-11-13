@@ -200,6 +200,8 @@ struct E2EEUploader {
     ///   a retry finishes the upload it interrupted rather than starting a second one).
     ///   Callers with no natural identity may let it default; photo sync passes
     ///   `photo-sync:<localIdentifier>`.
+    /// - Parameter importMetadata: the file's own dates and provenance, sent with the body. See
+    ///   ``prepare(data:fileName:mimeType:parentFolderID:thumbnailBase64:uploadID:importMetadata:allowsExpensiveNetworkAccess:)``.
     /// - Parameter progress: called with 0…1 as the request body is sent. Invoked on the
     ///   transfer session's delegate queue, **not** the main queue — callers that publish to
     ///   SwiftUI must hop themselves.
@@ -209,13 +211,15 @@ struct E2EEUploader {
                 parentFolderID: String?,
                 thumbnailBase64: String? = nil,
                 uploadID: String = UUID().uuidString,
+                importMetadata: DriveImportMetadata? = nil,
                 progress: ((Double) -> Void)? = nil) async throws -> UploadResult {
         if let finished = try await finishCommittedUpload(uploadID: uploadID) {
             return finished
         }
         let prepared = try await prepare(data: data, fileName: fileName, mimeType: plainMimeType,
                                          parentFolderID: parentFolderID,
-                                         thumbnailBase64: thumbnailBase64, uploadID: uploadID)
+                                         thumbnailBase64: thumbnailBase64, uploadID: uploadID,
+                                         importMetadata: importMetadata)
         return try await submit(prepared, progress: progress)
     }
 

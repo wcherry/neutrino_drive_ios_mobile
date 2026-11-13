@@ -93,10 +93,14 @@ final class UploadService: ObservableObject {
     ///   one an earlier attempt left half-committed. `nil` mints a fresh one, which is right
     ///   for a manual upload — the user retries by picking the file again, and that is a new
     ///   upload. Photo sync passes the asset's, because its retries are automatic.
+    /// - Parameter importMetadata: the file's own dates (a picked photo's capture date), sent
+    ///   with the body. The caller checks `UploadResult.importSource` and patches if the server
+    ///   didn't keep them; see ``PickedMediaUpload/stampIfNeeded(result:metadata:stamp:logger:)``.
     func upload(data: Data, fileName: String, mimeType: String, parentFolderID: String?,
                reportsProgress: Bool = true,
                thumbnailBase64: String? = nil,
-               uploadID: String? = nil) async throws -> UploadResult {
+               uploadID: String? = nil,
+               importMetadata: DriveImportMetadata? = nil) async throws -> UploadResult {
 
         if reportsProgress {
             isUploading = true
@@ -126,6 +130,7 @@ final class UploadService: ObservableObject {
             parentFolderID: parentFolderID,
             thumbnailBase64: thumbnailBase64,
             uploadID: uploadID ?? UUID().uuidString,
+            importMetadata: importMetadata,
             progress: progressHandler
         )
 
