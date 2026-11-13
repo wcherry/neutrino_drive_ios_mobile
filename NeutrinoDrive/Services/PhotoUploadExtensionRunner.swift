@@ -254,9 +254,11 @@ final class PhotoUploadExtensionRunner {
     private func enqueueNewAssets(since anchor: Date) {
         let assets = assetsCreatedSince(anchor)
         let includeVideos = defaults.object(forKey: PhotoSyncKeys.includeVideos) as? Bool ?? true
+        let keepMotion = PhotoSyncKeys.keepsLivePhotoMotion(defaults)
         current.enqueued += queueStore.update { queue -> Int in
             let newOnes = PhotoSyncRules.newIdentifiers(from: assets, anchorDate: anchor,
-                                                        includeVideos: includeVideos, queue: queue)
+                                                        includeVideos: includeVideos,
+                                                        keepLivePhotoMotion: keepMotion, queue: queue)
             for entry in newOnes {
                 queue.enqueue(id: entry.id, creationDate: entry.creationDate,
                               modificationDate: entry.modificationDate)
@@ -292,6 +294,10 @@ final class PhotoUploadExtensionRunner {
         do {
             guard let prepared = try await prepare(entry, folderID: folderID) else { return }
             submission = prepared
+        } catch PhotoExportError.noPairedVideo {
+            // A `#motion` entry with nothing to send; see `PhotoSyncService.startUpload`.
+            queueStore.update { $0.remove(id: entry.id) }
+            return
         } catch {
             record(entry, failure: error)
             return
@@ -317,6 +323,11 @@ final class PhotoUploadExtensionRunner {
             return earlier
         }
 
+        if PhotoSyncRules.parseEntryID(entry.id).isMotion && !PhotoSyncKeys.keepsLivePhotoMotion(defaults) {
+            throw PhotoExportError.noPairedVideo
+        }
+        // `assetSizeProvider` and `downloadRequester` take the entry id, and resolve a `#motion`
+        // one to the clip — see `PHKitAssetExporter.uploadResource(forEntryID:)`.
         if let size = assetSizeProvider(entry.id), size > Self.maxAssetBytes {
             leaveForApp(entry)
             return nil
@@ -324,8 +335,8 @@ final class PhotoUploadExtensionRunner {
 
         let export: PhotoExport
         do {
-            export = try await assetExporter.exportData(
-                for: entry.id,
+            export = try await assetExporter.export(
+                entryID: entry.id,
                 includeVideos: defaults.object(forKey: PhotoSyncKeys.includeVideos) as? Bool ?? true,
                 networkAccessAllowed: false
             )

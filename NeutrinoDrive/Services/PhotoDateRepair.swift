@@ -39,17 +39,32 @@ struct PHKitAssetMetadataProvider: PhotoAssetMetadataProviding {
         var found: [PhotoAssetMetadata] = []
         // PhotoKit copes with a large identifier list, but a year of camera roll is thousands
         // of assets and each one costs a resource lookup; chunking keeps the peak bounded.
-        for chunk in stride(from: 0, to: identifiers.count, by: 500) {
-            let slice = Array(identifiers[chunk..<min(chunk + 500, identifiers.count)])
+        //
+        // A `#motion` entry (#42) is looked up through its asset and named after its clip, so a
+        // Live Photo's `IMG_1234.MOV` is matched like its `IMG_1234.HEIC` rather than reported as
+        // "not on this device". Its `localIdentifier` stays the entry id, which is what makes the
+        // patch's `import_source` read `photo-sync:<id>#motion`.
+        var entriesByAsset: [String: [String]] = [:]
+        for entryID in identifiers {
+            entriesByAsset[PhotoSyncRules.parseEntryID(entryID).assetIdentifier, default: []].append(entryID)
+        }
+        let assetIDs = Array(entriesByAsset.keys)
+        for chunk in stride(from: 0, to: assetIDs.count, by: 500) {
+            let slice = Array(assetIDs[chunk..<min(chunk + 500, assetIDs.count)])
             let result = PHAsset.fetchAssets(withLocalIdentifiers: slice, options: nil)
             result.enumerateObjects { asset, _, _ in
                 guard let created = asset.creationDate else { return }
-                found.append(PhotoAssetMetadata(
-                    localIdentifier: asset.localIdentifier,
-                    originalFilename: Self.uploadedFileName(for: asset),
-                    creationDate: created,
-                    modificationDate: asset.modificationDate
-                ))
+                for entryID in entriesByAsset[asset.localIdentifier] ?? [] {
+                    guard let name = PHKitAssetExporter.uploadedFileName(forEntryID: entryID, asset: asset) else {
+                        continue
+                    }
+                    found.append(PhotoAssetMetadata(
+                        localIdentifier: entryID,
+                        originalFilename: name,
+                        creationDate: created,
+                        modificationDate: asset.modificationDate
+                    ))
+                }
             }
         }
         return found
@@ -57,13 +72,7 @@ struct PHKitAssetMetadataProvider: PhotoAssetMetadataProviding {
 
     /// The name `PHKitAssetExporter` would have uploaded this asset under.
     static func uploadedFileName(for asset: PHAsset) -> String {
-        let resources = PHAssetResource.assetResources(for: asset)
-        let isVideo = asset.mediaType == .video
-        let wanted: PHAssetResourceType = isVideo ? .video : .photo
-        let primary = resources.first(where: { $0.type == wanted }) ?? resources.first
-        if let name = primary?.originalFilename, !name.isEmpty { return name }
-        return PHKitAssetExporter.fallbackFileName(creationDate: asset.creationDate,
-                                                   ext: isVideo ? "mov" : "jpg")
+        PHKitAssetExporter.uploadedFileName(for: asset)
     }
 }
 

@@ -150,6 +150,10 @@ final class PhotoSyncService: NSObject, ObservableObject {
     @Published private(set) var lastSyncedAt: Date?
     @Published private(set) var authorizationStatus: PHAuthorizationStatus = .notDetermined
 
+    /// Progress of the "Add Live Photo Motion" pass. Settable for the same reason as
+    /// `dateRepairState`: the pass lives in `LivePhotoMotionBackfill.swift`.
+    @Published var motionBackfillState: LivePhotoMotionBackfillState = .idle
+
     /// Progress of the one-time "Repair Photo Dates" pass.
     ///
     /// Settable because ``repairPhotoDates()`` lives in `PhotoDateRepair.swift` and `private(set)`
@@ -229,6 +233,13 @@ final class PhotoSyncService: NSObject, ObservableObject {
     /// Resolves `PHAsset.localIdentifier`s to the filename and dates the repair pass matches
     /// on. Defaults to the real PhotoKit-backed provider; tests inject a fake.
     var assetMetadataProvider: PhotoAssetMetadataProviding = PHKitAssetMetadataProvider()
+
+    /// Tells the "Add Live Photo Motion" pass which assets are Live Photos with a clip. Defaults
+    /// to PhotoKit; tests inject a fake.
+    var motionAssetProvider: LivePhotoMotionAssetProviding = PHKitLivePhotoMotionAssetProvider()
+
+    /// What the motion pass found, held between checking and the user confirming.
+    var pendingMotionPlan: LivePhotoMotionBackfillPlanner.Plan?
 
     /// Exports a `PHAsset.localIdentifier` to bytes. Defaults to the real PhotoKit-backed
     /// exporter; tests inject a fake.
@@ -373,6 +384,23 @@ final class PhotoSyncService: NSObject, ObservableObject {
         set { defaults.set(newValue, forKey: Keys.includeVideos) }
     }
 
+    /// Whether a Live Photo's paired video is backed up beside its still (#42). On by default,
+    /// and independent of `includeVideos`: a Live Photo is a photo, and turning video backup off
+    /// to save space must not strip the motion from photos.
+    ///
+    /// Turning it off drops the motion still waiting to upload. Clips already in Drive stay.
+    var keepLivePhotoMotion: Bool {
+        get { Keys.keepsLivePhotoMotion(defaults) }
+        set {
+            guard newValue != keepLivePhotoMotion else { return }
+            objectWillChange.send()
+            defaults.set(newValue, forKey: Keys.keepLivePhotoMotion)
+            if !newValue {
+                mutateQueue { $0.removeMotionEntries() }
+            }
+        }
+    }
+
     var wifiOnly: Bool {
         get { defaults.object(forKey: Keys.wifiOnly) as? Bool ?? true }
         set {
@@ -471,8 +499,12 @@ final class PhotoSyncService: NSObject, ObservableObject {
     var photoFolderID: String? { defaults.string(forKey: Keys.folderID) }
 
     /// `PHAsset.localIdentifier`s this device has already uploaded — the set the repair pass
-    /// builds its device-side filename lookup from.
+    /// builds its device-side filename lookup from. Includes `#motion` entries, which the
+    /// metadata provider resolves to their clips.
     var completedAssetIdentifiers: [String] { Array(queue.completed.keys) }
+
+    /// This process's copy of the queue, for the passes that plan from it.
+    var queueSnapshot: PhotoSyncQueue { queue }
 
     /// The last completed repair pass, so Settings can report it after a relaunch.
     var lastDateRepair: PhotoDateRepairReport? {
@@ -489,6 +521,22 @@ final class PhotoSyncService: NSObject, ObservableObject {
                 return
             }
             defaults.set(data, forKey: Keys.lastDateRepair)
+        }
+    }
+
+    /// The last completed "Add Live Photo Motion" pass, so Settings can report it after a relaunch.
+    var lastMotionBackfill: LivePhotoMotionBackfillReport? {
+        get {
+            guard let data = defaults.data(forKey: Keys.lastMotionBackfill) else { return nil }
+            return try? JSONDecoder.photoSync.decode(LivePhotoMotionBackfillReport.self, from: data)
+        }
+        set {
+            objectWillChange.send()
+            guard let newValue, let data = try? JSONEncoder.photoSync.encode(newValue) else {
+                defaults.removeObject(forKey: Keys.lastMotionBackfill)
+                return
+            }
+            defaults.set(data, forKey: Keys.lastMotionBackfill)
         }
     }
 
@@ -646,10 +694,12 @@ final class PhotoSyncService: NSObject, ObservableObject {
     /// Returns the identifiers from `assets` that are not already known to `queue` and were
     /// created on/after `anchorDate`, oldest-first.
     static func newIdentifiers(from assets: [PhotoAssetProviding], anchorDate: Date,
-                               includeVideos: Bool, queue: PhotoSyncQueue)
+                               includeVideos: Bool, keepLivePhotoMotion: Bool = false,
+                               queue: PhotoSyncQueue)
     -> [(id: String, creationDate: Date, modificationDate: Date?)] {
         PhotoSyncRules.newIdentifiers(from: assets, anchorDate: anchorDate,
-                                      includeVideos: includeVideos, queue: queue)
+                                      includeVideos: includeVideos,
+                                      keepLivePhotoMotion: keepLivePhotoMotion, queue: queue)
     }
 
     /// Enqueues every asset in `assets` that passes `newIdentifiers`, persists the queue, and
@@ -658,11 +708,13 @@ final class PhotoSyncService: NSObject, ObservableObject {
     func enqueueIfNeeded(_ assets: [PhotoAssetProviding]) -> Int {
         let anchor = effectiveAnchorDate
         let includeVideos = includeVideos
+        let keepMotion = keepLivePhotoMotion
         // Checked against the queue on disk, not this process's copy: the Photos extension may
         // have enqueued — or finished — some of these already.
         let added = mutateQueue { queue -> Int in
             let newOnes = Self.newIdentifiers(from: assets, anchorDate: anchor,
-                                              includeVideos: includeVideos, queue: queue)
+                                              includeVideos: includeVideos,
+                                              keepLivePhotoMotion: keepMotion, queue: queue)
             for entry in newOnes {
                 queue.enqueue(id: entry.id, creationDate: entry.creationDate,
                               modificationDate: entry.modificationDate)
@@ -985,6 +1037,12 @@ final class PhotoSyncService: NSObject, ObservableObject {
         let submission: PhotoUploadSubmission
         do {
             submission = try await prepareUpload(entry)
+        } catch PhotoExportError.noPairedVideo {
+            // A `#motion` entry with no clip to send — Live turned off on the photo since, or
+            // motion backup turned off. Nothing failed; there is just nothing to upload.
+            inFlight.remove(entry.id)
+            mutateQueue { $0.remove(id: entry.id) }
+            return
         } catch {
             inFlight.remove(entry.id)
             recordFailure(of: entry, error)
@@ -1010,9 +1068,12 @@ final class PhotoSyncService: NSObject, ObservableObject {
             return earlier
         }
 
+        if PhotoSyncRules.parseEntryID(entry.id).isMotion && !keepLivePhotoMotion {
+            throw PhotoExportError.noPairedVideo
+        }
         let wifiOnlyBlocksCellular = wifiOnly && (!isOnWiFi || isNetworkExpensive)
-        let export = try await assetExporter.exportData(
-            for: entry.id,
+        let export = try await assetExporter.export(
+            entryID: entry.id,
             includeVideos: includeVideos,
             networkAccessAllowed: !wifiOnlyBlocksCellular
         )
@@ -1200,9 +1261,10 @@ final class PhotoSyncService: NSObject, ObservableObject {
     // MARK: - Persistence / counts
 
     /// Changes the queue on disk — under the lock the Photos extension takes too — and adopts
-    /// the result as this process's copy.
+    /// the result as this process's copy. Internal for the passes in their own files
+    /// (`LivePhotoMotionBackfill.swift`); nothing outside photo sync should call it.
     @discardableResult
-    private func mutateQueue<T>(_ body: (inout PhotoSyncQueue) -> T) -> T {
+    func mutateQueue<T>(_ body: (inout PhotoSyncQueue) -> T) -> T {
         var latest = queue
         let result = queueStore.update { queue -> T in
             let result = body(&queue)
@@ -1215,7 +1277,7 @@ final class PhotoSyncService: NSObject, ObservableObject {
     }
 
     /// Adopts the queue on disk, which the Photos extension may have changed.
-    private func reloadQueue() {
+    func reloadQueue() {
         queue = queueStore.load()
         refreshCounts()
     }

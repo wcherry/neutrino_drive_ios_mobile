@@ -324,22 +324,31 @@ struct UploadSheet: View {
             for (offset, item) in items.enumerated() {
                 batchPosition = items.count > 1 ? (offset + 1, items.count) : nil
                 do {
-                    let media: PickedMedia
+                    let files: [PickedMedia]
                     switch item {
-                    case .ready(let ready): media = ready
-                    case .fromLibrary(let picked): media = try await loader.load(picked)
+                    case .ready(let ready): files = [ready]
+                    case .fromLibrary(let picked): files = try await loader.load(picked)
                     }
-                    let result = try await uploadService.upload(
-                        data: media.data,
-                        fileName: media.fileName,
-                        mimeType: media.mimeType,
-                        parentFolderID: parentFolderID,
-                        thumbnailBase64: media.thumbnailBase64,
-                        importMetadata: media.importMetadata
-                    )
-                    await PickedMediaUpload.stampIfNeeded(result: result, metadata: media.importMetadata,
-                                                          stamp: stampImportMetadata, logger: logger)
-                    onUploadComplete(result)
+                    // A Live Photo is two files, its photo and then its motion (#42). The item
+                    // counts once: it fails if its photo does, and a clip that doesn't make it
+                    // costs only the motion — the photo is already in Drive.
+                    for (index, media) in files.enumerated() {
+                        do {
+                            let result = try await uploadService.upload(
+                                data: media.data,
+                                fileName: media.fileName,
+                                mimeType: media.mimeType,
+                                parentFolderID: parentFolderID,
+                                thumbnailBase64: media.thumbnailBase64,
+                                importMetadata: media.importMetadata
+                            )
+                            await PickedMediaUpload.stampIfNeeded(result: result, metadata: media.importMetadata,
+                                                                  stamp: stampImportMetadata, logger: logger)
+                            onUploadComplete(result)
+                        } catch where index > 0 {
+                            logger.warning("motion for picked item \(offset + 1) not uploaded: \(error.localizedDescription, privacy: .public)")
+                        }
+                    }
                 } catch {
                     logger.error("upload of picked item \(offset + 1) failed: \(error.localizedDescription, privacy: .public)")
                     failures.append(error.localizedDescription)

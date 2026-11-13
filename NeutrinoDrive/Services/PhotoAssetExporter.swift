@@ -14,6 +14,13 @@ protocol PhotoAssetProviding {
     /// retouched years after it was taken keeps both dates rather than collapsing onto one.
     var modificationDate: Date? { get }
     var mediaType: PHAssetMediaType { get }
+    /// `.photoLive` is what marks a Live Photo, whose motion is queued beside it (#42).
+    var mediaSubtypes: PHAssetMediaSubtype { get }
+}
+
+extension PhotoAssetProviding {
+    /// Test fakes describe plain photos unless they say otherwise. `PHAsset` has its own.
+    var mediaSubtypes: PHAssetMediaSubtype { [] }
 }
 
 extension PHAsset: PhotoAssetProviding {}
@@ -26,6 +33,29 @@ extension PHAsset: PhotoAssetProviding {}
 protocol PhotoAssetExporting {
     func exportData(for identifier: String, includeVideos: Bool,
                     networkAccessAllowed: Bool) async throws -> PhotoExport
+    /// A Live Photo's paired video, unmodified, named after its still (`IMG_1234.HEIC` →
+    /// `IMG_1234.MOV`). Throws ``PhotoExportError/noPairedVideo`` for an asset that has none.
+    func exportPairedVideo(for identifier: String,
+                           networkAccessAllowed: Bool) async throws -> PhotoExport
+}
+
+extension PhotoAssetExporting {
+    /// Fakes that predate Live Photo motion have none to give.
+    func exportPairedVideo(for identifier: String,
+                           networkAccessAllowed: Bool) async throws -> PhotoExport {
+        throw PhotoExportError.noPairedVideo
+    }
+
+    /// The export for a queue entry: the asset itself, or its motion for a `#motion` entry.
+    func export(entryID: String, includeVideos: Bool,
+                networkAccessAllowed: Bool) async throws -> PhotoExport {
+        let (assetID, isMotion) = PhotoSyncRules.parseEntryID(entryID)
+        if isMotion {
+            return try await exportPairedVideo(for: assetID, networkAccessAllowed: networkAccessAllowed)
+        }
+        return try await exportData(for: assetID, includeVideos: includeVideos,
+                                    networkAccessAllowed: networkAccessAllowed)
+    }
 }
 
 struct PhotoExport {
@@ -54,6 +84,9 @@ enum PhotoExportError: LocalizedError {
     /// exports like that and asks the system to download the original instead (see
     /// `PhotoUploadExtensionRunner`), so it is not a failure of the photo.
     case notDownloaded
+    /// A `#motion` entry whose asset is not, or is no longer, a Live Photo with a clip — the
+    /// user turned Live off, or the clip was never kept. Nothing to upload, not a failure.
+    case noPairedVideo
 
     var errorDescription: String? {
         switch self {
@@ -61,6 +94,7 @@ enum PhotoExportError: LocalizedError {
         case .videoExcluded: return "Video sync is turned off."
         case .exportFailed:  return "The photo could not be read for upload."
         case .notDownloaded: return "The photo is in iCloud and has not been downloaded yet."
+        case .noPairedVideo: return "This photo has no Live Photo motion."
         }
     }
 }
@@ -70,8 +104,8 @@ enum PhotoExportError: LocalizedError {
 /// Production `PhotoAssetExporting`. Images export via `requestImageDataAndOrientation`
 /// (current/edited rendition, original bytes — no transcoding). Videos export via
 /// `PHAssetResourceManager.writeData(for:toFile:)` to a temp file (never held fully in
-/// memory) and are read back as `Data`. Live Photos upload the still image resource only —
-/// the paired video resource is intentionally skipped for MVP.
+/// memory) and are read back as `Data`. A Live Photo's still comes from `exportData`, and its
+/// paired video from ``exportPairedVideo(for:networkAccessAllowed:)`` as a separate upload.
 final class PHKitAssetExporter: PhotoAssetExporting {
 
     private let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "NeutrinoDrive",
@@ -136,6 +170,68 @@ final class PHKitAssetExporter: PhotoAssetExporting {
         let fileName = resource.originalFilename.isEmpty
             ? Self.fallbackFileName(for: asset, ext: "mov")
             : resource.originalFilename
+        return try await exportMovie(resource, fileName: fileName,
+                                     networkAccessAllowed: networkAccessAllowed)
+    }
+
+    // MARK: - Live Photo motion
+
+    func exportPairedVideo(for identifier: String,
+                           networkAccessAllowed: Bool) async throws -> PhotoExport {
+        guard let asset = PHAsset.fetchAssets(withLocalIdentifiers: [identifier], options: nil).firstObject else {
+            throw PhotoExportError.assetNotFound
+        }
+        guard asset.mediaSubtypes.contains(.photoLive),
+              let clip = Self.pairedVideoResource(for: asset) else {
+            throw PhotoExportError.noPairedVideo
+        }
+        let stillName = Self.uploadedFileName(for: asset)
+        let fileName = Self.pairedVideoFileName(stillName: stillName, videoName: clip.originalFilename)
+        // Written out byte for byte: the clip's `com.apple.quicktime.content.identifier` and
+        // still-image-time track are what pair it with the still again later.
+        return try await exportMovie(clip, fileName: fileName, networkAccessAllowed: networkAccessAllowed)
+    }
+
+    /// The clip to upload for a Live Photo: the edited one when there is one, so it matches the
+    /// edited still `exportImage` uploads (`version = .current`), otherwise the original.
+    static func pairedVideoResource(for asset: PHAsset) -> PHAssetResource? {
+        let resources = PHAssetResource.assetResources(for: asset)
+        return resources.first(where: { $0.type == .fullSizePairedVideo })
+            ?? resources.first(where: { $0.type == .pairedVideo })
+    }
+
+    /// The clip is named after its still, never after itself: the shared stem is how a still and
+    /// its clip are paired when nothing else links them (Apple's own export, Google Takeout and
+    /// the web's `pairMotionPhotos` all rely on it). `IMG_1234.HEIC` + `IMG_1234.MOV` →
+    /// `IMG_1234.MOV`; a clip PhotoKit named differently (an edited `FullSizeRender.mov`) still
+    /// gets the still's stem.
+    static func pairedVideoFileName(stillName: String, videoName: String) -> String {
+        let stem = (stillName as NSString).deletingPathExtension
+        let ext = (videoName as NSString).pathExtension
+        return "\(stem).\(ext.isEmpty ? "MOV" : ext)"
+    }
+
+    /// The name an asset is uploaded under: its primary resource's `originalFilename`, or the
+    /// dated fallback. `PHKitAssetMetadataProvider` matches files back to assets by exactly this.
+    static func uploadedFileName(for asset: PHAsset) -> String {
+        let isVideo = asset.mediaType == .video
+        if let name = primaryResource(for: asset)?.originalFilename, !name.isEmpty { return name }
+        return fallbackFileName(creationDate: asset.creationDate, ext: isVideo ? "mov" : "jpg")
+    }
+
+    /// The name a queue entry is uploaded under: the asset's, or for a `#motion` entry its clip's.
+    /// `nil` when the asset is gone, or a `#motion` entry's asset has no clip.
+    static func uploadedFileName(forEntryID entryID: String, asset: PHAsset) -> String? {
+        guard PhotoSyncRules.parseEntryID(entryID).isMotion else { return uploadedFileName(for: asset) }
+        guard let clip = pairedVideoResource(for: asset) else { return nil }
+        return pairedVideoFileName(stillName: uploadedFileName(for: asset), videoName: clip.originalFilename)
+    }
+
+    // MARK: - Movies
+
+    /// Writes `resource` to a temp file, takes a cover from it, and reads it back.
+    private func exportMovie(_ resource: PHAssetResource, fileName: String,
+                             networkAccessAllowed: Bool) async throws -> PhotoExport {
         let mimeType = UTType(resource.uniformTypeIdentifier)?.preferredMIMEType ?? "video/quicktime"
 
         let tempURL = FileManager.default.temporaryDirectory
@@ -175,6 +271,16 @@ final class PHKitAssetExporter: PhotoAssetExporting {
         let resources = PHAssetResource.assetResources(for: asset)
         let preferred: PHAssetResourceType = asset.mediaType == .video ? .video : .photo
         return resources.first(where: { $0.type == preferred }) ?? resources.first
+    }
+
+    /// The resource a queue entry uploads: ``primaryResource(for:)``, or the clip for a
+    /// `#motion` entry. What the Photos extension sizes, and asks iOS to download.
+    static func uploadResource(forEntryID entryID: String) -> PHAssetResource? {
+        let (assetID, isMotion) = PhotoSyncRules.parseEntryID(entryID)
+        guard let asset = PHAsset.fetchAssets(withLocalIdentifiers: [assetID], options: nil).firstObject else {
+            return nil
+        }
+        return isMotion ? pairedVideoResource(for: asset) : primaryResource(for: asset)
     }
 
     /// Whether PhotoKit refused because the bytes are not on the device and fetching them

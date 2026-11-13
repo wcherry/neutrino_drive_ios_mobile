@@ -57,10 +57,16 @@ struct PhotoSyncSettingsView: View {
                     Text(backfillFooterText)
                 }
 
-                Section("Constraints") {
+                Section {
                     Toggle("Include Videos", isOn: Binding(
                         get: { photoSyncService.includeVideos },
                         set: { photoSyncService.includeVideos = $0 }
+                    ))
+                    // Same label and default as Neutrino Photos' own setting, so the two apps
+                    // describe the same thing the same way.
+                    Toggle("Keep Live Photo Motion", isOn: Binding(
+                        get: { photoSyncService.keepLivePhotoMotion },
+                        set: { photoSyncService.keepLivePhotoMotion = $0 }
                     ))
                     Toggle("Use Wi-Fi Only", isOn: Binding(
                         get: { photoSyncService.wifiOnly },
@@ -70,6 +76,12 @@ struct PhotoSyncSettingsView: View {
                         get: { photoSyncService.whileChargingOnly },
                         set: { photoSyncService.whileChargingOnly = $0 }
                     ))
+                } header: {
+                    Text("Constraints")
+                } footer: {
+                    Text("Live Photo motion is the short clip behind a Live Photo, roughly the size "
+                         + "of the photo again. It's uploaded next to the photo even with Include "
+                         + "Videos off. Turning it off doesn't remove clips already uploaded.")
                 }
 
                 Section {
@@ -141,9 +153,10 @@ struct PhotoSyncSettingsView: View {
                         }
                     }
                 } footer: {
-                    Text("Live Photos back up as still images only. Turning this off leaves already-uploaded photos in Drive.")
+                    Text("Turning photo backup off leaves already-uploaded photos in Drive.")
                 }
 
+                motionSection
                 repairSection
             }
         }
@@ -163,6 +176,91 @@ struct PhotoSyncSettingsView: View {
         } message: {
             Text("Neutrino Drive needs photo library access to back up new photos. Enable access in iOS Settings.")
         }
+    }
+
+    // MARK: - Live Photo motion
+
+    /// Adds the motion to Live Photos backed up as stills only. See
+    /// ``PhotoSyncService/checkLivePhotoMotionBackfill()``.
+    @ViewBuilder
+    private var motionSection: some View {
+        Section {
+            Button("Add Live Photo Motion") {
+                Task { await photoSyncService.checkLivePhotoMotionBackfill() }
+            }
+            .disabled(photoSyncService.motionBackfillState.isBusy || !photoSyncService.keepLivePhotoMotion)
+
+            switch photoSyncService.motionBackfillState {
+            case .checking:
+                HStack {
+                    ProgressView().controlSize(.small)
+                    Text("Checking\u{2026}").foregroundStyle(.secondary)
+                }
+            case .awaitingConfirmation(let count, _):
+                Text("\(count) Live Photo\(count == 1 ? "" : "s") to update")
+                    .foregroundStyle(.secondary)
+            case .finished(let report):
+                Text(report.summary).foregroundStyle(.secondary)
+            case .failed(let message):
+                Label(message, systemImage: "exclamationmark.triangle.fill")
+                    .font(.footnote)
+                    .foregroundStyle(.orange)
+            case .idle:
+                if let last = photoSyncService.lastMotionBackfill {
+                    HStack {
+                        Text("Last Run")
+                        Spacer()
+                        Text(last.finishedAt, style: .relative).foregroundStyle(.secondary)
+                    }
+                    Text(last.summary).font(.footnote).foregroundStyle(.secondary)
+                }
+            }
+        } header: {
+            Text("Live Photo Motion")
+        } footer: {
+            Text("Live Photos backed up before this version have their photo but not their motion. "
+                 + "This uploads the motion for the ones still on this device, next to each photo. "
+                 + "Photos you've removed from the backup folder are left alone. Safe to run more "
+                 + "than once, and uploads follow the constraints above.")
+        }
+        .confirmationDialog(motionConfirmationTitle, isPresented: motionConfirmationShown,
+                            titleVisibility: .visible) {
+            Button("Add Motion") {
+                Task { await photoSyncService.confirmLivePhotoMotionBackfill() }
+            }
+            Button("Cancel", role: .cancel) {
+                photoSyncService.cancelLivePhotoMotionBackfill()
+            }
+        } message: {
+            Text(motionConfirmationMessage)
+        }
+    }
+
+    private var motionConfirmationShown: Binding<Bool> {
+        Binding(
+            get: {
+                if case .awaitingConfirmation = photoSyncService.motionBackfillState { return true }
+                return false
+            },
+            set: { shown in
+                // Dismissed without a choice (tapping outside) is a cancel.
+                if !shown, case .awaitingConfirmation = photoSyncService.motionBackfillState {
+                    photoSyncService.cancelLivePhotoMotionBackfill()
+                }
+            }
+        )
+    }
+
+    private var motionConfirmationTitle: String {
+        guard case .awaitingConfirmation(let count, _) = photoSyncService.motionBackfillState else { return "" }
+        return "Add motion to \(count) Live Photo\(count == 1 ? "" : "s")?"
+    }
+
+    private var motionConfirmationMessage: String {
+        guard case .awaitingConfirmation(_, let bytes) = photoSyncService.motionBackfillState else { return "" }
+        let size = ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file)
+        let network = photoSyncService.wifiOnly ? "Uploads on Wi-Fi only." : "Uploads on any network."
+        return "About \(size). \(network)"
     }
 
     // MARK: - Repair photo dates

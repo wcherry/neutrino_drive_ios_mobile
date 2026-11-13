@@ -197,7 +197,8 @@ struct PhotoSyncQueue: Codable, Equatable {
                 let lhsIsBacklog = lhs.creationDate < boundary
                 let rhsIsBacklog = rhs.creationDate < boundary
                 if lhsIsBacklog != rhsIsBacklog { return !lhsIsBacklog }
-                return lhs.creationDate < rhs.creationDate
+                // Ties broken by id: deterministic, and a still (`X`) before its motion (`X#motion`).
+                return (lhs.creationDate, lhs.id) < (rhs.creationDate, rhs.id)
             }
     }
 
@@ -277,12 +278,30 @@ struct PhotoSyncQueue: Codable, Equatable {
         failed.removeAll()
     }
 
+    /// Drops `id` from `pending` and `failed` without recording an outcome: a Live Photo's
+    /// motion that turned out to have no clip, or that the user stopped keeping.
+    mutating func remove(id: String) {
+        pending.removeAll { $0.id == id }
+        failed.removeAll { $0.id == id }
+    }
+
+    /// Drops every Live Photo motion entry still waiting or failed, for when the user turns
+    /// "Keep Live Photo Motion" off. Completed ones stay: their clips are in Drive.
+    mutating func removeMotionEntries() {
+        let isMotion: (Entry) -> Bool = { PhotoSyncRules.parseEntryID($0.id).isMotion }
+        pending.removeAll(where: isMotion)
+        failed.removeAll(where: isMotion)
+    }
+
     // MARK: - Compaction
 
     /// Drops `completed` identifiers whose asset no longer exists in the photo library
-    /// (per `validIdentifiers`), keeping the ledger from growing without bound.
+    /// (per `validIdentifiers`), keeping the ledger from growing without bound. A motion entry
+    /// goes with its asset.
     mutating func compact(keepingIdentifiers validIdentifiers: Set<String>) {
-        completed = completed.filter { validIdentifiers.contains($0.key) }
+        completed = completed.filter {
+            validIdentifiers.contains(PhotoSyncRules.parseEntryID($0.key).assetIdentifier)
+        }
     }
 }
 

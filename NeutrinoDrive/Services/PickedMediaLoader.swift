@@ -81,7 +81,8 @@ struct PickerResultItem: PickedItem {
 ///
 /// 1. **From the library**, when the app can read the asset. The same `PHKitAssetExporter` photo
 ///    sync uses: the original bytes and filename, and the asset's own creation and modification
-///    dates. Once #42 teaches the exporter Live Photo motion, picks gain it from here too.
+///    dates. A Live Photo brings its motion too, as a second file named after the still (#42),
+///    when **Keep Live Photo Motion** is on.
 /// 2. **From the item provider**, when it can't (no or limited access). The original file
 ///    representation, named after the provider's suggested name, dated from its EXIF
 ///    `DateTimeOriginal` (a photo) or its QuickTime creation date (a video).
@@ -101,20 +102,44 @@ struct PickedMediaLoader {
         return (created, asset.modificationDate)
     }
     var now: () -> Date = Date.init
+    /// Photo sync's **Keep Live Photo Motion** setting, which manual uploads follow too.
+    var keepsLivePhotoMotion: () -> Bool = { PhotoSyncKeys.keepsLivePhotoMotion(PhotoSyncDefaults.shared) }
 
     private let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "NeutrinoDrive",
                                 category: "PickedMediaLoader")
 
-    func load(_ item: PickedItem) async throws -> PickedMedia {
+    /// The files one pick uploads as: the photo or video, then a Live Photo's motion if any.
+    func load(_ item: PickedItem) async throws -> [PickedMedia] {
         if let identifier = item.assetIdentifier, canReadLibrary() {
             do {
-                return try await loadFromLibrary(identifier: identifier)
+                let still = try await loadFromLibrary(identifier: identifier)
+                return [still] + (await loadMotion(identifier: identifier, still: still).map { [$0] } ?? [])
             } catch {
                 // Typically an asset outside a limited selection. The provider still has it.
                 logger.info("library export of \(identifier, privacy: .public) failed, using the picker's file: \(error.localizedDescription, privacy: .public)")
             }
         }
-        return try await loadFromProvider(item)
+        return [try await loadFromProvider(item)]
+    }
+
+    /// A Live Photo's paired video, or `nil` for anything else. Never throws: a clip that can't
+    /// be read costs the motion, not the photo.
+    private func loadMotion(identifier: String, still: PickedMedia) async -> PickedMedia? {
+        guard keepsLivePhotoMotion() else { return nil }
+        do {
+            let clip = try await exporter.exportPairedVideo(for: identifier, networkAccessAllowed: true)
+            let metadata = still.importMetadata.map {
+                DriveImportMetadata(createdAt: $0.createdAt, updatedAt: $0.updatedAt,
+                                    importSource: Self.importSource(assetIdentifier: identifier) + PhotoSyncRules.motionSuffix)
+            }
+            return PickedMedia(data: clip.data, fileName: clip.fileName, mimeType: clip.mimeType,
+                               importMetadata: metadata, thumbnailBase64: clip.thumbnailBase64)
+        } catch PhotoExportError.noPairedVideo {
+            return nil
+        } catch {
+            logger.warning("Live Photo motion for \(identifier, privacy: .public) not uploaded: \(error.localizedDescription, privacy: .public)")
+            return nil
+        }
     }
 
     // MARK: Library route
@@ -177,8 +202,8 @@ struct PickedMediaLoader {
     /// (which is fidelity order: a HEIC original before its JPEG rendering).
     ///
     /// A Live Photo also registers `com.apple.live-photo-bundle`, a directory holding the still
-    /// and the clip. It is skipped here: uploading the motion is #42's job, and when that lands
-    /// it arrives through the library route.
+    /// and the clip. It is skipped here: the motion comes through the library route, which can
+    /// name the clip after its still and date it.
     static func preferredTypeIdentifier(_ identifiers: [String]) -> String? {
         identifiers.first { identifier in
             guard identifier != "com.apple.live-photo-bundle",
