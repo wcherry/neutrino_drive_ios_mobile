@@ -122,6 +122,20 @@ struct E2EEUploader {
     /// for the Photos extension, that extension's session. Asked only after `transferService`.
     let deliveredTransfers: () -> [BackgroundTransferService]
 
+    /// Whether file bodies are written as NEB1, the chunked format (neutrino#318). Read per upload,
+    /// from the App Group defaults where the app caches the account's `e2eeChunkedWrites` flag, so
+    /// the share extension and the Photos extension follow it too. Off by default; tests set it.
+    var writesChunked: () -> Bool = { E2EEUploader.chunkedWritesEnabled() }
+
+    /// Where the app caches `e2eeChunkedWrites` from `GET /api/v1/feature-flags`.
+    static let chunkedWritesKey = "featureFlags.e2eeChunkedWrites"
+
+    /// The cached flag. Honoured only because this build can also *read* NEB1 (through
+    /// `DriveFileCrypto`): the spec's rule is that a client never writes a format it can't read.
+    static func chunkedWritesEnabled(_ defaults: UserDefaults = SharedStorage.defaults) -> Bool {
+        defaults.bool(forKey: chunkedWritesKey)
+    }
+
     init(transferService: BackgroundTransferService = .shared,
          pendingKeys: PendingUploadKeyStore = .shared,
          deliveredTransfers: @escaping () -> [BackgroundTransferService] = {
@@ -386,16 +400,23 @@ struct E2EEUploader {
             ? Self.blobTransferID(uploadID: "\(uploadID)#\(UUID().uuidString)")
             : Self.blobTransferID(uploadID: uploadID)
 
-        guard let filePushStream = xcss.initPush(secretKey: dek) else {
-            throw UploadError.encryptionFailed
+        // NEB1 when the account's `e2eeChunkedWrites` is on: the body is then encrypted straight
+        // into the request body file at step 5, a chunk at a time, so the ciphertext never exists
+        // whole and peak memory is about the plaintext instead of three times it. v0 otherwise,
+        // exactly as before. Metadata stays v0 either way (spec §2).
+        let chunked = writesChunked()
+        var encryptedData: Data?
+        if !chunked {
+            guard let filePushStream = xcss.initPush(secretKey: dek) else {
+                throw UploadError.encryptionFailed
+            }
+            let fileHeader = filePushStream.header()
+            guard let fileCiphertext = filePushStream.push(message: Array(plainData), tag: .FINAL) else {
+                throw UploadError.encryptionFailed
+            }
+            encryptedData = Data(fileHeader + fileCiphertext)
+            logger.debug("upload: encrypted \(plainData.count) → \(encryptedData?.count ?? 0) bytes")
         }
-        let fileHeader = filePushStream.header()
-        guard let fileCiphertext = filePushStream.push(message: Array(plainData), tag: .FINAL) else {
-            throw UploadError.encryptionFailed
-        }
-        let encryptedData = Data(fileHeader + fileCiphertext)
-
-        logger.debug("upload: encrypted \(plainData.count) → \(encryptedData.count) bytes")
 
         // MARK: Step 3 — Encrypt metadata { name, mimeType } with DEK
         //
@@ -471,8 +492,7 @@ struct E2EEUploader {
             throw UploadError.serverError(statusCode: 0)
         }
         let boundary = UUID().uuidString
-        let body = Self.buildMultipartBody(
-            encryptedData: encryptedData,
+        let head = Self.multipartHead(
             fileName: fileName,
             mimeType: plainMimeType,
             parentFolderID: parentFolderID,
@@ -482,10 +502,21 @@ struct E2EEUploader {
             importMetadata: importMetadata,
             boundary: boundary
         )
+        let tail = Self.multipartTail(boundary: boundary)
 
         let bodyFileURL: URL
+        let bodyLength: Int
         do {
-            bodyFileURL = try Self.writeTemporaryBody(body)
+            if let encryptedData {
+                let body = head + encryptedData + tail
+                bodyFileURL = try Self.writeTemporaryBody(body)
+                bodyLength = body.count
+            } else {
+                (bodyFileURL, bodyLength) = try Self.writeNEB1Body(plaintext: plainData, dek: dek,
+                                                                   head: head, tail: tail)
+            }
+        } catch is DriveFileCryptoError {
+            throw UploadError.encryptionFailed
         } catch {
             throw UploadError.fileReadError(underlying: error)
         }
@@ -498,7 +529,7 @@ struct E2EEUploader {
         uploadRequest.allowsExpensiveNetworkAccess = allowsExpensiveNetworkAccess
         uploadRequest.allowsConstrainedNetworkAccess = allowsExpensiveNetworkAccess
 
-        logger.debug("prepared \(uploadURL.path, privacy: .public) body (\(body.count) bytes)")
+        logger.debug("prepared \(uploadURL.path, privacy: .public) body (\(bodyLength) bytes, \(chunked ? "NEB1" : "v0", privacy: .public))")
 
         return PreparedUpload(uploadID: uploadID, transferID: transferID,
                               request: uploadRequest, bodyFileURL: bodyFileURL)
@@ -753,14 +784,60 @@ struct E2EEUploader {
         return fileURL
     }
 
-    /// Builds the upload request body.
+    /// Writes a multipart body whose file part is `plaintext` encrypted as NEB1, a chunk at a time
+    /// straight into the file: the ciphertext never exists whole. Returns the file and its length.
+    static func writeNEB1Body(plaintext: Data, dek: Bytes, head: Data, tail: Data) throws -> (URL, Int) {
+        let fileURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("nd-upload-\(UUID().uuidString).multipart")
+        guard FileManager.default.createFile(atPath: fileURL.path, contents: nil) else {
+            throw CocoaError(.fileWriteUnknown)
+        }
+        do {
+            let handle = try FileHandle(forWritingTo: fileURL)
+            defer { try? handle.close() }
+            try handle.write(contentsOf: head)
+            let cipherLength = try DriveFileCrypto.encryptNEB1(plaintext, dek: dek) { bytes in
+                try handle.write(contentsOf: Data(bytes))
+            }
+            try handle.write(contentsOf: tail)
+            return (fileURL, head.count + cipherLength + tail.count)
+        } catch {
+            try? FileManager.default.removeItem(at: fileURL)
+            throw error
+        }
+    }
+
+    /// Builds the upload request body: ``multipartHead(fileName:mimeType:parentFolderID:encryptedMetadata:thumbnailBase64:sealedFileKey:importMetadata:boundary:)``,
+    /// the encrypted file, then ``multipartTail(boundary:)``.
+    static func buildMultipartBody(
+        encryptedData: Data,
+        fileName: String,
+        mimeType: String,
+        parentFolderID: String?,
+        encryptedMetadata: String,
+        thumbnailBase64: String?,
+        sealedFileKey: (sealed: String, keyVersion: Int)? = nil,
+        importMetadata: DriveImportMetadata? = nil,
+        boundary: String
+    ) -> Data {
+        multipartHead(fileName: fileName, mimeType: mimeType, parentFolderID: parentFolderID,
+                      encryptedMetadata: encryptedMetadata, thumbnailBase64: thumbnailBase64,
+                      sealedFileKey: sealedFileKey, importMetadata: importMetadata, boundary: boundary)
+            + encryptedData + multipartTail(boundary: boundary)
+    }
+
+    /// The closing of the file part and of the body.
+    static func multipartTail(boundary: String) -> Data {
+        Data("\r\n--\(boundary)--\r\n".utf8)
+    }
+
+    /// Everything before the encrypted file bytes: every scalar field, then the file part's headers.
     ///
     /// Part order is not cosmetic. The server reads the scalar fields into locals as it walks the
     /// multipart stream and **returns as soon as it has consumed the file part**, so anything
     /// sent after the blob is never parsed. Every scalar — `thumbnail_b64` included — therefore
     /// has to precede it.
-    static func buildMultipartBody(
-        encryptedData: Data,
+    static func multipartHead(
         fileName: String,
         mimeType: String,
         parentFolderID: String?,
@@ -835,10 +912,6 @@ struct E2EEUploader {
         append("Content-Disposition: form-data; name=\"file\"; filename=\"\(fileName)\"\(crlf)")
         append("Content-Type: \(mimeType)\(crlf)")
         append(crlf)
-        body.append(encryptedData)
-        append(crlf)
-
-        append("\(dash)\(boundary)\(dash)\(crlf)")
         return body
     }
 }

@@ -49,8 +49,6 @@ final class DownloadService: ObservableObject {
 
     // MARK: - Private
 
-    private static let sodium = Sodium()
-
     private let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "NeutrinoDrive",
                                 category: "DownloadService")
 
@@ -141,54 +139,40 @@ final class DownloadService: ObservableObject {
 
         progress = 0.4
 
-        // MARK: Step 3 — Download encrypted file blob (background session)
+        // MARK: Step 3 — Download encrypted file blob (background session), kept on disk
 
-        let encryptedData = try await fetchEncryptedFile(fileID: fileID,
-                                                         versionID: versionID,
-                                                         token: token)
-        logger.debug("download: received \(encryptedData.count) bytes")
+        let encryptedURL = try await fetchEncryptedFile(fileID: fileID,
+                                                        versionID: versionID,
+                                                        token: token)
+        defer { try? FileManager.default.removeItem(at: encryptedURL.deletingLastPathComponent()) }
         progress = 0.7
 
-        // MARK: Step 4 — Decrypt file (XChaCha20-Poly1305 secretstream)
+        // MARK: Step 4 — Decrypt straight into a UUID-named temp directory
         //
-        // Input format: [24-byte header][ciphertext]
-        // Mirrors the web's decryptFile(encryptedBuffer, dek).
-
-        let headerSize = 24
-        guard encryptedData.count > headerSize else {
-            throw DownloadError.decryptionFailed
-        }
-        let header = Array(encryptedData.prefix(headerSize))
-        let ciphertext = Array(encryptedData.dropFirst(headerSize))
-
-        let xcss = Self.sodium.secretStream.xchacha20poly1305
-        guard let pullStream = xcss.initPull(secretKey: dek, header: header) else {
-            throw DownloadError.decryptionFailed
-        }
-        guard let (plaintext, _) = pullStream.pull(cipherText: ciphertext) else {
-            logger.error("download: XChaCha20-Poly1305 pull failed for \(fileID, privacy: .public)")
-            throw DownloadError.decryptionFailed
-        }
-
-        progress = 0.9
-
-        // MARK: Step 5 — Write plaintext to a UUID-named temp directory
-        //
-        // Placing the file in its own directory keeps the original fileName so
-        // QuickLook and share sheets display the correct name.
+        // Through `DriveFileCrypto`, which opens every shape a file body is written in — v0 (one
+        // push, as the web writes), NEB1 and Photos-chunked (neutrino#318) — and streams the
+        // chunked ones a chunk at a time, so a large video needs about one chunk of memory rather
+        // than the ciphertext and the plaintext both. Its own directory keeps the original
+        // fileName, so QuickLook and share sheets display the right name.
 
         let tempDir = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let tempURL = tempDir.appendingPathComponent(fileName)
         do {
             try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
-            let tempURL = tempDir.appendingPathComponent(fileName)
-            try Data(plaintext).write(to: tempURL)
-            progress = 1
-            logger.debug("download succeeded: \(fileName, privacy: .public) → \(tempURL.path, privacy: .public)")
-            return tempURL
         } catch {
             throw DownloadError.fileWriteError(underlying: error)
         }
+        do {
+            try DriveFileCrypto.decrypt(from: encryptedURL, to: tempURL, dek: dek)
+        } catch {
+            logger.error("download: decrypt failed for \(fileID, privacy: .public)")
+            try? FileManager.default.removeItem(at: tempDir)
+            throw DownloadError.decryptionFailed
+        }
+        progress = 1
+        logger.debug("download succeeded: \(fileName, privacy: .public) → \(tempURL.path, privacy: .public)")
+        return tempURL
     }
 
     // MARK: - Private Helpers
@@ -231,10 +215,6 @@ final class DownloadService: ObservableObject {
         }
     }
 
-    /// Fetches the ciphertext blob via `BackgroundTransferService.download`, so a large file
-    /// keeps transferring if iOS suspends the app mid-download. The delivered file is read into
-    /// memory for decryption and then removed — streaming decryption is a separate follow-up
-    /// (see the memory note in `feature-photo-auto-sync.md`).
     /// The blob path for a file, or for one of its historical versions.
     ///
     /// Extracted as a pure function purely so it can be unit-tested: the full download flow
@@ -256,9 +236,12 @@ final class DownloadService: ObservableObject {
         return "download-\(fileID)-v\(versionID)"
     }
 
+    /// Fetches the ciphertext blob via `BackgroundTransferService.download`, so a large file
+    /// keeps transferring if iOS suspends the app mid-download, and returns the delivered file —
+    /// left on disk to be decrypted from. The caller removes its directory.
     private func fetchEncryptedFile(fileID: String,
                                     versionID: String?,
-                                    token: String) async throws -> Data {
+                                    token: String) async throws -> URL {
         let path = Self.blobPath(fileID: fileID, versionID: versionID)
         guard let url = URL(string: baseURL + path) else {
             throw DownloadError.serverError(statusCode: 0)
@@ -286,18 +269,12 @@ final class DownloadService: ObservableObject {
             throw DownloadError.networkError(underlying: error)
         }
 
-        defer { try? FileManager.default.removeItem(at: fileURL.deletingLastPathComponent()) }
-
         logger.debug("<-- \(http.statusCode) /api/v1/drive/files/\(fileID, privacy: .public)")
         guard (200...299).contains(http.statusCode) else {
+            try? FileManager.default.removeItem(at: fileURL.deletingLastPathComponent())
             throw DownloadError.serverError(statusCode: http.statusCode)
         }
-
-        do {
-            return try Data(contentsOf: fileURL)
-        } catch {
-            throw DownloadError.fileWriteError(underlying: error)
-        }
+        return fileURL
     }
 }
 
