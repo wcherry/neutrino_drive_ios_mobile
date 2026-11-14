@@ -37,6 +37,13 @@ targets:
         embed: true
       - target: NeutrinoDrivePhotoUpload
         embed: true
+      # Phase 3: "Neutrino Drive" in the Files app and every document picker.
+      - target: NeutrinoDriveFileProvider
+        embed: true
+      # Raw libsodium C API, for SecretStreamCrypto's incremental pull (phase 5-6 streaming
+      # playback): the Sodium Swift wrapper only vends the one-shot whole-message pull.
+      - package: swift-sodium
+        product: Clibsodium
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.neutrino.drive
@@ -105,7 +112,14 @@ targets:
           - com.neutrino.drive.photosync.refresh
         NSAppTransportSecurity:
           NSAllowsArbitraryLoads: true
-        LSSupportsOpeningDocumentsInPlace: false
+        # Phase 3 "Open In Place". At `true` the URL handed to `onOpenURL` can be the user's
+        # *actual* file in iCloud Drive or another provider — which is why `IncomingDocument`
+        # exists: the old key-import path deleted the incoming file unconditionally, and at
+        # `true` that would delete a user's own document.
+        LSSupportsOpeningDocumentsInPlace: true
+        # Phase 6 multi-window. Without this iOS refuses `openWindow` outright. Paired with
+        # `FeatureFlags.multiWindow`, which gates the only call sites.
+        UIApplicationSupportsMultipleScenes: true
         CFBundleDocumentTypes:
           - CFBundleTypeName: Neutrino Drive Key File
             CFBundleTypeRole: Viewer
@@ -280,6 +294,76 @@ targets:
           NSAllowsArbitraryLoads: true
         EXAppExtensionAttributes:
           EXExtensionPointIdentifier: com.apple.photos.background-upload
+
+  # File Provider extension (phase 3): "Neutrino Drive" as a location in the Files app and a
+  # source in every document picker. Same code-sharing rule as the share extension: the
+  # extension compiles *the same files* the app does, so it decrypts and encrypts exactly as
+  # the app does. Keychain, auth and E2EE come from NeutrinoShared, as for the other extensions.
+  NeutrinoDriveFileProvider:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: NeutrinoDriveFileProvider
+      - path: NeutrinoDrive/Config/FeatureFlags.swift
+      - path: NeutrinoDrive/Config/SharedStorage.swift
+      - path: NeutrinoDrive/Services/SealedKeyCrypto.swift
+      # The decrypt half, and its constant-memory streaming pull.
+      - path: NeutrinoDrive/Services/SecretStreamCrypto.swift
+      - path: NeutrinoDrive/Services/E2EEDownloader.swift
+      # The encrypt half, so a document saved from Pages is sealed exactly as an in-app upload.
+      - path: NeutrinoDrive/Services/E2EEUploader.swift
+      - path: NeutrinoDrive/Services/PendingUploadKeyStore.swift
+      - path: NeutrinoDrive/Services/ThumbnailGenerator.swift
+      - path: NeutrinoDrive/Services/BackgroundTransferService.swift
+      - path: NeutrinoDrive/Services/DriveAPIClient.swift
+      # Identifier mapping and item construction, compiled into the app too so they can be
+      # unit-tested: a File Provider extension cannot be driven from a test host.
+      - path: NeutrinoDrive/FileProvider/FileProviderIdentifier.swift
+      - path: NeutrinoDrive/FileProvider/FileProviderItem.swift
+    dependencies:
+      - package: swift-sodium
+        product: Sodium
+      - package: swift-sodium
+        product: Clibsodium
+      - package: NeutrinoShared
+        product: NeutrinoCore
+      - package: NeutrinoShared
+        product: NeutrinoCrypto
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.neutrino.drive.fileprovider
+        MARKETING_VERSION: "1.0.0"
+        CURRENT_PROJECT_VERSION: "11"
+        SWIFT_VERSION: "5.0"
+        IPHONEOS_DEPLOYMENT_TARGET: "16.0"
+        DEVELOPMENT_TEAM: "46KWJJ63FU"
+        CODE_SIGN_STYLE: Automatic
+    entitlements:
+      path: NeutrinoDriveFileProvider/NeutrinoDriveFileProvider.entitlements
+      properties:
+        com.apple.security.application-groups:
+          - group.com.neutrino.drive
+        # The extension must read the access token and the key material the app imported.
+        keychain-access-groups:
+          - $(AppIdentifierPrefix)com.neutrino.drive.shared
+          - $(AppIdentifierPrefix)com.neutrino.shared
+    info:
+      path: NeutrinoDriveFileProvider/Info.plist
+      properties:
+        CFBundleName: Drive
+        CFBundleDisplayName: Drive
+        # Must match the container app's, or the upload is rejected.
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
+        NSAppTransportSecurity:
+          NSAllowsArbitraryLoads: true
+        NSExtension:
+          # fileprovider-nonui is the modern, UI-less point; com.apple.fileprovider-ui belongs to
+          # the deprecated Document Provider, which this deliberately does not build.
+          NSExtensionPointIdentifier: com.apple.fileprovider-nonui
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).FileProviderExtension
+          NSExtensionFileProviderDocumentGroup: group.com.neutrino.drive
+          NSExtensionFileProviderSupportsPickingFolders: true
 
   NeutrinoDriveTests:
     type: bundle.unit-test

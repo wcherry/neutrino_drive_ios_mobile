@@ -11,6 +11,8 @@ struct SettingsView: View {
     @EnvironmentObject var biometricService: BiometricAuthService
     @EnvironmentObject var keyProvisioningService: KeyProvisioningService
     @EnvironmentObject var deviceKeyRepair: DeviceKeyRepairService
+    @EnvironmentObject var spotlightService: SpotlightIndexService
+    @EnvironmentObject var smartOffline: SmartOfflineSyncService
 
     @StateObject private var quotaService = QuotaService()
 
@@ -180,6 +182,26 @@ struct SettingsView: View {
                             Label("Back Up My Photos", systemImage: "photo.badge.arrow.down")
                             Spacer()
                             Text(photoSyncSummary)
+                                .foregroundStyle(.secondary)
+                                .font(.footnote)
+                        }
+                    }
+                }
+            }
+
+            if FeatureFlags.smartOfflineSync {
+                SmartOfflineSettingsView()
+            }
+
+            if FeatureFlags.spotlightSearch {
+                Section("Search") {
+                    NavigationLink {
+                        SpotlightSettingsView(spotlightService: spotlightService)
+                    } label: {
+                        HStack {
+                            Label("Spotlight Indexing", systemImage: "magnifyingglass")
+                            Spacer()
+                            Text(spotlightService.isEnabled ? "On" : "Off")
                                 .foregroundStyle(.secondary)
                                 .font(.footnote)
                         }
