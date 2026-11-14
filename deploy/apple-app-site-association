@@ -1,0 +1,28 @@
+{
+  "applinks": {
+    "details": [
+      {
+        "appIDs": ["46KWJJ63FU.com.neutrino.notes"],
+        "components": [
+          { "/": "/open/note/*", "comment": "Open a Markdown note in Neutrino Notes" }
+        ]
+      },
+      {
+        "appIDs": ["46KWJJ63FU.com.neutrino.docs"],
+        "components": [
+          { "/": "/open/doc/*", "comment": "Open a document in Neutrino Docs" }
+        ]
+      },
+      {
+        "appIDs": ["46KWJJ63FU.com.neutrino.drive"],
+        "components": [
+          { "/": "/open/file/*", "comment": "Open any file in Neutrino Drive" },
+          { "/": "/open/sheet/*", "comment": "No Sheets iOS app yet — Drive shows it" },
+          { "/": "/open/slide/*", "comment": "No Slides iOS app yet — Drive shows it" },
+          { "/": "/open/diagram/*", "comment": "No Diagrams iOS app yet — Drive shows it" },
+          { "/": "/open/drawing/*", "comment": "No Drawings iOS app yet — Drive shows it" }
+        ]
+      }
+    ]
+  }
+}

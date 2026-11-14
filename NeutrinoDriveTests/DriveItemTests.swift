@@ -1,21 +1,16 @@
 import XCTest
+import NeutrinoCore
 @testable import NeutrinoDrive
 
 /// Unit tests for DriveItem helper properties.
-///
-/// These assert the item-level wiring — that `DriveItem` hands the right three inputs to
-/// `FileKind.classify` and surfaces its answer. The classifier's own edge cases live in
-/// `FileKindTests`.
 final class DriveItemTests: XCTestCase {
 
     // MARK: - Helpers
 
-    private func makeItem(type: DriveItem.ItemType,
-                          mimeType: String?,
-                          name: String = "Test Item") -> DriveItem {
+    private func makeItem(type: DriveItem.ItemType, mimeType: String?) -> DriveItem {
         DriveItem(
             id: UUID().uuidString,
-            name: name,
+            name: "Test Item",
             type: type,
             parentID: nil,
             size: type == .file ? 1024 : nil,
@@ -26,118 +21,137 @@ final class DriveItemTests: XCTestCase {
         )
     }
 
-    // MARK: - kind: Folder
+    // MARK: - iconName: Office formats
 
-    func test_kind_folderType_isFolder() {
-        let item = makeItem(type: .folder, mimeType: nil)
-        XCTAssertEqual(item.kind, .folder)
-        XCTAssertEqual(item.iconName, "folder.fill")
+    /// A `.docx` in Drive is a Neutrino document, so it gets the document icon rather than the
+    /// generic page every unrecognised upload falls back to.
+    func test_iconName_docxMimeType_returnsDocumentIcon() {
+        let item = makeItem(type: .file, mimeType: NeutrinoAppLink.OOXML.docx)
+        XCTAssertEqual(item.iconName, "doc.text.fill")
     }
 
-    /// A folder is a folder even if the server sends a MIME type for it.
-    func test_kind_folderType_ignoresMimeType() {
-        let item = makeItem(type: .folder, mimeType: "image/jpeg")
-        XCTAssertEqual(item.kind, .folder)
+    func test_iconName_xlsxMimeType_returnsSpreadsheetIcon() {
+        let item = makeItem(type: .file, mimeType: NeutrinoAppLink.OOXML.xlsx)
+        XCTAssertEqual(item.iconName, "tablecells")
     }
 
-    // MARK: - kind: Neutrino native formats
-
-    func test_kind_neutrinoDoc() {
-        XCTAssertEqual(makeItem(type: .file, mimeType: NeutrinoMIME.doc).kind, .neutrinoDoc)
+    func test_iconName_pptxMimeType_returnsPresentationIcon() {
+        let item = makeItem(type: .file, mimeType: NeutrinoAppLink.OOXML.pptx)
+        XCTAssertEqual(item.iconName, "rectangle.stack.fill")
     }
 
-    func test_kind_neutrinoSheet() {
-        XCTAssertEqual(makeItem(type: .file, mimeType: NeutrinoMIME.sheet).kind, .neutrinoSheet)
-    }
-
-    func test_kind_neutrinoSlide() {
-        XCTAssertEqual(makeItem(type: .file, mimeType: NeutrinoMIME.slide).kind, .neutrinoSlide)
-    }
-
-    func test_kind_neutrinoDiagram() {
-        XCTAssertEqual(makeItem(type: .file, mimeType: NeutrinoMIME.diagram).kind, .neutrinoDiagram)
-    }
-
-    func test_kind_neutrinoDrawing() {
-        XCTAssertEqual(makeItem(type: .file, mimeType: NeutrinoMIME.drawing).kind, .neutrinoDrawing)
-    }
-
-    func test_kind_neutrinoNote() {
-        XCTAssertEqual(makeItem(type: .file, mimeType: NeutrinoMIME.note).kind, .neutrinoNote)
-    }
-
-    /// The regression this whole change exists for: the app previously matched
-    /// `application/vnd.neutrino.*`, a spelling the server never sends, so every native
-    /// document was classified as a nondescript file and drew the default icon.
-    func test_kind_everyNeutrinoNativeMime_isRecognised() {
-        let natives = [NeutrinoMIME.doc, NeutrinoMIME.sheet, NeutrinoMIME.slide,
-                       NeutrinoMIME.diagram, NeutrinoMIME.drawing, NeutrinoMIME.note]
-        for mime in natives {
-            let item = makeItem(type: .file, mimeType: mime)
-            XCTAssertNotEqual(item.kind, .unknown, "\(mime) fell through to the default icon")
-            XCTAssertTrue(item.isNeutrinoNativeFormat, "\(mime) is not reported as native")
-            XCTAssertNotNil(item.kind.assetName, "\(mime) has no custom Neutrino icon")
+    /// The two vintages of the same format are the same thing to a user, so they look the same.
+    func test_iconName_matchesAcrossFormatGenerations() {
+        for (modern, legacy) in [(NeutrinoAppLink.OOXML.docx, "application/x-neutrino-doc"),
+                                 (NeutrinoAppLink.OOXML.xlsx, "application/x-neutrino-sheet"),
+                                 (NeutrinoAppLink.OOXML.pptx, "application/x-neutrino-slide")] {
+            XCTAssertEqual(makeItem(type: .file, mimeType: modern).iconName,
+                           makeItem(type: .file, mimeType: legacy).iconName,
+                           "\(modern) and \(legacy) show different icons")
         }
     }
 
-    func test_isNeutrinoNativeFormat_ordinaryFile_isFalse() {
-        XCTAssertFalse(makeItem(type: .file, mimeType: "application/pdf").isNeutrinoNativeFormat)
+    // MARK: - isNeutrinoNativeFormat
+
+    /// This is what decides whether "Open in Drive" reaches the editor or downloads the bytes, so
+    /// it has to recognise all three spellings the server has written over time.
+    func test_isNeutrinoNativeFormat_acceptsEveryFormatGeneration() {
+        for mime in [NeutrinoAppLink.OOXML.docx,
+                     NeutrinoAppLink.OOXML.xlsx,
+                     NeutrinoAppLink.OOXML.pptx,
+                     "application/x-neutrino-doc",
+                     "application/vnd.neutrino.doc"] {
+            XCTAssertTrue(makeItem(type: .file, mimeType: mime).isNeutrinoNativeFormat,
+                          "\(mime) was not recognised as a Neutrino file")
+        }
     }
 
-    func test_isNeutrinoNativeFormat_nilMimeType_isFalse() {
+    func test_isNeutrinoNativeFormat_rejectsOrdinaryUploads() {
+        XCTAssertFalse(makeItem(type: .file, mimeType: "application/pdf").isNeutrinoNativeFormat)
+        XCTAssertFalse(makeItem(type: .file, mimeType: "image/jpeg").isNeutrinoNativeFormat)
         XCTAssertFalse(makeItem(type: .file, mimeType: nil).isNeutrinoNativeFormat)
     }
 
-    // MARK: - kind: Ordinary types
-
-    func test_kind_imageMimeTypes() {
-        XCTAssertEqual(makeItem(type: .file, mimeType: "image/jpeg").kind, .image)
-        XCTAssertEqual(makeItem(type: .file, mimeType: "image/png").kind, .image)
+    /// A pre-OOXML Word file is a foreign upload Neutrino cannot edit — it must keep the download
+    /// path rather than be handed to an editor that would fail to parse it.
+    func test_isNeutrinoNativeFormat_rejectsLegacyOfficeFormats() {
+        XCTAssertFalse(makeItem(type: .file, mimeType: "application/msword").isNeutrinoNativeFormat)
+        XCTAssertFalse(makeItem(type: .file, mimeType: "application/vnd.ms-excel").isNeutrinoNativeFormat)
     }
 
-    func test_kind_pdfMimeType() {
-        XCTAssertEqual(makeItem(type: .file, mimeType: "application/pdf").kind, .pdf)
+    // MARK: - iconName: Folder
+
+    func test_iconName_folderType_returnsFolderFill() {
+        let item = makeItem(type: .folder, mimeType: nil)
+        XCTAssertEqual(item.iconName, "folder.fill")
     }
 
-    func test_kind_videoMimeTypes() {
-        XCTAssertEqual(makeItem(type: .file, mimeType: "video/mp4").kind, .video)
-        XCTAssertEqual(makeItem(type: .file, mimeType: "video/quicktime").kind, .video)
+    // MARK: - iconName: Image
+
+    func test_iconName_imageJpegMimeType_returnsPhoto() {
+        let item = makeItem(type: .file, mimeType: "image/jpeg")
+        XCTAssertEqual(item.iconName, "photo")
     }
 
-    func test_kind_audioMimeType() {
-        XCTAssertEqual(makeItem(type: .file, mimeType: "audio/mpeg").kind, .audio)
+    func test_iconName_imagePngMimeType_returnsPhoto() {
+        let item = makeItem(type: .file, mimeType: "image/png")
+        XCTAssertEqual(item.iconName, "photo")
     }
 
-    func test_kind_archiveMimeType() {
-        XCTAssertEqual(makeItem(type: .file, mimeType: "application/zip").kind, .archive)
+    // MARK: - iconName: PDF
+
+    func test_iconName_pdfMimeType_returnsDocRichtext() {
+        let item = makeItem(type: .file, mimeType: "application/pdf")
+        XCTAssertEqual(item.iconName, "doc.richtext")
     }
 
-    func test_kind_textMimeType() {
-        XCTAssertEqual(makeItem(type: .file, mimeType: "text/plain").kind, .text)
+    // MARK: - iconName: Video
+
+    func test_iconName_videoMp4MimeType_returnsFilm() {
+        let item = makeItem(type: .file, mimeType: "video/mp4")
+        XCTAssertEqual(item.iconName, "film")
     }
 
-    func test_kind_htmlMimeType_isCode() {
-        XCTAssertEqual(makeItem(type: .file, mimeType: "text/html").kind, .code)
+    func test_iconName_videoQuicktimeMimeType_returnsFilm() {
+        let item = makeItem(type: .file, mimeType: "video/quicktime")
+        XCTAssertEqual(item.iconName, "film")
     }
 
-    // MARK: - kind: Unknown
+    // MARK: - iconName: Audio
 
-    func test_kind_nilMimeTypeAndNoExtension_isUnknown() {
+    func test_iconName_audioMpegMimeType_returnsMusicNote() {
+        let item = makeItem(type: .file, mimeType: "audio/mpeg")
+        XCTAssertEqual(item.iconName, "music.note")
+    }
+
+    // MARK: - iconName: Archive
+
+    func test_iconName_applicationZipMimeType_returnsArchivebox() {
+        let item = makeItem(type: .file, mimeType: "application/zip")
+        XCTAssertEqual(item.iconName, "archivebox")
+    }
+
+    // MARK: - iconName: Text
+
+    func test_iconName_textPlainMimeType_returnsDocText() {
+        let item = makeItem(type: .file, mimeType: "text/plain")
+        XCTAssertEqual(item.iconName, "doc.text")
+    }
+
+    func test_iconName_textHtmlMimeType_returnsDocText() {
+        let item = makeItem(type: .file, mimeType: "text/html")
+        XCTAssertEqual(item.iconName, "doc.text")
+    }
+
+    // MARK: - iconName: Unknown / nil
+
+    func test_iconName_unknownMimeType_returnsDoc() {
+        let item = makeItem(type: .file, mimeType: "application/octet-stream")
+        XCTAssertEqual(item.iconName, "doc")
+    }
+
+    func test_iconName_nilMimeType_returnsDoc() {
         let item = makeItem(type: .file, mimeType: nil)
-        XCTAssertEqual(item.kind, .unknown)
-        XCTAssertEqual(item.iconName, "doc.fill")
-    }
-
-    /// `UploadService` sends `application/octet-stream` whenever `UTType` cannot resolve the
-    /// source file, and the server stores what it is sent — so the filename has to be able to
-    /// rescue the icon.
-    func test_kind_octetStreamMimeType_fallsBackToFilenameExtension() {
-        let item = makeItem(type: .file, mimeType: "application/octet-stream", name: "Contract.docx")
-        XCTAssertEqual(item.kind, .document)
-    }
-
-    func test_kind_octetStreamMimeTypeAndNoExtension_isUnknown() {
-        let item = makeItem(type: .file, mimeType: "application/octet-stream", name: "blob")
-        XCTAssertEqual(item.kind, .unknown)
+        XCTAssertEqual(item.iconName, "doc")
     }
 }

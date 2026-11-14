@@ -1,5 +1,7 @@
 import SwiftUI
 import QuickLook
+import NeutrinoCore
+import NeutrinoAuth
 
 // MARK: - FileBrowserView
 
@@ -17,6 +19,7 @@ struct FileBrowserView: View {
     @EnvironmentObject var driveService: DriveService
     @EnvironmentObject var authService: AuthService
     @EnvironmentObject var offlineService: OfflineService
+    @EnvironmentObject var networkMonitor: NetworkMonitor
 
     // MARK: - State
 
@@ -32,21 +35,37 @@ struct FileBrowserView: View {
     @State private var previewURL: URL?
     @State private var downloadError: String?
     @State private var nativeViewerItem: DriveItem?
-    /// Non-nil while a large video/audio file is being played by streaming rather than by
-    /// downloading it in full. See `StreamingPlaybackService.shouldStream`.
+    /// Non-nil while a large video/audio file plays by streaming rather than downloading in full.
+    /// See `StreamingPlaybackService.shouldStream`.
     @State private var streamingItem: DriveItem?
-    /// True while an external drag is hovering the list, so the drop target can be shown.
+    /// True while an external drag hovers the list, so the drop target can be shown.
     @State private var isDropTargeted = false
-    /// Owned here rather than injected: `UploadSheet` does the same, and a drop is just another
-    /// upload entry point.
+    /// Owned here, as `UploadSheet` owns its own: a drop is just another upload entry point.
     @StateObject private var dropUploadService = UploadService()
     @State private var dropError: String?
 
     @Environment(\.openWindow) private var openWindow
     @Environment(\.supportsMultipleWindows) private var supportsMultipleWindows
+    @State private var zipDocument: ZipArchiveDocument?
 
     @StateObject private var searchService = SearchService()
     @State private var searchText = ""
+
+    /// Set when a companion app was asked for and is not installed — see `CompanionPrompt`.
+    @State private var companionPrompt: CompanionPrompt?
+
+    private let companionLauncher = CompanionAppLauncher()
+
+    // MARK: - CompanionPrompt
+
+    /// The "…isn't installed" alert's payload. Carries the item as well as the kind so the
+    /// "Open in Drive" button can fall through to the in-Drive path for the very file that was
+    /// tapped.
+    private struct CompanionPrompt: Identifiable {
+        let item: DriveItem
+        let kind: NeutrinoAppLink.Kind
+        var id: String { item.id }
+    }
 
     // MARK: - Computed
 
@@ -92,7 +111,11 @@ struct FileBrowserView: View {
         .navigationTitle(navigationTitle)
         .navigationBarTitleDisplayMode(.large)
         .toolbar { toolbarContent }
-        .task(id: "\(section.rawValue)-\(parentID ?? "root")") {
+        // Connectivity is part of the id so the folder reloads when the connection comes back.
+        // Offline it is not loaded at all: what is on screen stays, and the connectivity banner
+        // says why, rather than an "Error" alert for every folder opened.
+        .task(id: "\(section.rawValue)-\(parentID ?? "root")-\(networkMonitor.isOnline)") {
+            guard networkMonitor.isOnline else { return }
             await driveService.loadSection(section, parentID: parentID)
         }
         .modifier(MyDriveSearchModifier(isEnabled: FeatureFlags.search && section == .myDrive, searchText: $searchText))
@@ -103,7 +126,9 @@ struct FileBrowserView: View {
             await searchService.search(query: searchText)
         }
         .task {
-            searchService.authService = authService
+            guard FeatureFlags.search, section == .myDrive else { return }
+            SearchIndexSyncService.shared.attach(driveService: driveService, authService: authService)
+            await SearchIndexSyncService.shared.syncIfDue()
         }
         .alert("Error", isPresented: Binding(
             get: { driveService.error != nil },
@@ -119,7 +144,13 @@ struct FileBrowserView: View {
             }
         }
         .sheet(isPresented: $showUpload) {
-            UploadSheet(isPresented: $showUpload, parentFolderID: parentID) { result in
+            UploadSheet(
+                isPresented: $showUpload,
+                parentFolderID: parentID,
+                stampImportMetadata: { [driveService] fileID, metadata in
+                    try await driveService.setImportMetadata(fileID: fileID, metadata: metadata)
+                }
+            ) { result in
                 driveService.fileWasUploaded(result)
             }
         }
@@ -143,9 +174,8 @@ struct FileBrowserView: View {
                 .environmentObject(authService)
         }
         .quickLookPreview($previewURL)
-        // Drop in. Accepts files from Files, Mail, Notes, or any app that vends a file
-        // representation; each is encrypted locally before upload by the same `E2EEUploader`
-        // every other upload path uses.
+        // Drop in. Each dropped file is encrypted locally by the same `E2EEUploader` every other
+        // upload path uses.
         .if(FeatureFlags.dragAndDrop && FeatureFlags.uploadFiles && section == .myDrive) { view in
             view.onDrop(of: [.data, .item], isTargeted: $isDropTargeted) { providers in
                 handleDrop(providers)
@@ -170,6 +200,31 @@ struct FileBrowserView: View {
         }
         .sheet(item: $nativeViewerItem) { item in
             NeutrinoFileViewer(item: item)
+        }
+        .sheet(item: $zipDocument) { document in
+            ZipViewerView(document: document)
+        }
+        .alert(
+            companionPrompt.map { "\($0.kind.appName) Isn\u{2019}t Installed" } ?? "",
+            isPresented: Binding(
+                get: { companionPrompt != nil },
+                set: { if !$0 { companionPrompt = nil } }
+            ),
+            presenting: companionPrompt
+        ) { prompt in
+            if CompanionAppStore.hasListing(for: prompt.kind) {
+                Button("Get \(prompt.kind.appName)") {
+                    companionPrompt = nil
+                    installCompanionApp(prompt.kind)
+                }
+            }
+            Button("Open in Drive") {
+                companionPrompt = nil
+                openInDrive(prompt.item)
+            }
+            Button("Cancel", role: .cancel) { companionPrompt = nil }
+        } message: { prompt in
+            Text(companionPromptMessage(for: prompt))
         }
         .alert("Download Failed", isPresented: Binding(
             get: { downloadError != nil },
@@ -260,7 +315,7 @@ struct FileBrowserView: View {
     @ViewBuilder
     private func fileRow(for item: DriveItem) -> some View {
         rowContent(for: item)
-            // Drag out. The provider decrypts lazily — on drop, not on drag — so dragging a
+            // Drag out. The provider decrypts lazily, on drop rather than on drag, so dragging a
             // large file and releasing it over nothing costs nothing. See `DriveItemTransfer`.
             .if(DriveItemTransfer.canDrag(item: item)) { view in
                 view.onDrag {
@@ -280,6 +335,13 @@ struct FileBrowserView: View {
                 NavigationLink(value: item) {
                     FileRowView(item: item)
                 }
+            } else if companionKind(for: item) != nil {
+                Button {
+                    openInCompanionApp(item)
+                } label: {
+                    FileRowView(item: item)
+                }
+                .buttonStyle(.plain)
             } else if FeatureFlags.viewNeutrinoFiles && item.isNeutrinoNativeFormat {
                 Button {
                     nativeViewerItem = item
@@ -372,8 +434,8 @@ struct FileBrowserView: View {
     /// action (unstar) users will reach for there most.
     @ViewBuilder
     private func sharedItemActions(for item: DriveItem) -> some View {
-        // iPad only in practice — `supportsMultipleWindows` is false on iPhone, so the action
-        // is absent rather than present-and-doing-nothing.
+        // iPad only in practice: `supportsMultipleWindows` is false on iPhone, so the action is
+        // absent rather than present-and-doing-nothing.
         if canOpenInNewWindow && item.type == .file {
             Button {
                 openInNewWindow(item)
@@ -408,42 +470,42 @@ struct FileBrowserView: View {
         }
     }
 
+    /// The "how do I open this" actions, identical wherever a file is listed. Factored out so the
+    /// companion-app entry cannot end up on My Drive but missing from Starred, Shared, or Recents.
+    @ViewBuilder
+    private func openActions(for item: DriveItem) -> some View {
+        if item.type == .file, let kind = companionKind(for: item) {
+            Button {
+                openInCompanionApp(item)
+            } label: {
+                Label("Open in \(kind.appName)", systemImage: "arrow.up.forward.app")
+            }
+            Divider()
+        } else if item.type == .file && FeatureFlags.viewNeutrinoFiles && item.isNeutrinoNativeFormat {
+            Button {
+                nativeViewerItem = item
+            } label: {
+                Label("Open", systemImage: "doc.text.magnifyingglass")
+            }
+            Divider()
+        } else if item.type == .file && FeatureFlags.downloadFiles {
+            Button {
+                startDownload(for: item)
+            } label: {
+                Label("Download & Open", systemImage: "arrow.down.circle")
+            }
+            Divider()
+        }
+    }
+
     @ViewBuilder
     private func contextMenuItems(for item: DriveItem) -> some View {
         switch section {
         case .starred, .shared, .recents:
-            if item.type == .file && FeatureFlags.viewNeutrinoFiles && item.isNeutrinoNativeFormat {
-                Button {
-                    nativeViewerItem = item
-                } label: {
-                    Label("Open", systemImage: "doc.text.magnifyingglass")
-                }
-                Divider()
-            } else if item.type == .file && FeatureFlags.downloadFiles {
-                Button {
-                    startDownload(for: item)
-                } label: {
-                    Label("Download & Open", systemImage: "arrow.down.circle")
-                }
-                Divider()
-            }
+            openActions(for: item)
             sharedItemActions(for: item)
         case .myDrive:
-            if item.type == .file && FeatureFlags.viewNeutrinoFiles && item.isNeutrinoNativeFormat {
-                Button {
-                    nativeViewerItem = item
-                } label: {
-                    Label("Open", systemImage: "doc.text.magnifyingglass")
-                }
-                Divider()
-            } else if item.type == .file && FeatureFlags.downloadFiles {
-                Button {
-                    startDownload(for: item)
-                } label: {
-                    Label("Download & Open", systemImage: "arrow.down.circle")
-                }
-                Divider()
-            }
+            openActions(for: item)
             if item.type == .file && FeatureFlags.offlineFiles {
                 Button {
                     toggleOffline(for: item)
@@ -526,15 +588,81 @@ struct FileBrowserView: View {
                 .disabled(currentItems.isEmpty)
             }
         }
+
+        // Every section, unlike New Folder above. A bug gets reported from whichever screen is
+        // misbehaving, and that is rarely the root of My Drive.
+        ToolbarItem(placement: .secondaryAction) {
+            ReportBugButton()
+        }
+    }
+
+    // MARK: - Companion Apps
+
+    /// The sibling app that owns this file's format, or nil when Drive should open it itself.
+    ///
+    /// This is what routes a `.docx`, `.xlsx`, or `.pptx` out of Drive: those are the formats Docs,
+    /// Sheets, and Slides store their files in, so an Office file here is a Neutrino document that
+    /// happens to also open in Word — not an attachment to download. Diagrams and Drawings are
+    /// web-only and return nil, as does every ordinary upload.
+    private func companionKind(for item: DriveItem) -> NeutrinoAppLink.Kind? {
+        guard FeatureFlags.companionAppLinks, item.type == .file else { return nil }
+        guard let kind = NeutrinoAppLink.kind(forMIME: item.mimeType), kind.hasCompanionApp else {
+            return nil
+        }
+        return kind
+    }
+
+    /// Hands the file to its companion app, falling back to a prompt when that app is missing.
+    ///
+    /// Only the file id crosses the boundary — the companion fetches the current version from the
+    /// server, so nothing is downloaded twice and the user never opens a stale copy.
+    private func openInCompanionApp(_ item: DriveItem) {
+        guard let kind = companionKind(for: item) else { return }
+        Task {
+            let outcome = await companionLauncher.open(fileID: item.id, mimeType: item.mimeType)
+            if outcome != .opened {
+                companionPrompt = CompanionPrompt(item: item, kind: kind)
+            }
+        }
+    }
+
+    /// Sends the user to the App Store listing for the app they are missing.
+    ///
+    /// Only reachable when `CompanionAppStore` has an id for the kind — the button is not shown
+    /// otherwise — so there is no failure to report back to the user here.
+    private func installCompanionApp(_ kind: NeutrinoAppLink.Kind) {
+        Task {
+            await companionLauncher.openAppStore(for: kind)
+        }
+    }
+
+    /// What the "isn't installed" alert says, which depends on whether the app can be installed.
+    ///
+    /// An app with no App Store listing yet gets no "Get …" button, so promising one ("Install X
+    /// to edit this") would name a step the alert does not offer. That wording is kept for the
+    /// case where the button is actually there.
+    private func companionPromptMessage(for prompt: CompanionPrompt) -> String {
+        let fileName = "\u{201C}\(prompt.item.name)\u{201D}"
+        guard CompanionAppStore.hasListing(for: prompt.kind) else {
+            return "\(prompt.kind.appName) isn\u{2019}t available on this device yet. You can open \(fileName) here in Drive."
+        }
+        return "Get \(prompt.kind.appName) from the App Store to edit \(fileName), or open it here in Drive."
+    }
+
+    /// The pre-companion-app behaviour, used as the fallback when the sibling app is missing.
+    private func openInDrive(_ item: DriveItem) {
+        if FeatureFlags.viewNeutrinoFiles && item.isNeutrinoNativeFormat {
+            nativeViewerItem = item
+        } else if FeatureFlags.downloadFiles {
+            startDownload(for: item)
+        }
     }
 
     // MARK: - Download
 
-    /// Opens a file: streamed if it is large media, downloaded-then-previewed otherwise.
-    ///
-    /// The branch is deliberately here rather than inside `DownloadService`. Streaming and
-    /// downloading produce different *things* — a live player versus a decrypted file on disk —
-    /// and the caller is what knows which of the two it wants to present.
+    /// Opens a file: streamed if it is large media, downloaded and previewed otherwise. The
+    /// choice is made here because the two produce different things to present — a live player
+    /// versus a decrypted file on disk.
     private func startDownload(for item: DriveItem) {
         if StreamingPlaybackService.shouldStream(mimeType: item.mimeType, sizeBytes: item.size) {
             streamingItem = item
@@ -543,38 +671,35 @@ struct FileBrowserView: View {
         }
         Task {
             do {
-                previewURL = try await downloadService.download(
+                let url = try await downloadService.download(
                     fileID: item.id,
                     fileName: item.name,
                     mimeType: item.mimeType
                 )
                 recordAccess(item)
+                // QuickLook shows a zip as an icon; the zip viewer shows what is in it.
+                if ZipArchiveReader.isZip(mimeType: item.mimeType, name: item.name) {
+                    zipDocument = ZipArchiveDocument(url: url, name: item.name)
+                } else {
+                    previewURL = url
+                }
             } catch {
                 downloadError = error.localizedDescription
             }
         }
     }
 
-    /// Feeds the local recency/frequency signal that drives smart offline sync.
-    ///
-    /// Local rather than server-side, and not because it was easier: the backend cannot supply
-    /// this. `/api/v1/drive/quick-access` silently degrades to "8 most recently updated" (its
-    /// scoring query groups on a column that does not exist), and `file_activity_log` is never
-    /// written for opens or downloads at all. See "Finding 2" in
-    /// `agent_docs/plans/feature-phase5-6-streaming-smart-offline-ipad.md`. Keeping it local is
-    /// also the privacy-correct answer — which files a user opens, and how often, is exactly
-    /// the behavioural metadata an E2EE product exists to withhold.
+    /// Feeds the local recency/frequency signal smart offline sync prefetches by. Local on
+    /// purpose: which files a user opens, and how often, is exactly the behavioural metadata an
+    /// E2EE product exists to withhold from its server.
     private func recordAccess(_ item: DriveItem) {
         FileAccessTracker.shared.recordAccess(item: item)
     }
 
     // MARK: - Drag and Drop
 
-    /// Uploads every dropped file into the folder currently being browsed.
-    ///
-    /// Failures are reported per-drop rather than aborting the batch: dropping five files and
-    /// having one unsupported item silently cancel the other four would be worse than partial
-    /// success.
+    /// Uploads every dropped file into the folder being browsed. Failures are reported per drop
+    /// rather than aborting the batch.
     private func handleDrop(_ providers: [NSItemProvider]) {
         Task {
             for provider in providers {
@@ -598,11 +723,8 @@ struct FileBrowserView: View {
 
     // MARK: - Multi-Window
 
-    /// Opens `item` in its own iPad window.
-    ///
-    /// Guarded on `supportsMultipleWindows` rather than on the idiom: the environment value is
-    /// what actually reflects whether the running platform will honour `openWindow`, and it is
-    /// false on iPhone and on an iPad running in a configuration that forbids it.
+    /// Guarded on `supportsMultipleWindows` rather than on the idiom: it reflects whether the
+    /// running platform will honour `openWindow`.
     private var canOpenInNewWindow: Bool {
         FeatureFlags.multiWindow && supportsMultipleWindows
     }
@@ -703,5 +825,6 @@ private struct MyDriveSearchModifier: ViewModifier {
             .environmentObject(DriveService())
             .environmentObject(AuthService())
             .environmentObject(OfflineService())
+            .environmentObject(NetworkMonitor(autoStart: false))
     }
 }

@@ -1,4 +1,6 @@
 import XCTest
+import NeutrinoCore
+import NeutrinoAuth
 @testable import NeutrinoDrive
 
 /// Unit tests for DriveService covering optimistic mutation logic and section queries.
@@ -338,7 +340,7 @@ final class DriveServiceTests: XCTestCase {
     // MARK: - ensureFolder
 
     func test_ensureFolder_adoptsExistingCaseInsensitiveMatch_insteadOfCreatingDuplicate() async throws {
-        KeychainService.save("test-token", forKey: AuthService.accessTokenKey)
+        KeychainService.save(TestJWT.make(), forKey: AuthService.accessTokenKey)
         defer { KeychainService.delete(forKey: AuthService.accessTokenKey) }
 
         var requestCount = 0
@@ -363,7 +365,7 @@ final class DriveServiceTests: XCTestCase {
     }
 
     func test_ensureFolder_createsNewFolder_whenNoMatchExists() async throws {
-        KeychainService.save("test-token", forKey: AuthService.accessTokenKey)
+        KeychainService.save(TestJWT.make(), forKey: AuthService.accessTokenKey)
         defer { KeychainService.delete(forKey: AuthService.accessTokenKey) }
 
         var methods: [String] = []

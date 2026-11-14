@@ -1,4 +1,7 @@
 import XCTest
+import NeutrinoCore
+import NeutrinoAuth
+import NeutrinoCrypto
 @testable import NeutrinoDrive
 
 // MARK: - Test helpers (module-level, no actor isolation)
@@ -34,7 +37,7 @@ private func seedValidKeysAndToken() {
     KeychainService.save(pubKeyB64URL, forKey: KeyImportService.publicKeyKeychainKey)
     KeychainService.save("unused-private-key", forKey: KeyImportService.privateKeyKeychainKey)
     KeychainService.save("1", forKey: KeyImportService.keyVersionKeychainKey)
-    KeychainService.save("test-access-token", forKey: AuthService.accessTokenKey)
+    KeychainService.save(TestJWT.make(), forKey: AuthService.accessTokenKey)
 }
 
 private func clearKeysAndToken() {

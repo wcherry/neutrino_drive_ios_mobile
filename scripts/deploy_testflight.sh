@@ -8,9 +8,9 @@
 #
 # project.yml is the source of truth for CURRENT_PROJECT_VERSION / MARKETING_VERSION,
 # so the script edits it there and regenerates the Xcode project with xcodegen. The app
-# and both embedded extensions (share, file provider) each declare their own copy, and
-# App Store Connect rejects an upload whose extension versions disagree with the app's —
-# so the bump rewrites all three and the pre-bump check refuses to run if they had drifted.
+# and the embedded share extension each declare their own copy, and App Store Connect
+# rejects an upload whose extension versions disagree with the app's — so the bump
+# rewrites both and the pre-bump check refuses to run if they had drifted.
 #
 # App Store Connect credentials are read from the environment, or from a
 # scripts/.env file (gitignored). Two options, API key preferred:

@@ -1,4 +1,5 @@
 import Foundation
+import NeutrinoCore
 
 // MARK: - DriveItem
 
@@ -10,6 +11,16 @@ struct DriveItem: Identifiable, Hashable {
     enum ItemType {
         case folder
         case file
+    }
+
+    // MARK: - Neutrino Native MIME Types
+
+    enum NeutrinoMIME {
+        static let doc      = "application/vnd.neutrino.doc"
+        static let sheet    = "application/vnd.neutrino.sheet"
+        static let slide    = "application/vnd.neutrino.slide"
+        static let diagram  = "application/vnd.neutrino.diagram"
+        static let drawing  = "application/vnd.neutrino.drawing"
     }
 
     // MARK: - Properties
@@ -29,25 +40,57 @@ struct DriveItem: Identifiable, Hashable {
 
     // MARK: - Computed
 
-    /// What this item is, for icon and tint purposes.
-    ///
-    /// Derived from the MIME type *and* the filename, so a file the server could only
-    /// describe as `application/octet-stream` still gets the icon its extension implies.
-    /// See `FileKind.classify`.
-    var kind: FileKind {
-        FileKind.classify(mimeType: mimeType, filename: name, isFolder: type == .folder)
+    /// The Neutrino app that owns this file's format, or nil for an ordinary upload.
+    var neutrinoKind: NeutrinoAppLink.Kind? {
+        NeutrinoAppLink.kind(forMIME: mimeType)
     }
 
+    /// True for files Neutrino edits itself, in any of the formats it has stored them in.
+    ///
+    /// Asks the routing table rather than matching a prefix. `application/vnd.neutrino.` is the
+    /// oldest of three spellings; the backend writes `application/x-neutrino-*` and, for Docs,
+    /// Sheets, and Slides, a real `.docx`/`.xlsx`/`.pptx` — so a prefix test answered false for
+    /// nearly every native file the server creates today, sending each one down the download path
+    /// instead of into the viewer that can open it.
     var isNeutrinoNativeFormat: Bool {
-        kind.isNeutrinoNative
+        neutrinoKind != nil
     }
 
-    /// SF Symbol name for this item.
-    ///
-    /// Note that the Neutrino-native formats are drawn from custom artwork rather than an
-    /// SF Symbol — use `FileTypeIcon(kind:)` to render an item, which picks correctly
-    /// between the two. This stays for callers that genuinely need a symbol name.
+    /// Returns the appropriate SF Symbol name for this item.
     var iconName: String {
-        kind.symbolName
+        switch type {
+        case .folder:
+            return "folder.fill"
+        case .file:
+            guard let mime = mimeType else { return "doc" }
+            if let kind = neutrinoKind, let symbol = Self.symbolName(for: kind) { return symbol }
+            if mime.hasPrefix("image/")      { return "photo" }
+            if mime == "application/pdf"     { return "doc.richtext" }
+            if mime.hasPrefix("video/")      { return "film" }
+            if mime.hasPrefix("audio/")      { return "music.note" }
+            if mime == "application/zip"
+                || mime == "application/x-zip-compressed"
+                || mime == "application/x-tar"
+                || mime == "application/x-gzip" { return "archivebox" }
+            if mime.hasPrefix("text/")       { return "doc.text" }
+            return "doc"
+        }
+    }
+
+    /// The SF Symbol for a Neutrino-owned format, or nil to fall through to the generic rules.
+    ///
+    /// Keyed on the app rather than the mime type so a `.docx` and the legacy `x-neutrino-doc`
+    /// beside it in the same folder show the same icon — they are both documents, and which
+    /// vintage of the server wrote them is not something a user should be able to see.
+    private static func symbolName(for kind: NeutrinoAppLink.Kind) -> String? {
+        switch kind {
+        case .doc:              return "doc.text.fill"
+        case .sheet:            return "tablecells"
+        case .slide:            return "rectangle.stack.fill"
+        case .diagram:          return "flowchart"
+        case .drawing:          return "paintbrush.fill"
+        // Notes have never had an icon of their own here, and `.file` is not a format.
+        case .note, .file:      return nil
+        }
     }
 }

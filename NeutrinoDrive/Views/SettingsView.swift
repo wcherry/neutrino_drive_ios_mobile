@@ -1,4 +1,7 @@
 import SwiftUI
+import NeutrinoAuth
+import NeutrinoCrypto
+import NeutrinoUI
 
 struct SettingsView: View {
     @EnvironmentObject var authService: AuthService
@@ -6,6 +9,8 @@ struct SettingsView: View {
     @EnvironmentObject var offlineService: OfflineService
     @EnvironmentObject var photoSyncService: PhotoSyncService
     @EnvironmentObject var biometricService: BiometricAuthService
+    @EnvironmentObject var keyProvisioningService: KeyProvisioningService
+    @EnvironmentObject var deviceKeyRepair: DeviceKeyRepairService
     @EnvironmentObject var spotlightService: SpotlightIndexService
     @EnvironmentObject var smartOffline: SmartOfflineSyncService
 
@@ -13,9 +18,40 @@ struct SettingsView: View {
 
     @State private var hasKeys = KeyImportService.hasStoredKeys()
     @State private var showKeyImport = false
+    @State private var showRecoveryKit = false
+    @State private var showEncryptionSetup = false
+    @State private var canProvisionKey = false
     @State private var showRemoveConfirmation = false
     @State private var showClearCacheConfirmation = false
     @State private var keyAccessDenied: String?
+
+    @ViewBuilder
+    private var deviceKeyStatusRow: some View {
+        switch deviceKeyRepair.state {
+        case .unknown, .current:
+            EmptyView()
+        case .stale:
+            Label("This device's key is out of date. Uploads are paused while files it sealed are repaired.",
+                  systemImage: "exclamationmark.triangle")
+                .foregroundStyle(.orange)
+        case .running(let examined, let rewrapped):
+            Label("Repairing files sealed to this device's old key… \(rewrapped) repaired, \(examined) checked",
+                  systemImage: "arrow.triangle.2.circlepath")
+        case .repaired(let report):
+            Label("Repaired: \(report.summary). Now remove this key and scan your current key code from the web to resume uploads.",
+                  systemImage: "checkmark.circle")
+                .foregroundStyle(report.failed > 0 ? .orange : .green)
+            if report.failed > 0 {
+                Button("Retry Repair") { Task { await deviceKeyRepair.checkAndRepair() } }
+            }
+        case .failed(let message):
+            VStack(alignment: .leading, spacing: 6) {
+                Label(message, systemImage: "exclamationmark.triangle")
+                    .foregroundStyle(.orange)
+                Button("Retry Repair") { Task { await deviceKeyRepair.checkAndRepair() } }
+            }
+        }
+    }
 
     var body: some View {
         List {
@@ -36,11 +72,16 @@ struct SettingsView: View {
                     Label("Encryption Key: Imported \u{2713}", systemImage: "key.fill")
                         .foregroundStyle(.primary)
 
+                    deviceKeyStatusRow
+
                     Button(role: .destructive) {
                         showRemoveConfirmation = true
                     } label: {
                         Text("Remove Keys")
                     }
+                    // While this device holds the only key that opens some of its uploads,
+                    // removing it destroys them. Wait for the repair to move them first.
+                    .disabled(deviceKeyRepair.state.keyMustBeKept)
                     .alert("Remove Encryption Keys?", isPresented: $showRemoveConfirmation) {
                         Button("Remove", role: .destructive) {
                             // Key access is the second target mvp.md names alongside app
@@ -63,10 +104,50 @@ struct SettingsView: View {
                         Text("This will delete your stored encryption keys. You will need to re-import them to access encrypted files.")
                     }
                 } else {
+                    // Offered only to an account with nothing published — a new one, or one whose
+                    // first-run setup was skipped. Without it an account that has never had a key
+                    // cannot get one from this app at all; the two routes below both assume an
+                    // identity that already exists.
+                    if canProvisionKey {
+                        Button {
+                            showEncryptionSetup = true
+                        } label: {
+                            Label("Set Up Encryption Key", systemImage: "checkmark.shield")
+                        }
+                        .fullScreenCover(isPresented: $showEncryptionSetup) {
+                            EncryptionSetupView(service: keyProvisioningService) {
+                                showEncryptionSetup = false
+                                hasKeys = KeyImportService.hasStoredKeys()
+                                Task {
+                                    canProvisionKey = await keyProvisioningService.canProvision()
+                                }
+                            }
+                        }
+                    }
+
+                    // Preferred path: the recovery kit printed when encryption was
+                    // set up. There is no server-side key vault to unlock any more —
+                    // the web app creates the key on the device and never transmits
+                    // it — so the kit and the mobile key code are the two ways in.
+                    Button {
+                        showRecoveryKit = true
+                    } label: {
+                        Label("Enter Recovery Kit", systemImage: "doc.text")
+                    }
+                    .sheet(isPresented: $showRecoveryKit) {
+                        hasKeys = KeyImportService.hasStoredKeys()
+                    } content: {
+                        RecoveryKitImportView(isPresented: $showRecoveryKit) {
+                            hasKeys = KeyImportService.hasStoredKeys()
+                        }
+                    }
+
+                    // The mobile key code lives behind this, alongside the exported
+                    // key file that older accounts may still have.
                     Button {
                         showKeyImport = true
                     } label: {
-                        Label("Import Encryption Key", systemImage: "key")
+                        Label("Scan Key Code", systemImage: "key")
                     }
                     .sheet(isPresented: $showKeyImport) {
                         hasKeys = KeyImportService.hasStoredKeys()
@@ -175,6 +256,9 @@ struct SettingsView: View {
         .task {
             quotaService.authService = authService
             await quotaService.refresh()
+            // One request, and only while this device has no key — an account that publishes one
+            // never sees the button, so there is nothing to re-check.
+            if !hasKeys { canProvisionKey = await keyProvisioningService.canProvision() }
         }
         .alert("Authentication Required", isPresented: Binding(
             get: { keyAccessDenied != nil },
@@ -280,5 +364,6 @@ struct SettingsView: View {
             .environmentObject(OfflineService())
             .environmentObject(PhotoSyncService())
             .environmentObject(BiometricAuthService())
+            .environmentObject(DeviceKeyRepairService())
     }
 }
