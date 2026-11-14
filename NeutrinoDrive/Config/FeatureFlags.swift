@@ -89,4 +89,73 @@ enum FeatureFlags {
     /// dropped from `DriveSection.visibleCases`, so neither the iPhone picker nor the iPad
     /// sidebar offers it.
     static let favorites: Bool = true
+
+    /// Set to true to register the Phase 3 File Provider domain, which is what makes
+    /// "Neutrino Drive" appear in the Files app and in every document picker.
+    ///
+    /// When false no domain is ever registered, so the location does not appear and the
+    /// extension is never invoked. The extension is still *present* in the bundle — an
+    /// extension's presence is a bundle property, not a runtime one, the same caveat already
+    /// recorded for `shareExtension` — but with no domain there is nothing to invoke it.
+    static let filesAppIntegration: Bool = true
+
+    /// Set to true to handle documents opened **in place** by other apps.
+    ///
+    /// Pairs with `LSSupportsOpeningDocumentsInPlace` in `project.yml`, which is the half that
+    /// actually decides what iOS hands over; this flag gates the app's handling. When false the
+    /// app still refuses to delete a document it did not copy — that safety is in
+    /// `IncomingDocument`, not in this flag, because a flag must never be the only thing
+    /// standing between a user and a deleted file.
+    static let openInPlace: Bool = true
+
+    /// Set to true to enable Phase 3 CoreSpotlight indexing of file and folder **metadata**.
+    ///
+    /// Note the two-level gate: this flag being true does **not** enable indexing. The
+    /// user-facing setting (`SpotlightIndexService.isEnabled`) is independently `false` until
+    /// somebody turns it on, because CoreSpotlight's index is not end-to-end encrypted and
+    /// filenames are frequently the most sensitive thing about a file. See the type
+    /// documentation on `SpotlightIndexService` for the full reasoning.
+    ///
+    /// When false: no index write, no de-index, and the Settings section is hidden.
+    static let spotlightSearch: Bool = true
+
+    /// Set to true to stream large video and audio instead of downloading them in full.
+    ///
+    /// **This flag governs a security trade, so it is worth understanding before flipping.**
+    /// Streaming serves *unauthenticated* plaintext: one Poly1305 MAC covers the whole file, so
+    /// verifying any byte needs every byte, which a seeking player never reads. See
+    /// `EncryptedMediaStream` for the full reasoning and for the scope rule that confines the
+    /// exposure to transient playback — anything written to disk, exported, or cached offline
+    /// always uses the authenticated `SecretStreamCrypto.decrypt(fileAt:to:key:)`.
+    ///
+    /// When false, media opens through the existing full-download path with the MAC verified
+    /// before a single frame is shown. That is the correct setting for a deployment unwilling
+    /// to accept the trade; it costs start-up latency and a full copy on disk, not correctness.
+    ///
+    /// Note this flag does **not** gate the constant-memory streaming *decrypt*, which is
+    /// unconditional and purely a win — it is what removed the File Provider's 64 MB ceiling.
+    static let largeFileStreaming: Bool = true
+
+    /// Set to true to automatically cache recently- and frequently-used files for offline use.
+    ///
+    /// When false, no access is recorded at all (not merely unused — `FileAccessTracker`
+    /// records nothing), no automatic download runs, and the Settings section is hidden.
+    /// Manual "Make Available Offline" is untouched: a user's explicit pin is not this
+    /// feature's business.
+    static let smartOfflineSync: Bool = true
+
+    /// Set to true to allow multiple document windows on iPad (and Stage Manager / external
+    /// displays, which are the same scene machinery).
+    ///
+    /// When false the secondary `WindowGroup` is not declared, so `openWindow` has nothing to
+    /// open and the app behaves exactly as the single-window build did.
+    static let multiWindow: Bool = true
+
+    /// Set to true to enable drag and drop between Neutrino Drive and other apps.
+    ///
+    /// When false no `.draggable`/`.dropDestination` modifier is attached anywhere, so no drag
+    /// can start and no drop is accepted. Worth a flag of its own because dragging a file *out*
+    /// hands another app decrypted bytes — intended, and the entire point, but the one gesture
+    /// that crosses the encryption boundary.
+    static let dragAndDrop: Bool = true
 }

@@ -100,12 +100,41 @@ final class OfflineService: ObservableObject {
         offlineFiles.reduce(0) { $0 + $1.sizeBytes }
     }
 
+    /// Bytes held by files smart offline sync placed here, which is what its budget governs.
+    /// User-pinned files sit outside the budget — see `SmartOfflineSyncService`.
+    func managedCacheSizeBytes() -> Int64 {
+        offlineFiles.filter(\.isManaged).reduce(0) { $0 + $1.sizeBytes }
+    }
+
+    func pinnedCacheSizeBytes() -> Int64 {
+        offlineFiles.filter { !$0.isManaged }.reduce(0) { $0 + $1.sizeBytes }
+    }
+
+    /// Recomputes the managed total from **actual file sizes on disk** rather than from the
+    /// manifest's recorded sizes.
+    ///
+    /// The two can drift: a download that fails partway, a manifest written before a file was
+    /// truncated, or an entry whose file was removed by the system under storage pressure all
+    /// leave the manifest overstating or understating reality. A budget enforced against a
+    /// running total rather than the filesystem is a budget that eventually stops meaning
+    /// anything, so this is what Settings displays.
+    func actualManagedCacheSizeBytes() -> Int64 {
+        offlineFiles.filter(\.isManaged).reduce(0) { total, entry in
+            total + (resolvedSizeBytes(at: entry.localURL) ?? 0)
+        }
+    }
+
     // MARK: - Mutations
 
     /// Downloads and decrypts `item` via `downloadService`, copies the plaintext into durable
     /// storage, and records it in the manifest. Reuses `DownloadService.download` rather than
     /// reimplementing the decrypt flow.
-    func makeAvailableOffline(item: DriveItem, downloadService: DownloadService) async throws {
+    /// - Parameter isManaged: true when smart offline sync placed this file, false when the
+    ///   user explicitly pinned it. Only managed entries are ever evicted. Defaults to false so
+    ///   every existing call site keeps producing a pinned file, which is the safe reading.
+    func makeAvailableOffline(item: DriveItem,
+                              downloadService: DownloadService,
+                              isManaged: Bool = false) async throws {
         logger.debug("makeAvailableOffline: id=\(item.id, privacy: .public) name=\(item.name, privacy: .public)")
 
         let tempURL: URL
@@ -138,11 +167,21 @@ final class OfflineService: ObservableObject {
             mimeType: item.mimeType ?? "application/octet-stream",
             sizeBytes: sizeBytes,
             localURL: destURL,
-            cachedAt: Date()
+            cachedAt: Date(),
+            isManaged: isManaged
         )
 
+        // A file the user pinned must stay pinned even if smart sync happens to re-download
+        // it: downgrading it to managed would quietly make it evictable.
+        let wasPinned = offlineFiles.contains { $0.id == item.id && !$0.isManaged }
         offlineFiles.removeAll { $0.id == item.id }
-        offlineFiles.append(entry)
+        offlineFiles.append(wasPinned ? OfflineFile(id: entry.id, name: entry.name,
+                                                    mimeType: entry.mimeType,
+                                                    sizeBytes: entry.sizeBytes,
+                                                    localURL: entry.localURL,
+                                                    cachedAt: entry.cachedAt,
+                                                    isManaged: false)
+                                      : entry)
         try persistManifest()
         logger.debug("makeAvailableOffline succeeded: id=\(item.id, privacy: .public)")
     }
@@ -166,6 +205,21 @@ final class OfflineService: ObservableObject {
         }
         offlineFiles.remove(at: idx)
         try? persistManifest()
+    }
+
+    /// Removes a file **only if** smart offline sync placed it there.
+    ///
+    /// The guard is the entire point: eviction runs automatically, and an automatic process
+    /// that can delete a file the user explicitly asked to keep offline is a bug that only
+    /// surfaces when they are somewhere with no signal. Refusing here rather than trusting the
+    /// caller means the invariant holds even if a future planner gets its filtering wrong.
+    func evictManaged(fileID: String) {
+        guard let entry = offlineFiles.first(where: { $0.id == fileID }) else { return }
+        guard entry.isManaged else {
+            logger.debug("evictManaged: refusing to evict user-pinned \(fileID, privacy: .public)")
+            return
+        }
+        removeOffline(fileID: fileID)
     }
 
     /// Removes every cached file. Used by Settings' "Clear Offline Cache" action.

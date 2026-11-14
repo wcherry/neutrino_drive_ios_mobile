@@ -1,4 +1,5 @@
 import SwiftUI
+import CoreSpotlight
 import NeutrinoCore
 import NeutrinoAuth
 import NeutrinoCrypto
@@ -54,6 +55,9 @@ struct NeutrinoDriveApp: App {
     @StateObject private var keyProvisioningService = KeyProvisioningService()
     @StateObject private var networkMonitor = NetworkMonitor()
     @StateObject private var deviceKeyRepair: DeviceKeyRepairService
+    @StateObject private var spotlightService = SpotlightIndexService()
+    @StateObject private var streamingService = StreamingPlaybackService()
+    @StateObject private var smartOffline = SmartOfflineSyncService()
 
     @Environment(\.scenePhase) private var scenePhase
 
@@ -121,6 +125,9 @@ struct NeutrinoDriveApp: App {
                     .environmentObject(keyProvisioningService)
                     .environmentObject(deviceKeyRepair)
                     .environmentObject(networkMonitor)
+                    .environmentObject(spotlightService)
+                    .environmentObject(streamingService)
+                    .environmentObject(smartOffline)
 
                 if biometricService.shouldPresentOverlay {
                     LockScreenView(biometricService: biometricService)
@@ -132,6 +139,20 @@ struct NeutrinoDriveApp: App {
                 // Services are wired in `init()`; what is left here genuinely needs the UI.
                 photoSyncService.start()
                 biometricService.lockOnLaunch()
+
+                // The Files-app location exists only while the user is signed in *and* holds
+                // keys — see `FileProviderDomainService` for why both are required.
+                await FileProviderDomainService.synchronize(
+                    isAuthenticated: authService.isAuthenticated,
+                    hasKeys: KeyImportService.hasStoredKeys()
+                )
+
+                // Smart offline runs on foreground rather than from a background task: photo
+                // sync already owns the background budget, and competing with it to prefetch a
+                // convenience cache is a poor trade.
+                await smartOffline.sync(offlineService: offlineService,
+                                        downloadService: DownloadService(),
+                                        driveService: driveService)
 
                 // Finish any upload whose ciphertext committed but whose sealed key never
                 // did. The key `PUT` runs on the foreground session, so an upload suspended
@@ -160,6 +181,21 @@ struct NeutrinoDriveApp: App {
                     // onto the account's key, and only until the old key is replaced, so it
                     // starts by itself rather than waiting to be found in Settings.
                     await deviceKeyRepair.checkAndRepair()
+                }
+            }
+            .onChange(of: authService.isAuthenticated) { isAuthenticated in
+                Task {
+                    await FileProviderDomainService.synchronize(
+                        isAuthenticated: isAuthenticated,
+                        hasKeys: KeyImportService.hasStoredKeys()
+                    )
+                }
+                if !isAuthenticated {
+                    // An access history must not outlive the session that produced it.
+                    FileAccessTracker.shared.reset()
+                    // Signing out takes the Spotlight entries with it, so a signed-out device
+                    // never answers system searches with the previous user's file names.
+                    spotlightService.deindexAll()
                 }
             }
         }
@@ -195,6 +231,29 @@ struct NeutrinoDriveApp: App {
                 break
             }
         }
+
+        // Secondary scene (phase 6 multi-window): one window per open document on iPad, Stage
+        // Manager and external displays. Declared unconditionally because `SceneBuilder` does not
+        // accept conditionals; `FeatureFlags.multiWindow` gates the only `openWindow` call sites,
+        // so with the flag off the scene is never instantiated.
+        WindowGroup(id: DocumentWindowScene.identifier, for: DocumentWindowValue.self) { $value in
+            Group {
+                if let value {
+                    DocumentWindowView(value: value)
+                        .environmentObject(authService)
+                        .environmentObject(driveService)
+                        .environmentObject(offlineService)
+                        .environmentObject(streamingService)
+                        .environmentObject(smartOffline)
+                } else {
+                    ContentUnavailableCompat(
+                        title: "No document",
+                        message: "This window has nothing to show.",
+                        systemImage: "doc"
+                    )
+                }
+            }
+        }
     }
 }
 
@@ -204,6 +263,7 @@ struct NeutrinoDriveApp: App {
 /// signed-in device for the account's encryption key.
 private struct RootContentView: View {
     @EnvironmentObject var authService: AuthService
+    @EnvironmentObject var spotlightService: SpotlightIndexService
 
     @StateObject private var deepLinkRouter = DeepLinkRouter()
 
@@ -234,16 +294,25 @@ private struct RootContentView: View {
             guard url.pathExtension == "json" else { return }
             Task { @MainActor in
                 do {
-                    let data = try Data(contentsOf: url)
+                    // `IncomingDocument.consume` takes the security scope, coordinates the read, and
+                    // deletes the source **only** when it is a copy iOS placed in this app's Inbox.
+                    // With `LSSupportsOpeningDocumentsInPlace` on, this URL can be the user's own
+                    // file in iCloud Drive, which the old unconditional `removeItem` would delete.
+                    let data = try IncomingDocument.consume(url: url)
                     let bundle = try KeyImportService.importKey(from: data)
                     KeyImportService.storeKeys(bundle)
-                    try? FileManager.default.removeItem(at: url)
                     openInAlertMessage = "Encryption key v\(bundle.keyVersion) imported successfully."
                 } catch {
                     openInAlertMessage = error.localizedDescription
                 }
                 showOpenInAlert = true
             }
+        }
+        .onContinueUserActivity(CSSearchableItemActionType) { activity in
+            // A Spotlight result. `driveItemID(from:)` is nil for any activity that is not ours.
+            guard let itemID = SpotlightIndexService.driveItemID(from: activity) else { return }
+            NotificationCenter.default.post(name: .openDriveItemFromSpotlight,
+                                            object: nil, userInfo: ["itemID": itemID])
         }
         .alert("Key Import", isPresented: $showOpenInAlert) {
             Button("OK") {}
@@ -276,4 +345,12 @@ private struct RootContentView: View {
         hasOfferedKeyRestore = true
         showsKeyRestore = true
     }
+}
+
+// MARK: - Notifications
+
+extension Notification.Name {
+    /// Posted when a Spotlight result is opened. Carries `userInfo["itemID"]`; the browser, which
+    /// owns which section is on screen, does the navigating.
+    static let openDriveItemFromSpotlight = Notification.Name("nd.openDriveItemFromSpotlight")
 }

@@ -39,8 +39,7 @@ readonly ARCHIVE_PATH="$BUILD_DIR/$SCHEME.xcarchive"
 readonly EXPORT_DIR="$BUILD_DIR/export"
 readonly TEST_DESTINATION="platform=iOS Simulator,name=iPhone 17,OS=latest"
 # Embedded extensions, verified inside the exported .ipa alongside the app itself.
-# Add NeutrinoDriveFileProvider here when that target merges into main.
-readonly EXTENSIONS=(NeutrinoDriveShare)
+readonly EXTENSIONS=(NeutrinoDriveShare NeutrinoDriveFileProvider)
 
 RUN_TESTS=1
 UPLOAD=1
