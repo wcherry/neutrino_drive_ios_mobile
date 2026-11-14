@@ -140,6 +140,10 @@ struct NeutrinoDriveApp: App {
                 // sealed DEK is on disk; this is the first moment it can be sent.
                 await uploadService.reconcilePendingUploadKeys()
 
+                // Server switches every process here follows — chiefly whether uploads are
+                // written as NEB1 (neutrino#318). Cached in the App Group for the extensions.
+                await RemoteFeatureFlags.refresh()
+
                 // Top up this device's retired keys from the account's key file. Enrolment already
                 // does this, so on a healthy install it finds nothing; it is here for the device
                 // enrolled before the key file existed, and for the one that was offline when its
@@ -176,6 +180,7 @@ struct NeutrinoDriveApp: App {
                 // it started.
                 Task {
                     await uploadService.reconcilePendingUploadKeys()
+                    await RemoteFeatureFlags.refresh()
                     if authService.isAuthenticated && KeyImportService.hasStoredKeys() {
                         await deviceKeyRepair.checkAndRepair()
                     }
