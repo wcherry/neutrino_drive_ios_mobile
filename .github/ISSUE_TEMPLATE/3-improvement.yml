@@ -1,0 +1,74 @@
+name: 🔧 Improvement
+description: Something already works, but it could be substantially better.
+title: "[Improvement]: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Feature vs. Improvement:** if Neutrino Drive *can't* do X, file a Feature Request. If it *does* X but it's slow, awkward, or confusing, you're in the right place.
+
+        Good examples: faster scrolling through files, better keyboard handling, clearer error messages, lower memory use, fewer taps to reach something.
+
+  - type: textarea
+    id: current
+    attributes:
+      label: Current behavior
+      description: What does the app do today?
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposed
+    attributes:
+      label: Proposed improvement
+      description: What should it do instead?
+    validations:
+      required: true
+
+  - type: textarea
+    id: why
+    attributes:
+      label: Why it matters
+      description: What's the concrete impact — time lost, confusion caused, workflow blocked?
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Affected area
+      description: Which part of Neutrino Drive is this about?
+      multiple: true
+      options:
+        - Browsing files and folders
+        - Uploading
+        - Downloading
+        - Offline files
+        - Background transfers
+        - Share extension
+        - Sharing and links
+        - Photo auto-sync
+        - Version history
+        - Favorites
+        - Search
+        - Opening files in companion apps
+        - Encryption and keys
+        - Sign-in / account
+        - Face ID / app lock
+        - Settings
+        - Other / Not sure
+    validations:
+      required: true
+
+  - type: textarea
+    id: examples
+    attributes:
+      label: Screenshots or examples
+      description: Optional. Before/after sketches, examples from other apps, timing measurements.
+
+  - type: input
+    id: related
+    attributes:
+      label: Related issues
+      placeholder: "#123, #456"

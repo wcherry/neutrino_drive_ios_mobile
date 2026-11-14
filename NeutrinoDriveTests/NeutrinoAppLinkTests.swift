@@ -41,7 +41,7 @@ final class NeutrinoAppLinkTests: XCTestCase {
     }
 
     func test_urlForMIME_routesNoteMIMEToNotes() {
-        let url = NeutrinoAppLink.url(forFileID: "f1", mimeType: "application/x-neutrino-note")
+        let url = NeutrinoAppLink.url(forFileID: "f1", mimeType: "text/markdown")
         XCTAssertEqual(url?.path, "/open/note/f1")
     }
 
@@ -133,7 +133,7 @@ final class NeutrinoAppLinkTests: XCTestCase {
     // MARK: - MIME routing
 
     func test_kindForMIME_routesServerNoteType() {
-        XCTAssertEqual(NeutrinoAppLink.kind(forMIME: "application/x-neutrino-note"), .note)
+        XCTAssertEqual(NeutrinoAppLink.kind(forMIME: "text/markdown"), .note)
     }
 
     func test_kindForMIME_routesServerDocType() {
@@ -146,11 +146,11 @@ final class NeutrinoAppLinkTests: XCTestCase {
     }
 
     func test_kindForMIME_ignoresParameters() {
-        XCTAssertEqual(NeutrinoAppLink.kind(forMIME: "application/x-neutrino-note; charset=utf-8"), .note)
+        XCTAssertEqual(NeutrinoAppLink.kind(forMIME: "text/markdown; charset=utf-8"), .note)
     }
 
     func test_kindForMIME_isCaseInsensitive() {
-        XCTAssertEqual(NeutrinoAppLink.kind(forMIME: "APPLICATION/X-NEUTRINO-NOTE"), .note)
+        XCTAssertEqual(NeutrinoAppLink.kind(forMIME: "TEXT/MARKDOWN"), .note)
     }
 
     // MARK: - MIME routing: OOXML

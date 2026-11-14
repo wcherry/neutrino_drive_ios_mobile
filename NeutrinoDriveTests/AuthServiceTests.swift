@@ -162,9 +162,10 @@ final class AuthServiceTests: XCTestCase {
     /// without altering isAuthenticated or clearing the Keychain.
     func test_refreshTokenIfNeeded_withFreshToken_isNoOp() async throws {
         // Store a token that expires one hour from now — well beyond the 60-second buffer.
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        let futureExpiry = formatter.string(from: Date().addingTimeInterval(3600))
+        // The format must match what AuthService.persist() writes: a plain ISO8601DateFormatter,
+        // no fractional seconds. A string the production parser cannot read is treated as an
+        // unknown expiry, which sends this test down the refresh path and onto the network.
+        let futureExpiry = ISO8601DateFormatter().string(from: Date().addingTimeInterval(3600))
 
         KeychainService.save("access-token",  forKey: accessTokenKey)
         KeychainService.save("refresh-token", forKey: refreshTokenKey)
@@ -188,9 +189,7 @@ final class AuthServiceTests: XCTestCase {
     /// must call logout() rather than attempting a network request.
     func test_refreshTokenIfNeeded_withNoRefreshToken_callsLogout() async throws {
         // Store only an access token with an expired expiry (forces refresh path).
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        let pastExpiry = formatter.string(from: Date().addingTimeInterval(-10))
+        let pastExpiry = ISO8601DateFormatter().string(from: Date().addingTimeInterval(-10))
 
         KeychainService.save("access-token", forKey: accessTokenKey)
         KeychainService.save(pastExpiry,     forKey: expiryKey)

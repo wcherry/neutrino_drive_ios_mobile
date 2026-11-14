@@ -3,10 +3,9 @@ import CryptoKit
 import NeutrinoCrypto
 @testable import NeutrinoDrive
 
-// `NeutrinoCrypto` carries a `RecoveryKit`/`RecoveryKitError` pair of its own, so every
-// unqualified mention below is ambiguous the moment both modules are imported. These pin the
-// file to the app's copy — which is the one this file was written to test. The duplication
-// itself is the real defect and wants resolving in favour of the shared package.
+// Both this app and `NeutrinoCrypto` define a `RecoveryKit`: Drive's installs a keyring straight
+// into its own store, the shared one is the keyring value type the editors restore through. They
+// encode the same bytes but are not the same API, so this file names Drive's explicitly.
 private typealias RecoveryKit = NeutrinoDrive.RecoveryKit
 private typealias RecoveryKitError = NeutrinoDrive.RecoveryKitError
 

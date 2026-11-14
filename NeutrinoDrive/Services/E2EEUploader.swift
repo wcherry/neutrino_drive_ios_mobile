@@ -2,11 +2,15 @@ import Foundation
 import Sodium
 import os.log
 import NeutrinoCore
+import NeutrinoCrypto
 
 // MARK: - UploadError
 
 enum UploadError: LocalizedError {
     case noEncryptionKey
+    /// The key on this device is not the one the account publishes. Sealing to it would make a
+    /// file that opens here and on no other device — see `DeviceKeyCheck` in NeutrinoCrypto.
+    case staleEncryptionKey
     case encryptionFailed
     case notAuthenticated
     case networkError(underlying: Error)
@@ -17,6 +21,7 @@ enum UploadError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .noEncryptionKey:          return "No encryption key found. Please import a key before uploading."
+        case .staleEncryptionKey:       return "This device's encryption key is no longer your account's key, so uploads are paused. Open Settings › Encryption to repair this device."
         case .encryptionFailed:         return "Failed to encrypt the file."
         case .notAuthenticated:         return "You are not signed in."
         case .networkError:             return "A network error occurred. Please check your connection."
@@ -36,6 +41,60 @@ struct UploadResult {
     let sizeBytes: Int64
     let mimeType: String
     let updatedAt: Date
+    /// The provenance the server recorded on the file, echoed back.
+    ///
+    /// Non-nil is also the proof that the server read the upload's extra fields — sealed key,
+    /// dates and all. A server that predates them ignores unknown multipart fields and echoes
+    /// nothing, and the caller then sends the follow-up requests those fields replaced.
+    /// Declared last with a default so the memberwise initialiser stays source-compatible.
+    var importSource: String? = nil
+}
+
+// MARK: - DriveImportMetadata
+
+/// The dates and provenance a file keeps from its source — a photo's capture date, an archive
+/// entry's path.
+///
+/// Sent with the upload itself when the caller has them (see
+/// ``E2EEUploader/prepare(data:fileName:mimeType:parentFolderID:thumbnailBase64:uploadID:importMetadata:allowsExpensiveNetworkAccess:)``),
+/// and otherwise by `PATCH /drive/files/{id}/import-metadata` afterwards — which is all an
+/// older server understands, and what the photo-date repair pass still uses. Lives here rather
+/// than beside `DriveService` because the share extension compiles this file and not that one.
+struct DriveImportMetadata: Equatable {
+    let createdAt: Date
+    let updatedAt: Date
+    /// Where the file came from. Required by the `PATCH`: rewriting a file's dates is a history
+    /// rewrite, and recording who did it is the endpoint's whole justification for allowing one.
+    let importSource: String
+
+    /// RFC 3339 in UTC — one of the three shapes the server's `parse_import_timestamp` accepts,
+    /// and the only one that pins the instant rather than a local wall clock. A date sent
+    /// without a zone would be read as UTC and shift a late-evening photo onto the next day.
+    static func wireTimestamp(_ date: Date) -> String {
+        timestampFormatter.string(from: date)
+    }
+
+    private static let timestampFormatter: ISO8601DateFormatter = {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime]
+        f.timeZone = TimeZone(secondsFromGMT: 0)
+        return f
+    }()
+}
+
+// MARK: - PreparedUpload
+
+/// An upload whose expensive half is done: the bytes are encrypted, the key is sealed and
+/// recorded, and the complete request body is on disk.
+///
+/// What is left — ``E2EEUploader/submit(_:progress:)`` — is handing the body to the background
+/// session, and that needs no PhotoKit, no plaintext and almost no memory. Splitting there is
+/// what lets photo sync prepare one photo at a time but keep many transfers queued with iOS.
+struct PreparedUpload {
+    let uploadID: String
+    let transferID: String
+    let request: URLRequest
+    let bodyFileURL: URL
 }
 
 // MARK: - E2EEUploader
@@ -56,10 +115,50 @@ struct E2EEUploader {
     // MARK: - Dependencies
 
     let transferService: BackgroundTransferService
+    /// Where a sealed DEK lives between the blob `POST` and the key `PUT`. See
+    /// ``PendingUploadKey`` for what that gap costs when nothing persists it.
+    let pendingKeys: PendingUploadKeyStore
+    /// Other sessions an earlier upload may have finished on: in an app process iOS relaunched
+    /// for the Photos extension, that extension's session. Asked only after `transferService`.
+    let deliveredTransfers: () -> [BackgroundTransferService]
 
-    init(transferService: BackgroundTransferService = .shared) {
-        self.transferService = transferService
+    /// Whether file bodies are written as NEB1, the chunked format (neutrino#318). Read per upload,
+    /// from the App Group defaults where the app caches the account's `e2eeChunkedWrites` flag, so
+    /// the share extension and the Photos extension follow it too. Off by default; tests set it.
+    var writesChunked: () -> Bool = { E2EEUploader.chunkedWritesEnabled() }
+
+    /// Where the app caches `e2eeChunkedWrites` from `GET /api/v1/feature-flags`.
+    static let chunkedWritesKey = "featureFlags.e2eeChunkedWrites"
+
+    /// The cached flag. Honoured only because this build can also *read* NEB1 (through
+    /// `DriveFileCrypto`): the spec's rule is that a client never writes a format it can't read.
+    static func chunkedWritesEnabled(_ defaults: UserDefaults = SharedStorage.defaults) -> Bool {
+        defaults.bool(forKey: chunkedWritesKey)
     }
+
+    init(transferService: BackgroundTransferService = .shared,
+         pendingKeys: PendingUploadKeyStore = .shared,
+         deliveredTransfers: @escaping () -> [BackgroundTransferService] = {
+             BackgroundTransferService.attachedDeliveries
+         }) {
+        self.transferService = transferService
+        self.pendingKeys = pendingKeys
+        self.deliveredTransfers = deliveredTransfers
+    }
+
+    /// The sessions an earlier upload is looked for on, in the order they are asked.
+    private var collectableTransfers: [BackgroundTransferService] {
+        [transferService] + deliveredTransfers().filter { $0 !== transferService }
+    }
+
+    /// Transfer identifier for an upload's blob `POST`.
+    ///
+    /// Stable per logical upload, so `BackgroundTransferService.claimOrphanedResult` can
+    /// recognise a transfer that finished while the app was suspended. It used to default to
+    /// a fresh `UUID()` per attempt, which can never match a stored result — the orphan-claim
+    /// machinery was unreachable from this path entirely. `DownloadService` always passed a
+    /// stable one; the upload path was the outlier.
+    static func blobTransferID(uploadID: String) -> String { "upload-\(uploadID)" }
 
     // MARK: - Private
 
@@ -106,6 +205,17 @@ struct E2EEUploader {
     /// Encrypt `data` locally, upload the ciphertext, and store the sealed DEK.
     /// Mirrors the web's `uploadEncryptedFile` flow exactly.
     ///
+    /// ``prepare(data:fileName:mimeType:parentFolderID:thumbnailBase64:uploadID:importMetadata:allowsExpensiveNetworkAccess:)``
+    /// followed by ``submit(_:progress:)``, for callers that want one call and one result.
+    ///
+    /// - Parameter uploadID: a stable identity for this logical upload, reused by every
+    ///   retry of it. It names the background transfer (so a blob that completed while the
+    ///   app was suspended can be claimed instead of re-sent) and the pending-key record (so
+    ///   a retry finishes the upload it interrupted rather than starting a second one).
+    ///   Callers with no natural identity may let it default; photo sync passes
+    ///   `photo-sync:<localIdentifier>`.
+    /// - Parameter importMetadata: the file's own dates and provenance, sent with the body. See
+    ///   ``prepare(data:fileName:mimeType:parentFolderID:thumbnailBase64:uploadID:importMetadata:allowsExpensiveNetworkAccess:)``.
     /// - Parameter progress: called with 0…1 as the request body is sent. Invoked on the
     ///   transfer session's delegate queue, **not** the main queue — callers that publish to
     ///   SwiftUI must hop themselves.
@@ -113,9 +223,106 @@ struct E2EEUploader {
                 fileName: String,
                 mimeType plainMimeType: String,
                 parentFolderID: String?,
+                thumbnailBase64: String? = nil,
+                uploadID: String = UUID().uuidString,
+                importMetadata: DriveImportMetadata? = nil,
                 progress: ((Double) -> Void)? = nil) async throws -> UploadResult {
+        if let finished = try await finishCommittedUpload(uploadID: uploadID) {
+            return finished
+        }
+        let prepared = try await prepare(data: data, fileName: fileName, mimeType: plainMimeType,
+                                         parentFolderID: parentFolderID,
+                                         thumbnailBase64: thumbnailBase64, uploadID: uploadID,
+                                         importMetadata: importMetadata)
+        return try await submit(prepared, progress: progress)
+    }
 
-        logger.debug("upload: \(data.count) bytes name=\(fileName, privacy: .public) folder=\(parentFolderID ?? "root", privacy: .public)")
+    /// The outcome of an upload an earlier attempt already got as far as the server, or `nil`
+    /// when there is none and the upload has to be prepared from scratch.
+    ///
+    /// Asked before exporting anything. After a relaunch the queue still lists a photo whose
+    /// bytes may be committed, still going up in the background session, or finished with the
+    /// result waiting — and in each of those cases preparing it again would cost an export and
+    /// an encryption and, if the body were then sent, a second copy of the file.
+    func earlierUpload(uploadID: String) async throws -> UploadResult? {
+        if let finished = try await finishCommittedUpload(uploadID: uploadID) {
+            return finished
+        }
+        var response: (Data, HTTPURLResponse)?
+        do {
+            for transfers in collectableTransfers where response == nil {
+                response = try await transfers.resume(
+                    transferID: Self.blobTransferID(uploadID: uploadID)
+                )
+            }
+        } catch {
+            throw UploadError.networkError(underlying: error)
+        }
+        guard let (uploadData, http) = response else { return nil }
+        guard let token = SharedStorage.accessToken() else { throw UploadError.notAuthenticated }
+        return try await finish(uploadData: uploadData, http: http, uploadID: uploadID, token: token)
+    }
+
+    /// Whether ``earlierUpload(uploadID:)`` has anything to collect, without waiting for it.
+    ///
+    /// The cheap question a caller asks before exporting a photo; the collection itself may
+    /// wait out a transfer still on the wire.
+    func hasEarlierUpload(uploadID: String) async -> Bool {
+        if pendingKeys.key(forUploadID: uploadID)?.fileID != nil { return true }
+        for transfers in collectableTransfers
+        where await transfers.hasTransfer(transferID: Self.blobTransferID(uploadID: uploadID)) {
+            return true
+        }
+        return false
+    }
+
+    /// Step 0 — finishes an upload a previous attempt left half-committed, or returns `nil`.
+    ///
+    /// A record that already carries a file id means the ciphertext is on the server and only
+    /// the key never made it. Re-posting the blob would not fix that; it would create a
+    /// *second* file and leave the first one unreadable. Store the key it was sealed with and
+    /// read the file's metadata back instead.
+    private func finishCommittedUpload(uploadID: String) async throws -> UploadResult? {
+        guard let record = pendingKeys.key(forUploadID: uploadID),
+              let committedFileID = record.fileID else { return nil }
+        guard let token = SharedStorage.accessToken() else { throw UploadError.notAuthenticated }
+        logger.debug("upload: resuming \(uploadID, privacy: .public) — blob already committed as \(committedFileID, privacy: .public)")
+        try await storeFileKey(fileID: committedFileID,
+                               encryptedFileKey: record.sealedFileKey,
+                               keyVersion: record.keyVersion,
+                               token: token)
+        let result = try await fetchUploadedMetadata(fileID: committedFileID, token: token)
+        pendingKeys.remove(uploadID: uploadID)
+        return result
+    }
+
+    /// Steps 1–5: everything an upload needs before it can be handed to the network.
+    ///
+    /// The body this writes is *complete*: besides the ciphertext it carries the sealed DEK and,
+    /// when given, the file's own dates and provenance, all of which the server commits in the
+    /// same transaction as the file row. Nothing has to happen after the transfer finishes, so
+    /// it can finish while the app is suspended — or dead — and still leave a whole file.
+    ///
+    /// - Parameter thumbnailBase64: a cover the caller has already made. Left `nil` — as every
+    ///   caller but photo sync does — the cover is derived from `data` here. The override exists
+    ///   for callers that hold a cheaper source than the bytes they are uploading:
+    ///   `PHKitAssetExporter` has the video already on disk, and deriving it here would mean
+    ///   writing a second copy of the whole clip out to spill it back to a file.
+    /// - Parameter importMetadata: the file's own dates and provenance, sent with the body.
+    /// - Parameter allowsExpensiveNetworkAccess: `false` keeps the transfer off cellular and
+    ///   hotspots. It belongs on the request, not just on the decision to start it: a prepared
+    ///   upload waits in the background session, and the network it eventually goes out on is
+    ///   not the one it was prepared on.
+    func prepare(data: Data,
+                 fileName: String,
+                 mimeType plainMimeType: String,
+                 parentFolderID: String?,
+                 thumbnailBase64: String? = nil,
+                 uploadID: String = UUID().uuidString,
+                 importMetadata: DriveImportMetadata? = nil,
+                 allowsExpensiveNetworkAccess: Bool = true) async throws -> PreparedUpload {
+
+        logger.debug("prepare: \(data.count) bytes name=\(fileName, privacy: .public) folder=\(parentFolderID ?? "root", privacy: .public)")
 
         guard SharedStorage.hasStoredKeys() else {
             throw UploadError.noEncryptionKey
@@ -124,26 +331,92 @@ struct E2EEUploader {
             throw UploadError.notAuthenticated
         }
 
+        // Only ever seal to the key the account publishes, and file it under the number the
+        // account gives that key. The Keychain's copy of either can be out of date — a key
+        // replaced from another device leaves this one holding the old key — and a DEK sealed to
+        // that opens here and nowhere else. Checked before any work is done, so a stale device
+        // fails each photo in one request instead of after exporting and encrypting it.
+        // `DeviceKeyCheck` caches the answer, so a batch of photos costs one request, not one each.
+        guard let storedPublicKey = KeychainService.load(forKey: SharedStorage.Keys.publicKey) else {
+            throw UploadError.noEncryptionKey
+        }
+        let publishedVersion: Int
+        do {
+            publishedVersion = try await DeviceKeyCheck.sealingVersion {
+                try await fetchPublishedKey(token: token)
+            }
+        } catch DeviceKeyCheckError.noKey {
+            throw UploadError.noEncryptionKey
+        } catch DeviceKeyCheckError.stale {
+            throw UploadError.staleEncryptionKey
+        }
+
+        let resumed = pendingKeys.key(forUploadID: uploadID)
         let plainData = data
+
+        // MARK: Step 1 — Cover thumbnail, from the plaintext
+        //
+        // Must happen here, before the bytes are encrypted: the server stores ciphertext and
+        // cannot make a preview of it, so an upload that omits this leaves the file with a blank
+        // tile in every client that renders covers. Mirrors the web's `uploadEncryptedFile`,
+        // which generates one for image uploads the same way.
+        //
+        // `??` is not an option here: its right-hand side is a non-async autoclosure, and the
+        // derivation is async.
+        let coverThumbnail: String?
+        if let thumbnailBase64 {
+            coverThumbnail = thumbnailBase64
+        } else {
+            coverThumbnail = await ThumbnailGenerator.coverThumbnailBase64(for: plainData,
+                                                                           mimeType: plainMimeType)
+        }
 
         // MARK: Step 2 — Generate DEK and encrypt file (XChaCha20-Poly1305 secretstream)
         //
         // Output format matches the web's encryptFile():
         //   [24-byte header][ciphertext]
 
+        // A resumed upload must re-encrypt under the DEK it was *already* sealed with. Not a
+        // nicety: with a stable transfer id the blob `POST` below may be short-circuited by
+        // `claimOrphanedResult`, returning the earlier attempt's response — so a freshly
+        // generated key would be filed against ciphertext it cannot open. Unsealing needs the
+        // private key; where that is unavailable this falls back to a new DEK and a full
+        // re-upload, which is correct, just wasteful.
         let xcss = Self.sodium.secretStream.xchacha20poly1305
-        let dek: Bytes = xcss.key()
-
-        guard let filePushStream = xcss.initPush(secretKey: dek) else {
-            throw UploadError.encryptionFailed
+        let resumedDEK: Bytes? = resumed.flatMap {
+            SealedKeyCrypto.openDEKWithStoredKeys(sealedBase64URL: $0.sealedFileKey,
+                                                  keyVersion: $0.keyVersion)
         }
-        let fileHeader = filePushStream.header()
-        guard let fileCiphertext = filePushStream.push(message: Array(plainData), tag: .FINAL) else {
-            throw UploadError.encryptionFailed
-        }
-        let encryptedData = Data(fileHeader + fileCiphertext)
+        let dek: Bytes = resumedDEK ?? xcss.key()
 
-        logger.debug("upload: encrypted \(plainData.count) → \(encryptedData.count) bytes")
+        // A record that exists but cannot be opened means that DEK is gone for good — a
+        // rotation that retired the version it was sealed to, most plausibly. Re-encrypting
+        // under a fresh key is the only way forward, but the stale orphaned blob must not
+        // then be claimed for it: that would file the new key against the old ciphertext, the
+        // very mismatch the reuse above exists to prevent. Give this attempt a transfer
+        // identity of its own so no claim can match it.
+        let lostTheOriginalKey = resumed != nil && resumedDEK == nil
+        let transferID = lostTheOriginalKey
+            ? Self.blobTransferID(uploadID: "\(uploadID)#\(UUID().uuidString)")
+            : Self.blobTransferID(uploadID: uploadID)
+
+        // NEB1 when the account's `e2eeChunkedWrites` is on: the body is then encrypted straight
+        // into the request body file at step 5, a chunk at a time, so the ciphertext never exists
+        // whole and peak memory is about the plaintext instead of three times it. v0 otherwise,
+        // exactly as before. Metadata stays v0 either way (spec §2).
+        let chunked = writesChunked()
+        var encryptedData: Data?
+        if !chunked {
+            guard let filePushStream = xcss.initPush(secretKey: dek) else {
+                throw UploadError.encryptionFailed
+            }
+            let fileHeader = filePushStream.header()
+            guard let fileCiphertext = filePushStream.push(message: Array(plainData), tag: .FINAL) else {
+                throw UploadError.encryptionFailed
+            }
+            encryptedData = Data(fileHeader + fileCiphertext)
+            logger.debug("upload: encrypted \(plainData.count) → \(encryptedData?.count ?? 0) bytes")
+        }
 
         // MARK: Step 3 — Encrypt metadata { name, mimeType } with DEK
         //
@@ -175,15 +448,40 @@ struct E2EEUploader {
         // Sealing runs through `SealedKeyCrypto` — the same primitive `SharingService` uses to
         // re-wrap this DEK to a recipient. Sharing a file must produce a key wrapped exactly
         // the way upload wraps it, and sharing one implementation is what guarantees that.
-        guard let pubKeyString = KeychainService.load(forKey: SharedStorage.Keys.publicKey) else {
-            throw UploadError.noEncryptionKey
-        }
-        guard let encryptedFileKey = SealedKeyCrypto.seal(dek: dek,
-                                                          toPublicKeyBase64URL: pubKeyString) else {
-            throw UploadError.encryptionFailed
+        let encryptedFileKey: String
+        let keyVersion: Int
+        if let resumed, resumedDEK != nil {
+            // Same DEK, so the same sealed form — and filed under the version it was sealed
+            // to, which may not be the version that is active now.
+            encryptedFileKey = resumed.sealedFileKey
+            keyVersion = resumed.keyVersion
+        } else {
+            guard let sealed = SealedKeyCrypto.seal(dek: dek,
+                                                     toPublicKeyBase64URL: storedPublicKey) else {
+                throw UploadError.encryptionFailed
+            }
+            encryptedFileKey = sealed
+            keyVersion = publishedVersion
         }
 
-        // MARK: Step 5 — POST multipart (folder_id?, encrypted_metadata, file blob)
+        // MARK: Step 4b — Persist the sealed DEK *before* the ciphertext goes out
+        //
+        // The body below carries the sealed key too, and a current server commits it with the
+        // file. The record is what covers the rest: a server that predates that field gets the
+        // key by `PUT` at step 6, and a transfer collected after a relaunch — when nothing from
+        // this call survives in memory — is finished from it. Written here, an interrupted
+        // upload is finishable; written any later, it is not.
+        pendingKeys.record(PendingUploadKey(
+            uploadID: uploadID,
+            sealedFileKey: encryptedFileKey,
+            keyVersion: keyVersion,
+            fileName: fileName,
+            fileID: nil,
+            createdAt: lostTheOriginalKey ? Date() : (resumed?.createdAt ?? Date())
+        ))
+
+        // MARK: Step 5 — the multipart body: folder_id?, encrypted_metadata, thumbnail_b64?,
+        // encrypted_file_key + key_version, created_at?/updated_at?/import_source?, file blob
         //
         // The body is written to a temp file rather than held as `Data`, because a background
         // URLSession only accepts `uploadTask(with:fromFile:)` — `Data` and stream bodies are
@@ -194,18 +492,31 @@ struct E2EEUploader {
             throw UploadError.serverError(statusCode: 0)
         }
         let boundary = UUID().uuidString
-        let body = Self.buildMultipartBody(
-            encryptedData: encryptedData,
+        let head = Self.multipartHead(
             fileName: fileName,
             mimeType: plainMimeType,
             parentFolderID: parentFolderID,
             encryptedMetadata: encryptedMetadata,
+            thumbnailBase64: coverThumbnail,
+            sealedFileKey: (encryptedFileKey, keyVersion),
+            importMetadata: importMetadata,
             boundary: boundary
         )
+        let tail = Self.multipartTail(boundary: boundary)
 
         let bodyFileURL: URL
+        let bodyLength: Int
         do {
-            bodyFileURL = try Self.writeTemporaryBody(body)
+            if let encryptedData {
+                let body = head + encryptedData + tail
+                bodyFileURL = try Self.writeTemporaryBody(body)
+                bodyLength = body.count
+            } else {
+                (bodyFileURL, bodyLength) = try Self.writeNEB1Body(plaintext: plainData, dek: dek,
+                                                                   head: head, tail: tail)
+            }
+        } catch is DriveFileCryptoError {
+            throw UploadError.encryptionFailed
         } catch {
             throw UploadError.fileReadError(underlying: error)
         }
@@ -215,23 +526,51 @@ struct E2EEUploader {
         uploadRequest.setValue("multipart/form-data; boundary=\(boundary)",
                                forHTTPHeaderField: "Content-Type")
         uploadRequest.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        uploadRequest.allowsExpensiveNetworkAccess = allowsExpensiveNetworkAccess
+        uploadRequest.allowsConstrainedNetworkAccess = allowsExpensiveNetworkAccess
 
-        logger.debug("--> POST \(uploadURL.path, privacy: .public) (\(body.count) bytes)")
+        logger.debug("prepared \(uploadURL.path, privacy: .public) body (\(bodyLength) bytes, \(chunked ? "NEB1" : "v0", privacy: .public))")
+
+        return PreparedUpload(uploadID: uploadID, transferID: transferID,
+                              request: uploadRequest, bodyFileURL: bodyFileURL)
+    }
+
+    /// Step 5b onwards: sends a prepared body and finishes the upload from the response.
+    ///
+    /// Owns the body file from here: it is deleted once the transfer ends, whatever the outcome.
+    func submit(_ prepared: PreparedUpload,
+                progress: ((Double) -> Void)? = nil) async throws -> UploadResult {
+        guard let token = SharedStorage.accessToken() else {
+            try? FileManager.default.removeItem(at: prepared.bodyFileURL)
+            throw UploadError.notAuthenticated
+        }
+        let path = prepared.request.url?.path ?? ""
+        logger.debug("--> POST \(path, privacy: .public)")
 
         let uploadData: Data
         let http: HTTPURLResponse
         do {
             (uploadData, http) = try await transferService.upload(
-                request: uploadRequest,
-                fromFile: bodyFileURL,
+                request: prepared.request,
+                fromFile: prepared.bodyFileURL,
+                transferID: prepared.transferID,
                 progress: progress
             )
         } catch {
             logger.error("upload network error: \(error, privacy: .public)")
             throw UploadError.networkError(underlying: error)
         }
+        logger.debug("<-- \(http.statusCode) \(path, privacy: .public)")
+        return try await finish(uploadData: uploadData, http: http,
+                                uploadID: prepared.uploadID, token: token)
+    }
 
-        logger.debug("<-- \(http.statusCode) \(uploadURL.path, privacy: .public)")
+    /// Step 6 — reads the blob `POST`'s response and makes sure the file has its key.
+    ///
+    /// Shared by a transfer this process sent and one it only collected, so it works from the
+    /// pending-key record rather than from anything held in memory since ``prepare``.
+    private func finish(uploadData: Data, http: HTTPURLResponse, uploadID: String,
+                        token: String) async throws -> UploadResult {
         guard (200...299).contains(http.statusCode) else {
             throw UploadError.serverError(statusCode: http.statusCode)
         }
@@ -243,19 +582,33 @@ struct E2EEUploader {
             throw UploadError.decodingError(underlying: error)
         }
 
-        // MARK: Step 6 — Store sealed DEK on server
-        //
-        // Matches the web's PUT /api/v1/drive/files/{id}/key after uploadEncryptedFile.
+        // The blob is committed from here on. Recording the id closes the worst case: even if
+        // the key `PUT` below never runs, a later reconciliation knows which file the stored
+        // key belongs to.
+        pendingKeys.attachFileID(apiResponse.id, toUploadID: uploadID)
 
-        try await storeFileKey(fileID: apiResponse.id, encryptedFileKey: encryptedFileKey, token: token)
+        // A server that echoes the provenance read the body's extra fields, the sealed key
+        // among them, and committed them with the file. Anything else may be a server that
+        // predates those fields and dropped the key on the floor, so it gets the `PUT` it
+        // always got — harmless on a server that did store it, since the `PUT` is an upsert.
+        // Matches the web's PUT /api/v1/drive/files/{id}/key after uploadEncryptedFile.
+        if apiResponse.importSource == nil, let record = pendingKeys.key(forUploadID: uploadID) {
+            try await storeFileKey(fileID: apiResponse.id, encryptedFileKey: record.sealedFileKey,
+                                   keyVersion: record.keyVersion, token: token)
+        }
+
+        // Both halves are on the server; the local copy has nothing left to protect. A throw
+        // above deliberately leaves the record in place for reconciliation to finish.
+        pendingKeys.remove(uploadID: uploadID)
 
         let result = UploadResult(
-            id:        apiResponse.id,
-            name:      apiResponse.name,
-            folderId:  apiResponse.folderId,
-            sizeBytes: apiResponse.sizeBytes,
-            mimeType:  apiResponse.mimeType,
-            updatedAt: apiResponse.updatedAt
+            id:           apiResponse.id,
+            name:         apiResponse.name,
+            folderId:     apiResponse.folderId,
+            sizeBytes:    apiResponse.sizeBytes,
+            mimeType:     apiResponse.mimeType,
+            updatedAt:    apiResponse.updatedAt,
+            importSource: apiResponse.importSource
         )
         logger.debug("upload succeeded: id=\(result.id, privacy: .public) name=\(result.name, privacy: .public)")
         return result
@@ -263,19 +616,21 @@ struct E2EEUploader {
 
     // MARK: - Private Helpers
 
-    private func storeFileKey(fileID: String, encryptedFileKey: String, token: String) async throws {
+    /// - Parameter keyVersion: which identity version the DEK was sealed to. Passed in rather
+    ///   than read from the Keychain here, so a *resumed* upload files its key under the
+    ///   version it was originally sealed to even if the account has rotated since. Sent
+    ///   explicitly rather than left to the server's default of 1: filing a rotated account's
+    ///   key under 1 means every client later reaches for the wrong key and cannot open a file
+    ///   that is perfectly intact.
+    private func storeFileKey(fileID: String, encryptedFileKey: String,
+                              keyVersion: Int, token: String) async throws {
         guard let url = URL(string: baseURL + "/api/v1/drive/files/\(fileID)/key") else { return }
         var req = URLRequest(url: url)
         req.httpMethod = "PUT"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        // `keyVersion` is sent, not left to the server's default of 1. The DEK above was sealed to
-        // whichever key this device holds as active; filing it under 1 on a rotated account means
-        // every client — this one included — later reaches for the wrong key and cannot open a file
-        // that is perfectly intact.
         req.httpBody = try JSONEncoder().encode(
-            SetFileKeyBody(encryptedFileKey: encryptedFileKey,
-                           keyVersion: SealedKeyCrypto.activeKeyVersion())
+            SetFileKeyBody(encryptedFileKey: encryptedFileKey, keyVersion: keyVersion)
         )
 
         logger.debug("--> PUT /api/v1/drive/files/\(fileID, privacy: .public)/key")
@@ -296,6 +651,126 @@ struct E2EEUploader {
         logger.debug("<-- key stored for \(fileID, privacy: .public)")
     }
 
+    /// The account's active published key, or nil when it publishes none.
+    ///
+    /// Through `transferService` and the token in hand rather than `DriveService`, because the
+    /// share extension runs this and has neither `DriveService` nor `NeutrinoAuth`.
+    private func fetchPublishedKey(token: String) async throws -> PublishedKey? {
+        guard let userID = Self.userID(fromAccessToken: token),
+              let url = URL(string: baseURL + "/api/v1/auth/users/\(userID)/public-key") else {
+            throw UploadError.notAuthenticated
+        }
+        var req = URLRequest(url: url)
+        req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+
+        let data: Data
+        let response: URLResponse
+        do {
+            (data, response) = try await transferService.data(for: req)
+        } catch {
+            throw UploadError.networkError(underlying: error)
+        }
+        guard let http = response as? HTTPURLResponse else {
+            throw UploadError.serverError(statusCode: 0)
+        }
+        if http.statusCode == 404 { return nil }
+        guard (200...299).contains(http.statusCode) else {
+            throw UploadError.serverError(statusCode: http.statusCode)
+        }
+        do {
+            return try JSONDecoder().decode(PublishedKey.self, from: data)
+        } catch {
+            throw UploadError.decodingError(underlying: error)
+        }
+    }
+
+    /// The `sub` claim of a JWT access token — the caller's user id. Read here rather than through
+    /// `AccessToken.currentUserID()` because the share extension does not link `NeutrinoAuth`. Not a
+    /// verification of anything: the server checks the token on the request this id goes into.
+    static func userID(fromAccessToken token: String) -> String? {
+        struct Claims: Decodable { let sub: String }
+        let segments = token.split(separator: ".")
+        guard segments.count > 1,
+              let payload = Data(base64URLEncoded: String(segments[1])),
+              let claims = try? JSONDecoder().decode(Claims.self, from: payload) else { return nil }
+        return claims.sub
+    }
+
+    /// Reads back the metadata of a file whose blob a previous attempt committed.
+    ///
+    /// Only the resume path needs this: an upload that runs to completion already has the
+    /// `POST` response. Deliberately on the foreground session, like the key `PUT` — it is a
+    /// few hundred bytes and background sessions cannot run data tasks.
+    private func fetchUploadedMetadata(fileID: String, token: String) async throws -> UploadResult {
+        guard let url = URL(string: baseURL + "/api/v1/drive/files/\(fileID)/metadata") else {
+            throw UploadError.serverError(statusCode: 0)
+        }
+        var req = URLRequest(url: url)
+        req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+
+        let data: Data
+        let response: URLResponse
+        do {
+            (data, response) = try await transferService.data(for: req)
+        } catch {
+            throw UploadError.networkError(underlying: error)
+        }
+        if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
+            throw UploadError.serverError(statusCode: http.statusCode)
+        }
+        let decoded: APIUploadResponse
+        do {
+            decoded = try Self.decoder.decode(APIUploadResponse.self, from: data)
+        } catch {
+            throw UploadError.decodingError(underlying: error)
+        }
+        return UploadResult(id: decoded.id, name: decoded.name, folderId: decoded.folderId,
+                            sizeBytes: decoded.sizeBytes, mimeType: decoded.mimeType,
+                            updatedAt: decoded.updatedAt)
+    }
+
+    // MARK: - Reconciliation
+
+    /// Finishes every upload whose ciphertext committed but whose key never did.
+    ///
+    /// Run at launch and on every return to the foreground. This is what actually closes the
+    /// window issue #33 describes: the `PUT` runs on the foreground session, so an upload
+    /// suspended after its blob has no way to complete itself — but the sealed DEK is on disk,
+    /// and the next time the app is running it can be sent.
+    ///
+    /// Nothing here throws. A failure means the record stays and the next launch tries again,
+    /// which is strictly better than surfacing an error about an upload the user finished
+    /// thinking about days ago.
+    func reconcilePendingKeys(now: Date = Date()) async {
+        pendingKeys.pruneAbandoned(now: now)
+
+        let records = pendingKeys.all()
+        guard !records.isEmpty else { return }
+        guard let token = SharedStorage.accessToken() else { return }
+
+        for record in records {
+            // No file id means the blob `POST` never returned, so there is nothing to attach
+            // the key to. Left for a retry of the upload itself, or for the TTL.
+            guard let fileID = record.fileID else { continue }
+            do {
+                try await storeFileKey(fileID: fileID, encryptedFileKey: record.sealedFileKey,
+                                       keyVersion: record.keyVersion, token: token)
+                pendingKeys.remove(uploadID: record.uploadID)
+                logger.debug("reconciled sealed key for \(fileID, privacy: .public)")
+            } catch UploadError.serverError(let code) where code == 404 {
+                // The file is gone — trashed and emptied, most likely. The key protects
+                // nothing, so keeping it only means retrying forever.
+                pendingKeys.remove(uploadID: record.uploadID)
+                logger.debug("dropped pending key for missing file \(fileID, privacy: .public)")
+            } catch {
+                logger.error("""
+                    could not reconcile sealed key for \(fileID, privacy: .public): \
+                    \(error.localizedDescription, privacy: .public) — will retry next launch
+                    """)
+            }
+        }
+    }
+
     /// Writes the multipart body to a UUID-named file directly in the temp directory.
     ///
     /// Flat rather than inside a per-upload subdirectory: the UUID already guarantees two
@@ -309,12 +784,67 @@ struct E2EEUploader {
         return fileURL
     }
 
+    /// Writes a multipart body whose file part is `plaintext` encrypted as NEB1, a chunk at a time
+    /// straight into the file: the ciphertext never exists whole. Returns the file and its length.
+    static func writeNEB1Body(plaintext: Data, dek: Bytes, head: Data, tail: Data) throws -> (URL, Int) {
+        let fileURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("nd-upload-\(UUID().uuidString).multipart")
+        guard FileManager.default.createFile(atPath: fileURL.path, contents: nil) else {
+            throw CocoaError(.fileWriteUnknown)
+        }
+        do {
+            let handle = try FileHandle(forWritingTo: fileURL)
+            defer { try? handle.close() }
+            try handle.write(contentsOf: head)
+            let cipherLength = try DriveFileCrypto.encryptNEB1(plaintext, dek: dek) { bytes in
+                try handle.write(contentsOf: Data(bytes))
+            }
+            try handle.write(contentsOf: tail)
+            return (fileURL, head.count + cipherLength + tail.count)
+        } catch {
+            try? FileManager.default.removeItem(at: fileURL)
+            throw error
+        }
+    }
+
+    /// Builds the upload request body: ``multipartHead(fileName:mimeType:parentFolderID:encryptedMetadata:thumbnailBase64:sealedFileKey:importMetadata:boundary:)``,
+    /// the encrypted file, then ``multipartTail(boundary:)``.
     static func buildMultipartBody(
         encryptedData: Data,
         fileName: String,
         mimeType: String,
         parentFolderID: String?,
         encryptedMetadata: String,
+        thumbnailBase64: String?,
+        sealedFileKey: (sealed: String, keyVersion: Int)? = nil,
+        importMetadata: DriveImportMetadata? = nil,
+        boundary: String
+    ) -> Data {
+        multipartHead(fileName: fileName, mimeType: mimeType, parentFolderID: parentFolderID,
+                      encryptedMetadata: encryptedMetadata, thumbnailBase64: thumbnailBase64,
+                      sealedFileKey: sealedFileKey, importMetadata: importMetadata, boundary: boundary)
+            + encryptedData + multipartTail(boundary: boundary)
+    }
+
+    /// The closing of the file part and of the body.
+    static func multipartTail(boundary: String) -> Data {
+        Data("\r\n--\(boundary)--\r\n".utf8)
+    }
+
+    /// Everything before the encrypted file bytes: every scalar field, then the file part's headers.
+    ///
+    /// Part order is not cosmetic. The server reads the scalar fields into locals as it walks the
+    /// multipart stream and **returns as soon as it has consumed the file part**, so anything
+    /// sent after the blob is never parsed. Every scalar — `thumbnail_b64` included — therefore
+    /// has to precede it.
+    static func multipartHead(
+        fileName: String,
+        mimeType: String,
+        parentFolderID: String?,
+        encryptedMetadata: String,
+        thumbnailBase64: String?,
+        sealedFileKey: (sealed: String, keyVersion: Int)? = nil,
+        importMetadata: DriveImportMetadata? = nil,
         boundary: String
     ) -> Data {
         var body = Data()
@@ -341,16 +871,47 @@ struct E2EEUploader {
             append(crlf)
         }
 
+        // thumbnail_b64 (optional) — the cover image, in the clear. Plaintext by design and by
+        // precedent: the web client posts the same field unencrypted, and the server has to be
+        // able to serve the tile to a browser that has not yet unlocked a key.
+        if let thumbnailBase64 {
+            append("\(dash)\(boundary)\(crlf)")
+            append("Content-Disposition: form-data; name=\"thumbnail_b64\"\(crlf)")
+            append(crlf)
+            append(thumbnailBase64)
+            append(crlf)
+        }
+
+        func field(_ name: String, _ value: String) {
+            append("\(dash)\(boundary)\(crlf)")
+            append("Content-Disposition: form-data; name=\"\(name)\"\(crlf)")
+            append(crlf)
+            append(value)
+            append(crlf)
+        }
+
+        // The sealed DEK, committed with the file row (neutrino_drive_ios_mobile#38). Without
+        // it the key is a second request, and an upload that finishes while the app is
+        // suspended leaves a file nothing can open until the app next runs.
+        if let sealedFileKey {
+            field("encrypted_file_key", sealedFileKey.sealed)
+            field("key_version", String(sealedFileKey.keyVersion))
+        }
+
+        // The file's own dates. Sent with the body because a later `PATCH` needs the app awake
+        // after the transfer, and nothing restamps dates written by the same insert.
+        if let importMetadata {
+            field("created_at", DriveImportMetadata.wireTimestamp(importMetadata.createdAt))
+            field("updated_at", DriveImportMetadata.wireTimestamp(importMetadata.updatedAt))
+            field("import_source", importMetadata.importSource)
+        }
+
         // encrypted file blob — Content-Type carries plaintext MIME type so the server stores
         // it in the DB directly; the same value is also inside encrypted_metadata for E2EE clients.
         append("\(dash)\(boundary)\(crlf)")
         append("Content-Disposition: form-data; name=\"file\"; filename=\"\(fileName)\"\(crlf)")
         append("Content-Type: \(mimeType)\(crlf)")
         append(crlf)
-        body.append(encryptedData)
-        append(crlf)
-
-        append("\(dash)\(boundary)\(dash)\(crlf)")
         return body
     }
 }
@@ -364,6 +925,7 @@ private struct APIUploadResponse: Decodable {
     let sizeBytes: Int64
     let mimeType: String
     let updatedAt: Date
+    let importSource: String?
 }
 
 // MARK: - Wire types

@@ -18,6 +18,13 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
     func application(_ application: UIApplication,
                      handleEventsForBackgroundURLSession identifier: String,
                      completionHandler: @escaping () -> Void) {
+        // The Photos extension's uploads, finished while the extension was not running. iOS
+        // brings them to the containing app; photo sync collects them from the orphan handler.
+        if identifier == BackgroundTransferService.photosExtensionIdentifier {
+            BackgroundTransferService.attachForDelivery(identifier: identifier,
+                                                        completionHandler: completionHandler)
+            return
+        }
         guard identifier == BackgroundTransferService.backgroundIdentifier else {
             completionHandler()
             return
@@ -44,6 +51,9 @@ struct NeutrinoDriveApp: App {
     @StateObject private var uploadService: UploadService
     @StateObject private var photoSyncService: PhotoSyncService
     @StateObject private var biometricService: BiometricAuthService
+    @StateObject private var keyProvisioningService = KeyProvisioningService()
+    @StateObject private var networkMonitor = NetworkMonitor()
+    @StateObject private var deviceKeyRepair: DeviceKeyRepairService
 
     @Environment(\.scenePhase) private var scenePhase
 
@@ -54,21 +64,41 @@ struct NeutrinoDriveApp: App {
         NeutrinoApp.configure(.drive)
         NeutrinoBrand.use(.drive)
 
-        _authService = StateObject(wrappedValue: AuthService())
-        _driveService = StateObject(wrappedValue: DriveService())
+        let auth = AuthService()
+        let drive = DriveService()
+        let upload = UploadService()
+        let photoSync = PhotoSyncService()
+
+        // Dependency wiring happens *here*, not in the scene's `.task`.
+        //
+        // iOS launches this process with no scene attached when it runs the photo-sync
+        // `BGProcessingTask`, and it relaunches it the same way to deliver finished
+        // background transfers. No scene means no view body, which means `.task` never
+        // runs — so anything wired there does not exist on precisely the launches photo
+        // sync depends on. Left unwired, `PhotoSyncService` has no `uploadPreparer` and no
+        // `folderResolver`, so every background upload threw `notAuthenticated` and the
+        // photo burned an attempt against its retry budget; after five it landed in
+        // `failed`, recoverable only by tapping "Retry Failed" in Settings. The
+        // user-visible symptom was that photos only ever uploaded with the app on screen.
+        drive.authService = auth
+        upload.driveService = drive
+        photoSync.configure(driveService: drive, uploadService: upload, authService: auth)
+        let keyRepair = DeviceKeyRepairService(transport: drive)
+
+        _authService = StateObject(wrappedValue: auth)
+        _driveService = StateObject(wrappedValue: drive)
         _offlineService = StateObject(wrappedValue: OfflineService())
-        _uploadService = StateObject(wrappedValue: UploadService())
-        _photoSyncService = StateObject(wrappedValue: PhotoSyncService())
+        _uploadService = StateObject(wrappedValue: upload)
+        _photoSyncService = StateObject(wrappedValue: photoSync)
+        _deviceKeyRepair = StateObject(wrappedValue: keyRepair)
         _biometricService = StateObject(wrappedValue: BiometricAuthService(
             isFeatureEnabled: FeatureFlags.biometricLock,
             unlockReason: "Unlock Neutrino Drive to access your encrypted files."
         ))
 
         // Must be registered before the app finishes launching. No-ops when
-        // FeatureFlags.photoAutoSync is false. Accessing the StateObject's storage
-        // directly (rather than the `photoSyncService` property) is safe here — this
-        // only invokes a plain method, it doesn't participate in view invalidation.
-        _photoSyncService.wrappedValue.registerBackgroundTask()
+        // FeatureFlags.photoAutoSync is false.
+        photoSync.registerBackgroundTask()
 
         // The App Group is only resolvable once the config is installed, so re-probe before
         // relocating: `KeychainService` computes its access group at first touch.
@@ -88,6 +118,9 @@ struct NeutrinoDriveApp: App {
                     .environmentObject(offlineService)
                     .environmentObject(photoSyncService)
                     .environmentObject(biometricService)
+                    .environmentObject(keyProvisioningService)
+                    .environmentObject(deviceKeyRepair)
+                    .environmentObject(networkMonitor)
 
                 if biometricService.shouldPresentOverlay {
                     LockScreenView(biometricService: biometricService)
@@ -96,11 +129,20 @@ struct NeutrinoDriveApp: App {
             }
             .animation(.easeInOut(duration: 0.15), value: biometricService.shouldPresentOverlay)
             .task {
-                driveService.authService = authService
-                uploadService.driveService = driveService
-                photoSyncService.configure(driveService: driveService, uploadService: uploadService)
+                // Services are wired in `init()`; what is left here genuinely needs the UI.
                 photoSyncService.start()
                 biometricService.lockOnLaunch()
+
+                // Finish any upload whose ciphertext committed but whose sealed key never
+                // did. The key `PUT` runs on the foreground session, so an upload suspended
+                // after its blob cannot complete itself — and a file the server believes is
+                // encrypted, with no key ref, is unreadable by every client forever. The
+                // sealed DEK is on disk; this is the first moment it can be sent.
+                await uploadService.reconcilePendingUploadKeys()
+
+                // Server switches every process here follows — chiefly whether uploads are
+                // written as NEB1 (neutrino#318). Cached in the App Group for the extensions.
+                await RemoteFeatureFlags.refresh()
 
                 // Top up this device's retired keys from the account's key file. Enrolment already
                 // does this, so on a healthy install it finds nothing; it is here for the device
@@ -108,8 +150,16 @@ struct NeutrinoDriveApp: App {
                 // key arrived. One request, and a failure is not worth surfacing — the next launch
                 // tries again.
                 KeyFileService.shared.authService = authService
+                // Minting a key talks to the account's key directory, so it needs the same token
+                // refresher as everything else.
+                keyProvisioningService.authService = authService
                 if authService.isAuthenticated && KeyImportService.hasStoredKeys() {
                     try? await KeyFileService.shared.restoreArchivedKeys()
+                    // A key replaced from another device leaves this one sealing to the old key,
+                    // and the files it sealed open nowhere else. Only this device can move them
+                    // onto the account's key, and only until the old key is replaced, so it
+                    // starts by itself rather than waiting to be found in Settings.
+                    await deviceKeyRepair.checkAndRepair()
                 }
             }
         }
@@ -124,6 +174,23 @@ struct NeutrinoDriveApp: App {
                 biometricService.sceneDidBecomeInactive()
             case .active:
                 biometricService.sceneDidBecomeActive()
+                // Also on every foreground, not only at launch: the share extension uploads
+                // into the same App Group store and its process dies the moment the sheet is
+                // dismissed, so returning to the app is often the first chance to finish what
+                // it started.
+                Task {
+                    await uploadService.reconcilePendingUploadKeys()
+                    await RemoteFeatureFlags.refresh()
+                    if authService.isAuthenticated && KeyImportService.hasStoredKeys() {
+                        await deviceKeyRepair.checkAndRepair()
+                    }
+                }
+                // `.task` runs once, when the root view first appears — it does not fire
+                // again on a return from background. Re-running `start()` here is what
+                // replays the PhotoKit catch-up scan for everything captured while the app
+                // was suspended; it is idempotent (the observer, the path monitor and the
+                // drain loop all guard against a second entry).
+                photoSyncService.start()
             @unknown default:
                 break
             }

@@ -33,6 +33,15 @@ enum FeatureFlags {
     /// observer or background task is registered.
     static let photoAutoSync: Bool = true
 
+    /// Set to true to let the Photos background-upload extension (iOS 27) wake photo sync when
+    /// a photo is taken (#38, Phase 2).
+    ///
+    /// Off until the extension's behaviour has been seen on a device: how often iOS runs it,
+    /// for how long, and whether its transfers finish after it exits — see "Photos Wake-ups" in
+    /// photo sync Settings. When false the app disables the extension with PhotoKit, so iOS
+    /// stops launching it; an extension iOS launches anyway does nothing.
+    static let photoUploadExtension: Bool = false
+
     /// Set to true to enable the Phase 2 Face ID / Touch ID lock.
     /// When false, the Security section is hidden in Settings, no lock overlay is
     /// ever presented, and `BiometricAuthService` reports every gate as passed —

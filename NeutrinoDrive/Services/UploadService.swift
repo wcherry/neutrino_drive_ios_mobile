@@ -87,8 +87,20 @@ final class UploadService: ObservableObject {
     ///   flow), this call publishes `isUploading`/`progress` for that sheet's UI. Background
     ///   photo-sync uploads pass `false` so they don't hijack that sheet's state; callers that
     ///   want their own progress UI should observe their own state instead.
+    /// - Parameter thumbnailBase64: a cover the caller already has; `nil` derives one from
+    ///   `data`. See ``E2EEUploader/upload(data:fileName:mimeType:parentFolderID:thumbnailBase64:uploadID:progress:)``.
+    /// - Parameter uploadID: a stable identity for this logical upload, so a retry can finish
+    ///   one an earlier attempt left half-committed. `nil` mints a fresh one, which is right
+    ///   for a manual upload — the user retries by picking the file again, and that is a new
+    ///   upload. Photo sync passes the asset's, because its retries are automatic.
+    /// - Parameter importMetadata: the file's own dates (a picked photo's capture date), sent
+    ///   with the body. The caller checks `UploadResult.importSource` and patches if the server
+    ///   didn't keep them; see ``PickedMediaUpload/stampIfNeeded(result:metadata:stamp:logger:)``.
     func upload(data: Data, fileName: String, mimeType: String, parentFolderID: String?,
-               reportsProgress: Bool = true) async throws -> UploadResult {
+               reportsProgress: Bool = true,
+               thumbnailBase64: String? = nil,
+               uploadID: String? = nil,
+               importMetadata: DriveImportMetadata? = nil) async throws -> UploadResult {
 
         if reportsProgress {
             isUploading = true
@@ -116,11 +128,61 @@ final class UploadService: ObservableObject {
             fileName: fileName,
             mimeType: mimeType,
             parentFolderID: parentFolderID,
+            thumbnailBase64: thumbnailBase64,
+            uploadID: uploadID ?? UUID().uuidString,
+            importMetadata: importMetadata,
             progress: progressHandler
         )
 
         driveService?.fileWasUploaded(result)
         if reportsProgress { progress = 1 }
         return result
+    }
+
+    // MARK: - Prepare / submit (photo sync)
+
+    /// The first half of ``upload(data:fileName:mimeType:parentFolderID:reportsProgress:thumbnailBase64:uploadID:)``:
+    /// encrypts and writes a complete body to disk without sending it. Publishes no UI state —
+    /// photo sync is the only caller, and it keeps its own.
+    func prepareUpload(data: Data, fileName: String, mimeType: String, parentFolderID: String?,
+                       thumbnailBase64: String?, uploadID: String,
+                       importMetadata: DriveImportMetadata?,
+                       allowsExpensiveNetworkAccess: Bool) async throws -> PreparedUpload {
+        try await uploader.prepare(data: data, fileName: fileName, mimeType: mimeType,
+                                   parentFolderID: parentFolderID,
+                                   thumbnailBase64: thumbnailBase64, uploadID: uploadID,
+                                   importMetadata: importMetadata,
+                                   allowsExpensiveNetworkAccess: allowsExpensiveNetworkAccess)
+    }
+
+    /// Sends a prepared body and waits for the server's answer.
+    func submit(_ prepared: PreparedUpload) async throws -> UploadResult {
+        let result = try await uploader.submit(prepared)
+        driveService?.fileWasUploaded(result)
+        return result
+    }
+
+    /// Whether an earlier attempt at `uploadID` already reached the server or the background
+    /// session. See ``E2EEUploader/earlierUpload(uploadID:)``.
+    func hasEarlierUpload(uploadID: String) async -> Bool {
+        await uploader.hasEarlierUpload(uploadID: uploadID)
+    }
+
+    /// Collects an earlier attempt at `uploadID`, or `nil` when there is none to collect.
+    func earlierUpload(uploadID: String) async throws -> UploadResult? {
+        guard let result = try await uploader.earlierUpload(uploadID: uploadID) else { return nil }
+        driveService?.fileWasUploaded(result)
+        return result
+    }
+
+    // MARK: - Reconciliation
+
+    /// Finishes any upload whose ciphertext committed but whose sealed key never did.
+    ///
+    /// Called at launch and on every return to the foreground from `NeutrinoDriveApp`. See
+    /// ``E2EEUploader/reconcilePendingKeys(now:)`` — without it, an upload suspended between
+    /// its two commits leaves a file nothing can ever decrypt.
+    func reconcilePendingUploadKeys() async {
+        await uploader.reconcilePendingKeys()
     }
 }

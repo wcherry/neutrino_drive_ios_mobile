@@ -2,6 +2,7 @@ import Foundation
 import os.log
 import NeutrinoCore
 import NeutrinoAuth
+import NeutrinoCrypto
 
 // MARK: - DriveError
 
@@ -19,6 +20,19 @@ enum DriveError: LocalizedError {
         case .decodingError(let err):     return "Failed to read server response: \(err.localizedDescription)"
         }
     }
+}
+
+// MARK: - DriveFolderFile
+
+/// One file row from a folder listing, for callers that want the rows rather than the
+/// published `allItems` cache — currently the photo-date repair pass, which pages a folder
+/// without wanting a browsing session's worth of state to move underneath it.
+struct DriveFolderFile: Equatable {
+    let id: String
+    let name: String
+    /// The server's creation date. Optional only because the listing DTO is decoded
+    /// defensively; a real response always carries one.
+    let createdAt: Date?
 }
 
 // MARK: - DriveService
@@ -160,6 +174,76 @@ final class DriveService: ObservableObject {
     func fetchItem(id: String) async throws -> DriveItem {
         let metadata: APIFileMetadataResponse = try await get("/api/v1/drive/files/\(id)/metadata")
         return DriveItem(metadata: metadata)
+    }
+
+    // MARK: - Import metadata
+
+    /// Gives a file the dates its source had, and records where they came from.
+    ///
+    /// Must be sent **after** the file's content, never with it: the content write stamps
+    /// `updated_at` with the server's clock, so dates applied at creation are overwritten a
+    /// moment later. This is why photo sync patches as a second call rather than adding a
+    /// field to the multipart upload.
+    func setImportMetadata(fileID: String, metadata: DriveImportMetadata) async throws {
+        let body = APIImportMetadataRequest(
+            importSource: metadata.importSource,
+            createdAt: DriveImportMetadata.wireTimestamp(metadata.createdAt),
+            updatedAt: DriveImportMetadata.wireTimestamp(metadata.updatedAt)
+        )
+        let _: APIFileMetadataResponse = try await patch(
+            "/api/v1/drive/files/\(fileID)/import-metadata", body: body
+        )
+    }
+
+    // MARK: - Neutrino Photos library (#45)
+
+    /// Registers an uploaded file with the Neutrino Photos library and returns its record.
+    ///
+    /// Idempotent server-side: a file already registered answers with its existing record,
+    /// *without* applying `metadata` — the caller checks the returned metadata and merges if its
+    /// keys are missing (see `PhotoLibraryRegistrar`).
+    ///
+    /// - Parameter captureDate: sent in the server's zone-less UTC `%Y-%m-%dT%H:%M:%S` shape;
+    ///   anything else is silently dropped there and the photo files itself under its upload date.
+    func registerPhoto(fileID: String, captureDate: Date?,
+                       metadata: [String: Any]) async throws -> LibraryPhoto {
+        var body: [String: Any] = ["fileId": fileID, "metadata": metadata]
+        if let captureDate { body["captureDate"] = PhotoLibraryMetadata.captureDateString(captureDate) }
+        var req = try request(method: "POST", path: "/api/v1/photos")
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = try JSONSerialization.data(withJSONObject: body)
+        return try LibraryPhoto(json: try await performData(req))
+    }
+
+    /// One Neutrino Photos record, with its metadata document as stored.
+    func libraryPhoto(id: String) async throws -> LibraryPhoto {
+        let req = try request(method: "GET", path: "/api/v1/photos/\(id)")
+        return try LibraryPhoto(json: try await performData(req))
+    }
+
+    /// Replaces a Neutrino Photos record's whole metadata document. Callers merge first: the
+    /// server keeps nothing it isn't sent.
+    func replacePhotoMetadata(id: String, metadata: [String: Any]) async throws {
+        var req = try request(method: "PUT", path: "/api/v1/photos/\(id)/metadata")
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = try JSONSerialization.data(withJSONObject: metadata)
+        _ = try await performData(req)
+    }
+
+    // MARK: - Raw folder paging
+
+    /// One page of a folder's files, straight from the server and without touching `allItems`.
+    ///
+    /// Ordered by name, which is the only field the photo-date repair pass does not itself
+    /// rewrite — paging by date while patching dates walks the same file twice and misses
+    /// others.
+    func folderFilesPage(folderID: String, limit: Int, offset: Int) async throws -> [DriveFolderFile] {
+        let response: APIFolderContentsResponse = try await get(
+            "/api/v1/drive/folders/\(folderID)?limit=\(limit)&offset=\(offset)&orderBy=name&direction=asc"
+        )
+        return response.files.map {
+            DriveFolderFile(id: $0.id, name: $0.name, createdAt: $0.createdAt)
+        }
     }
 
     // MARK: - Load
@@ -634,7 +718,7 @@ final class DriveService: ObservableObject {
         let data: Data
         let response: URLResponse
         do {
-            (data, response) = try await session.data(for: req)
+            (data, response) = try await session.data(for: req, retry: .default)
         } catch {
             logger.error("network error: \(req.url?.path ?? "?", privacy: .public) \(error, privacy: .public)")
             throw DriveError.networkError(underlying: error)
@@ -659,12 +743,17 @@ final class DriveService: ObservableObject {
 
     /// Same as `perform` but for endpoints that return no body.
     private func performVoid(_ req: URLRequest) async throws {
+        _ = try await performData(req)
+    }
+
+    /// Same as `perform`, returning the raw body — for free-form JSON no `Codable` type fits.
+    private func performData(_ req: URLRequest) async throws -> Data {
         let req = try await authorized(req)
         logger.debug("--> \(req.httpMethod ?? "?", privacy: .public) \(req.url?.path ?? "?", privacy: .public)")
         let data: Data
         let response: URLResponse
         do {
-            (data, response) = try await session.data(for: req)
+            (data, response) = try await session.data(for: req, retry: .default)
         } catch {
             logger.error("network error: \(req.url?.path ?? "?", privacy: .public) \(error, privacy: .public)")
             throw DriveError.networkError(underlying: error)
@@ -678,6 +767,7 @@ final class DriveService: ObservableObject {
             logger.error("server error \(http.statusCode) \(req.url?.path ?? "?", privacy: .public): \(body, privacy: .public)")
             throw DriveError.serverError(statusCode: http.statusCode)
         }
+        return data
     }
 
     /// Calls `refreshTokenIfNeeded`, then injects the fresh Bearer token into the request.
@@ -793,7 +883,19 @@ private struct APIFileResponse: Decodable {
     let sizeBytes: Int64
     let mimeType: String
     let updatedAt: Date
+    /// Optional for the same reason `isStarred` is: a listing that cannot be decoded takes
+    /// down browsing, and no screen needs this field to draw a row.
+    let createdAt: Date?
     let isStarred: Bool?
+}
+
+/// `PATCH /drive/files/{id}/import-metadata`. Timestamps go as strings — the server parses
+/// them itself, leniently about shape and strictly about failure, so a value it cannot read is
+/// a 400 rather than a silently ignored date.
+private struct APIImportMetadataRequest: Encodable {
+    let importSource: String
+    let createdAt: String
+    let updatedAt: String
 }
 
 private struct APIStarredContentsResponse: Decodable {
@@ -833,6 +935,16 @@ private struct APITrashFolderItem: Decodable {
     let deletedAt: Date
 }
 
+private struct APIKeyRefResponse: Decodable {
+    let encryptedFileKey: String
+    let keyVersion: Int?
+}
+
+private struct APISetKeyRefRequest: Encodable {
+    let encryptedFileKey: String
+    let keyVersion: Int
+}
+
 private struct APIListFilesResponse: Decodable {
     let files: [APIFileMetadataResponse]
 }
@@ -865,3 +977,48 @@ private struct APIBulkResult: Decodable {
     let affected: Int
 }
 
+// MARK: - DeviceKeyTransport
+
+/// The requests `DeviceKeyRepairService` (NeutrinoCrypto) makes, through this service's token
+/// refresh and session.
+extension DriveService: DeviceKeyTransport {
+
+    func publishedKey() async throws -> PublishedKey? {
+        guard let userID = AccessToken.currentUserID() else { throw DriveError.notAuthenticated }
+        do {
+            let key: PublishedKey = try await get("/api/v1/auth/users/\(userID)/public-key")
+            return key
+        } catch DriveError.serverError(let code) where code == 404 {
+            return nil
+        }
+    }
+
+    /// Every file the caller owns, whatever folder — the share extension puts files anywhere, not
+    /// only in the photo backup folder.
+    func fileIDsPage(limit: Int, offset: Int) async throws -> [String] {
+        let response: APIListFilesResponse = try await get(
+            "/api/v1/drive/files?limit=\(limit)&offset=\(offset)&orderBy=createdAt&direction=asc"
+        )
+        return response.files.map(\.id)
+    }
+
+    func fileKey(fileID: String) async throws -> (sealed: String, keyVersion: Int)? {
+        do {
+            let response: APIKeyRefResponse = try await get("/api/v1/drive/files/\(fileID)/key")
+            return (response.encryptedFileKey, response.keyVersion ?? 1)
+        } catch DriveError.serverError(let code) where code == 404 {
+            return nil
+        }
+    }
+
+    /// Touches no one else's row — the server keys `PUT /files/{id}/key` on the caller.
+    func setFileKey(fileID: String, sealed: String, keyVersion: Int) async throws {
+        let req = try request(method: "PUT", path: "/api/v1/drive/files/\(fileID)/key",
+                              body: APISetKeyRefRequest(encryptedFileKey: sealed, keyVersion: keyVersion))
+        try await performVoid(req)
+    }
+
+    nonisolated func isRetryable(_ error: Error) -> Bool {
+        PhotoSyncService.isRetryable(error)
+    }
+}

@@ -19,6 +19,7 @@ struct FileBrowserView: View {
     @EnvironmentObject var driveService: DriveService
     @EnvironmentObject var authService: AuthService
     @EnvironmentObject var offlineService: OfflineService
+    @EnvironmentObject var networkMonitor: NetworkMonitor
 
     // MARK: - State
 
@@ -34,6 +35,7 @@ struct FileBrowserView: View {
     @State private var previewURL: URL?
     @State private var downloadError: String?
     @State private var nativeViewerItem: DriveItem?
+    @State private var zipDocument: ZipArchiveDocument?
 
     @StateObject private var searchService = SearchService()
     @State private var searchText = ""
@@ -98,7 +100,11 @@ struct FileBrowserView: View {
         .navigationTitle(navigationTitle)
         .navigationBarTitleDisplayMode(.large)
         .toolbar { toolbarContent }
-        .task(id: "\(section.rawValue)-\(parentID ?? "root")") {
+        // Connectivity is part of the id so the folder reloads when the connection comes back.
+        // Offline it is not loaded at all: what is on screen stays, and the connectivity banner
+        // says why, rather than an "Error" alert for every folder opened.
+        .task(id: "\(section.rawValue)-\(parentID ?? "root")-\(networkMonitor.isOnline)") {
+            guard networkMonitor.isOnline else { return }
             await driveService.loadSection(section, parentID: parentID)
         }
         .modifier(MyDriveSearchModifier(isEnabled: FeatureFlags.search && section == .myDrive, searchText: $searchText))
@@ -127,7 +133,13 @@ struct FileBrowserView: View {
             }
         }
         .sheet(isPresented: $showUpload) {
-            UploadSheet(isPresented: $showUpload, parentFolderID: parentID) { result in
+            UploadSheet(
+                isPresented: $showUpload,
+                parentFolderID: parentID,
+                stampImportMetadata: { [driveService] fileID, metadata in
+                    try await driveService.setImportMetadata(fileID: fileID, metadata: metadata)
+                }
+            ) { result in
                 driveService.fileWasUploaded(result)
             }
         }
@@ -153,6 +165,9 @@ struct FileBrowserView: View {
         .quickLookPreview($previewURL)
         .sheet(item: $nativeViewerItem) { item in
             NeutrinoFileViewer(item: item)
+        }
+        .sheet(item: $zipDocument) { document in
+            ZipViewerView(document: document)
         }
         .alert(
             companionPrompt.map { "\($0.kind.appName) Isn\u{2019}t Installed" } ?? "",
@@ -513,6 +528,12 @@ struct FileBrowserView: View {
                 .disabled(currentItems.isEmpty)
             }
         }
+
+        // Every section, unlike New Folder above. A bug gets reported from whichever screen is
+        // misbehaving, and that is rarely the root of My Drive.
+        ToolbarItem(placement: .secondaryAction) {
+            ReportBugButton()
+        }
     }
 
     // MARK: - Companion Apps
@@ -582,11 +603,17 @@ struct FileBrowserView: View {
     private func startDownload(for item: DriveItem) {
         Task {
             do {
-                previewURL = try await downloadService.download(
+                let url = try await downloadService.download(
                     fileID: item.id,
                     fileName: item.name,
                     mimeType: item.mimeType
                 )
+                // QuickLook shows a zip as an icon; the zip viewer shows what is in it.
+                if ZipArchiveReader.isZip(mimeType: item.mimeType, name: item.name) {
+                    zipDocument = ZipArchiveDocument(url: url, name: item.name)
+                } else {
+                    previewURL = url
+                }
             } catch {
                 downloadError = error.localizedDescription
             }
@@ -685,5 +712,6 @@ private struct MyDriveSearchModifier: ViewModifier {
             .environmentObject(DriveService())
             .environmentObject(AuthService())
             .environmentObject(OfflineService())
+            .environmentObject(NetworkMonitor(autoStart: false))
     }
 }
