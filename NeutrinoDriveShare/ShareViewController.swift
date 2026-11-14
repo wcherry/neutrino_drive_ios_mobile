@@ -1,6 +1,7 @@
 import UIKit
 import UniformTypeIdentifiers
 import os.log
+import NeutrinoCore
 
 /// Host view controller for the "Share → Neutrino Drive" extension.
 ///
@@ -19,6 +20,14 @@ import os.log
 ///   any `URLSession` with it, so uploads run inline while the sheet is on screen and the sheet
 ///   stays up until they finish.
 final class ShareViewController: UIViewController {
+
+    /// The extension is a separate process with its own launch, so it configures the shared
+    /// package itself — the app's `init()` never runs here. Same `nd.*` namespace and same App
+    /// Group, which is exactly what lets it read the token and key the app imported.
+    private static let configured: Void = {
+        NeutrinoApp.configure(.drive)
+    }()
+
 
     private let coordinator = ShareUploadCoordinator()
     private let logger = Logger(subsystem: "com.neutrino.drive.share", category: "ShareViewController")
@@ -72,7 +81,13 @@ final class ShareViewController: UIViewController {
         for case let item as NSExtensionItem in inputItems {
             for provider in item.attachments ?? [] {
                 guard let typeIdentifier = preferredTypeIdentifier(for: provider) else { continue }
-                result.append(ItemProviderAttachment(provider: provider, typeIdentifier: typeIdentifier))
+                // A Live Photo still goes up through `typeIdentifier` when its bundle can't be
+                // read; the bundle is what carries the motion (#44).
+                let bundle = ItemProviderAttachment.livePhotoBundleType
+                result.append(ItemProviderAttachment(
+                    provider: provider, typeIdentifier: typeIdentifier,
+                    livePhotoTypeIdentifier: provider.hasItemConformingToTypeIdentifier(bundle) ? bundle : nil
+                ))
             }
         }
         return result
@@ -107,7 +122,14 @@ final class ShareViewController: UIViewController {
 
     private func presentResults(_ results: [ShareItemResult]) {
         let succeeded = results.filter { $0.outcome.isSuccess }
+        // Includes a Live Photo that arrived without its motion: listed, never called a success.
         let failed = results.filter { !$0.outcome.isSuccess }
+        let anyArrived = results.contains {
+            switch $0.outcome {
+            case .uploaded, .partlyUploaded: return true
+            case .failed: return false
+            }
+        }
 
         if failed.isEmpty {
             present(title: succeeded.count == 1 ? "Uploaded" : "Uploaded \(succeeded.count) files",
@@ -124,19 +146,21 @@ final class ShareViewController: UIViewController {
         // Name the failures individually. "Some uploads failed" tells the user nothing about
         // which of their five photos they need to re-send.
         let failureLines = failed.map { result -> String in
-            if case .failed(let message) = result.outcome {
+            switch result.outcome {
+            case .failed(let message), .partlyUploaded(_, let message):
                 return "\u{2022} \(result.name): \(message)"
+            case .uploaded:
+                return "\u{2022} \(result.name)"
             }
-            return "\u{2022} \(result.name)"
         }
         var detail = failureLines.joined(separator: "\n")
         if !succeeded.isEmpty {
             detail = "\(succeeded.count) uploaded.\n\n" + detail
         }
-        present(title: succeeded.isEmpty ? "Upload Failed" : "Partly Uploaded",
+        present(title: anyArrived ? "Partly Uploaded" : "Upload Failed",
                 detail: detail,
                 buttonTitle: "Close",
-                action: { [weak self] in self?.finish(cancelled: succeeded.isEmpty) })
+                action: { [weak self] in self?.finish(cancelled: !anyArrived) })
     }
 
     // MARK: - Completion

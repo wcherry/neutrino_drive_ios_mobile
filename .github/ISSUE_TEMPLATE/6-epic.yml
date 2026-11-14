@@ -1,0 +1,93 @@
+name: 🏗️ Epic / Initiative
+description: "Maintainers: track a large piece of Neutrino Drive work made up of multiple issues."
+title: "[Epic]: "
+labels: ["epic"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        For multi-issue initiatives inside this app. If the initiative spans the backend, the web app and several iOS clients, open the epic in the [main Neutrino repository](https://github.com/wcherry/neutrino) instead and link back to per-app issues from there.
+
+        If you're a contributor with a large idea, file a **Feature Request** and a maintainer will promote it.
+
+  - type: textarea
+    id: goal
+    attributes:
+      label: Goal
+      description: What are we trying to accomplish?
+    validations:
+      required: true
+
+  - type: textarea
+    id: background
+    attributes:
+      label: Background
+      description: Why now? What prompted this?
+    validations:
+      required: true
+
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope
+      description: What is included?
+    validations:
+      required: true
+
+  - type: textarea
+    id: out-of-scope
+    attributes:
+      label: Out of scope
+      description: What is explicitly not included? Being specific here prevents the epic from sprawling.
+    validations:
+      required: true
+
+  - type: textarea
+    id: architecture
+    attributes:
+      label: Proposed architecture
+      description: View hierarchy, services, persistence, and anything needed from NeutrinoShared or the API.
+
+  - type: textarea
+    id: cross-repo
+    attributes:
+      label: Cross-repository impact
+      description: Does this need NeutrinoShared, the backend, or the other iOS apps? List the repositories and link their issues.
+      placeholder: |
+        - neutrino_shared_ios: …
+        - neutrino (backend): …
+
+  - type: textarea
+    id: milestones
+    attributes:
+      label: Milestones
+      value: |
+        - [ ] Phase 1 —
+        - [ ] Phase 2 —
+        - [ ] Phase 3 —
+    validations:
+      required: true
+
+  - type: textarea
+    id: children
+    attributes:
+      label: Child issues
+      value: |
+        - [ ] #
+        - [ ] #
+
+  - type: textarea
+    id: dependencies
+    attributes:
+      label: Dependencies
+      description: Other epics, App Store review, or upstream work this blocks on.
+
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      value: |
+        - [ ]
+        - [ ]
+    validations:
+      required: true

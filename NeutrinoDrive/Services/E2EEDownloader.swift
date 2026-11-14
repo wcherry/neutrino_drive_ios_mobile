@@ -9,6 +9,10 @@ import os.log
 
 enum DownloadError: LocalizedError {
     case noEncryptionKey
+    /// This device holds an identity, but not the version this file's DEK was sealed to. Named
+    /// separately from `noEncryptionKey` because it sends the user somewhere else: not "import your
+    /// key" but "this account rotated and this device is missing a version".
+    case missingKeyVersion(Int)
     case decryptionFailed
     case notAuthenticated
     case networkError(underlying: Error)
@@ -32,6 +36,8 @@ enum DownloadError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .noEncryptionKey:          return "No encryption key found. Please import a key before downloading."
+        case .missingKeyVersion(let version):
+            return "This file needs encryption key version \(version), which this device does not have. Scanning the key code again will not help \u{2014} it carries one key. On the computer that holds your key, open Settings \u{203A} Encryption and back up your older keys, then reopen this app."
         case .decryptionFailed:         return "Failed to decrypt the file."
         case .notAuthenticated:         return "You are not signed in."
         case .networkError:             return "A network error occurred. Please check your connection."

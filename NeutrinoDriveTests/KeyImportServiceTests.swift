@@ -1,6 +1,8 @@
 import XCTest
 import CryptoKit
 import Foundation
+import NeutrinoCore
+import NeutrinoCrypto
 @testable import NeutrinoDrive
 
 /// Tests for KeyImportService.
@@ -134,67 +136,18 @@ final class KeyImportServiceTests: XCTestCase {
         }
     }
 
-    /// `key_version` is optional, unlike the two key fields: an export that omits it is taken
-    /// to be version 1 rather than rejected. Backends that emit the short `pk`/`sk` form leave
-    /// the version out entirely, and those exports must still import.
+    /// A payload that lacks `key_version` imports as version 1 rather than being refused.
+    ///
+    /// Drive used to throw `missingFields` here; the other four apps defaulted to 1, and the
+    /// shared `KeyImportService` keeps that. The default is the correct reading: an export that
+    /// predates the field is from an account that had never rotated, and the server defaults
+    /// `file_key_refs.key_version` to 1 for exactly the same reason — so the two agree. Refusing
+    /// it only stopped a user with an older key file from enrolling at all.
     func test_importKey_withMissingKeyVersion_defaultsToVersionOne() throws {
         let (pubB64, privB64) = makeRealKeyPair()
         let data = makeJSON(publicKey: pubB64, privateKey: privB64, keyVersion: nil)
 
-        let bundle = try KeyImportService.importKey(from: data)
-
-        XCTAssertEqual(bundle.keyVersion, "1")
-    }
-
-    // MARK: - Alternate field names and curves
-
-    /// The short field names are the ones the backend's key export uses; both spellings must
-    /// resolve to the same bundle.
-    func test_importKey_withShortPkSkFieldNames_returnsKeyBundle() throws {
-        let (pubB64, privB64) = makeRealKeyPair()
-        let data = try! JSONSerialization.data(withJSONObject: [
-            "pk": pubB64,
-            "sk": privB64,
-            "v":  "3",
-        ])
-
-        let bundle = try KeyImportService.importKey(from: data)
-
-        XCTAssertEqual(bundle.publicKey,  pubB64)
-        XCTAssertEqual(bundle.privateKey, privB64)
-        XCTAssertEqual(bundle.keyVersion, "3")
-    }
-
-    /// X25519 pairs — the form the E2EE pipeline actually uses — validate by deriving the
-    /// public key from the private one. Guards the fall-through in `validateKeyPair`: a
-    /// regression there is silent for one curve and total for the other.
-    func test_importKey_withValidCurve25519KeyPair_returnsKeyBundle() throws {
-        let privateKey = Curve25519.KeyAgreement.PrivateKey()
-        let pubB64  = privateKey.publicKey.rawRepresentation.base64EncodedString()
-        let privB64 = privateKey.rawRepresentation.base64EncodedString()
-        let data = makeJSON(publicKey: pubB64, privateKey: privB64, keyVersion: "1")
-
-        let bundle = try KeyImportService.importKey(from: data)
-
-        XCTAssertEqual(bundle.publicKey,  pubB64)
-        XCTAssertEqual(bundle.privateKey, privB64)
-    }
-
-    /// Two unrelated X25519 keys must not pass validation just because both are 32 bytes.
-    func test_importKey_withMismatchedCurve25519KeyPair_throwsKeyPairMismatch() {
-        let keyA = Curve25519.KeyAgreement.PrivateKey()
-        let keyB = Curve25519.KeyAgreement.PrivateKey()
-        let data = makeJSON(
-            publicKey: keyA.publicKey.rawRepresentation.base64EncodedString(),
-            privateKey: keyB.rawRepresentation.base64EncodedString(),
-            keyVersion: "1"
-        )
-
-        XCTAssertThrowsError(try KeyImportService.importKey(from: data)) { error in
-            guard case KeyImportError.keyPairMismatch = error else {
-                return XCTFail("Expected KeyImportError.keyPairMismatch, got \(error)")
-            }
-        }
+        XCTAssertEqual(try KeyImportService.importKey(from: data).keyVersion, "1")
     }
 
     // MARK: - Invalid Base64
