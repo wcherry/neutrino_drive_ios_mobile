@@ -132,7 +132,8 @@ struct PickedMediaLoader {
                 DriveImportMetadata(createdAt: $0.createdAt, updatedAt: $0.updatedAt,
                                     importSource: Self.importSource(assetIdentifier: identifier) + PhotoSyncRules.motionSuffix)
             }
-            return PickedMedia(data: clip.data, fileName: clip.fileName, mimeType: clip.mimeType,
+            defer { clip.discard() }
+            return PickedMedia(data: try clip.loadData(), fileName: clip.fileName, mimeType: clip.mimeType,
                                importMetadata: metadata, thumbnailBase64: clip.thumbnailBase64)
         } catch PhotoExportError.noPairedVideo {
             return nil
@@ -152,7 +153,8 @@ struct PickedMediaLoader {
                                 updatedAt: $0.modified ?? $0.created,
                                 importSource: Self.importSource(assetIdentifier: identifier))
         }
-        return PickedMedia(data: export.data, fileName: export.fileName, mimeType: export.mimeType,
+        defer { export.discard() }
+        return PickedMedia(data: try export.loadData(), fileName: export.fileName, mimeType: export.mimeType,
                            importMetadata: metadata, thumbnailBase64: export.thumbnailBase64)
     }
 

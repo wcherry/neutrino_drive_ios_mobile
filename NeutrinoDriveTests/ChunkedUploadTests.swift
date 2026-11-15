@@ -4,7 +4,7 @@ import NeutrinoCore
 import NeutrinoCrypto
 @testable import NeutrinoDrive
 
-/// NEB1 uploads behind `e2eeChunkedWrites` (neutrino#318), and the flag cache that drives them.
+/// Every upload body is NEB1 (neutrino#318), from bytes in memory or from a file on disk.
 final class ChunkedUploadTests: XCTestCase {
 
     private func seedKeysAndToken() {
@@ -26,13 +26,18 @@ final class ChunkedUploadTests: XCTestCase {
         super.tearDown()
     }
 
-    private func makeSUT(chunked: Bool) -> E2EEUploader {
+    private func makeSUT() -> E2EEUploader {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".json")
         addTeardownBlock { try? FileManager.default.removeItem(at: url) }
-        var sut = E2EEUploader(transferService: BackgroundTransferService(session: MockURLProtocol.makeSession()),
-                               pendingKeys: PendingUploadKeyStore(fileURL: url))
-        sut.writesChunked = { chunked }
-        return sut
+        return E2EEUploader(transferService: BackgroundTransferService(session: MockURLProtocol.makeSession()),
+                            pendingKeys: PendingUploadKeyStore(fileURL: url))
+    }
+
+    private func tempFile(_ data: Data) throws -> URL {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".mov")
+        try data.write(to: url)
+        addTeardownBlock { try? FileManager.default.removeItem(at: url) }
+        return url
     }
 
     private func plaintext(_ length: Int) -> Data {
@@ -56,13 +61,13 @@ final class ChunkedUploadTests: XCTestCase {
 
     // MARK: - Writer
 
-    func testWithTheFlagOnTheFilePartIsNEB1() async throws {
+    func testTheFilePartIsNEB1() async throws {
         seedKeysAndToken()
         MockURLProtocol.requestHandler = { request in
             (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, Data())
         }
         let size = 2 * DriveFileCrypto.neb1DefaultChunkSize + 11
-        let prepared = try await makeSUT(chunked: true).prepare(
+        let prepared = try await makeSUT().prepare(
             data: plaintext(size), fileName: "IMG_1.MOV", mimeType: "video/quicktime", parentFolderID: nil)
         defer { try? FileManager.default.removeItem(at: prepared.bodyFileURL) }
 
@@ -78,34 +83,67 @@ final class ChunkedUploadTests: XCTestCase {
         XCTAssertTrue(text.contains(#"name="encrypted_file_key""#), "the scalars still precede the file part")
     }
 
-    func testWithTheFlagOffTheFilePartIsV0AsBefore() async throws {
+    func testASmallFileIsOneNEB1Chunk() async throws {
         seedKeysAndToken()
         MockURLProtocol.requestHandler = { request in
             (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, Data())
         }
-        let prepared = try await makeSUT(chunked: false).prepare(
+        let prepared = try await makeSUT().prepare(
             data: plaintext(5000), fileName: "a.jpg", mimeType: "image/jpeg", parentFolderID: nil)
         defer { try? FileManager.default.removeItem(at: prepared.bodyFileURL) }
 
         let blob = try filePart(of: Data(contentsOf: prepared.bodyFileURL),
                                 boundary: boundary(of: prepared.request))
-        XCTAssertEqual(blob.count, 24 + 5000 + 17, "one push")
+        XCTAssertTrue(blob.starts(with: DriveFileCrypto.neb1Magic))
+        XCTAssertEqual(blob.count, 44 + 5000 + 17, "one chunk")
     }
 
-    func testTheNEB1BodyDecryptsBackToThePlaintext() throws {
+    func testAFileSourceIsEncryptedFromDiskAndLeftForTheCaller() async throws {
+        seedKeysAndToken()
+        MockURLProtocol.requestHandler = { request in
+            (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, Data())
+        }
+        let plain = plaintext(2 * DriveFileCrypto.neb1DefaultChunkSize + 11)
+        let source = try tempFile(plain)
+        let prepared = try await makeSUT().prepare(
+            source: .file(source), fileName: "IMG_2.MOV", mimeType: "video/quicktime", parentFolderID: nil,
+            thumbnailBase64: "T")
+        defer { try? FileManager.default.removeItem(at: prepared.bodyFileURL) }
+
+        let blob = try filePart(of: Data(contentsOf: prepared.bodyFileURL),
+                                boundary: boundary(of: prepared.request))
+        XCTAssertEqual(blob.count, 44 + plain.count + 17 * 3)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: source.path),
+                      "the caller owns the export and discards it")
+    }
+
+    func testTheNEB1BodyDecryptsBackToThePlaintextFromEitherSource() throws {
         let dek = DriveFileCrypto.newDEK()
-        let plain = plaintext(10_000)
+        let plain = plaintext(3 * DriveFileCrypto.neb1DefaultChunkSize + 5)
         let head = E2EEUploader.multipartHead(fileName: "a", mimeType: "image/jpeg", parentFolderID: nil,
                                               encryptedMetadata: "m", thumbnailBase64: nil, boundary: "B")
         let tail = E2EEUploader.multipartTail(boundary: "B")
-        let (url, length) = try E2EEUploader.writeNEB1Body(plaintext: plain, dek: dek, head: head, tail: tail)
-        defer { try? FileManager.default.removeItem(at: url) }
+        for source in [PlaintextSource.data(plain), .file(try tempFile(plain))] {
+            let (url, length) = try E2EEUploader.writeNEB1Body(source: source, dek: dek, head: head, tail: tail)
+            defer { try? FileManager.default.removeItem(at: url) }
 
-        let body = try Data(contentsOf: url)
-        XCTAssertEqual(body.count, length)
-        XCTAssertTrue(body.starts(with: head))
-        let blob = body.subdata(in: head.count..<(body.count - tail.count))
-        XCTAssertEqual(try DriveFileCrypto.decrypt(blob, dek: dek), plain)
+            let body = try Data(contentsOf: url)
+            XCTAssertEqual(body.count, length)
+            XCTAssertTrue(body.starts(with: head))
+            let blob = body.subdata(in: head.count..<(body.count - tail.count))
+            XCTAssertEqual(try DriveFileCrypto.decrypt(blob, dek: dek), plain)
+        }
+    }
+
+    func testAPlaintextSourceReportsItsSizeAndDiscardsOnlyAFile() throws {
+        let plain = plaintext(1234)
+        let url = try tempFile(plain)
+        XCTAssertEqual(PlaintextSource.data(plain).byteCount, 1234)
+        XCTAssertEqual(PlaintextSource.file(url).byteCount, 1234)
+        XCTAssertEqual(try PlaintextSource.file(url).loadData(), plain)
+        PlaintextSource.file(url).discard()
+        XCTAssertFalse(FileManager.default.fileExists(atPath: url.path))
+        PlaintextSource.file(url).discard() // twice is harmless
     }
 
     func testTheV0BodyIsHeadThenCiphertextThenTail() {
@@ -116,39 +154,5 @@ final class ChunkedUploadTests: XCTestCase {
                                                    encryptedMetadata: "m", thumbnailBase64: "T", boundary: "B")
         XCTAssertEqual(body, head + Data("CIPHER".utf8) + E2EEUploader.multipartTail(boundary: "B"))
         XCTAssertTrue(String(decoding: body, as: UTF8.self).hasSuffix("CIPHER\r\n--B--\r\n"))
-    }
-
-    // MARK: - Flag cache
-
-    private func scratchDefaults() throws -> UserDefaults {
-        let name = "ChunkedUploadTests.\(UUID().uuidString)"
-        addTeardownBlock { UserDefaults().removePersistentDomain(forName: name) }
-        return try XCTUnwrap(UserDefaults(suiteName: name))
-    }
-
-    func testTheFlagIsCachedFromTheServersMap() throws {
-        let defaults = try scratchDefaults()
-        try RemoteFeatureFlags.apply(Data(#"{"teamSpaces":true,"e2eeChunkedWrites":true}"#.utf8), to: defaults)
-        XCTAssertTrue(E2EEUploader.chunkedWritesEnabled(defaults))
-        try RemoteFeatureFlags.apply(Data(#"{"e2eeChunkedWrites":false}"#.utf8), to: defaults)
-        XCTAssertFalse(E2EEUploader.chunkedWritesEnabled(defaults))
-    }
-
-    func testAServerWithoutTheFlagMeansOff() throws {
-        let defaults = try scratchDefaults()
-        defaults.set(true, forKey: E2EEUploader.chunkedWritesKey)
-        try RemoteFeatureFlags.apply(Data(#"{"teamSpaces":true}"#.utf8), to: defaults)
-        XCTAssertFalse(E2EEUploader.chunkedWritesEnabled(defaults))
-    }
-
-    func testAnUnreadableResponseKeepsTheCachedValue() throws {
-        let defaults = try scratchDefaults()
-        defaults.set(true, forKey: E2EEUploader.chunkedWritesKey)
-        XCTAssertThrowsError(try RemoteFeatureFlags.apply(Data("not json".utf8), to: defaults))
-        XCTAssertTrue(E2EEUploader.chunkedWritesEnabled(defaults))
-    }
-
-    func testOffByDefault() throws {
-        XCTAssertFalse(E2EEUploader.chunkedWritesEnabled(try scratchDefaults()))
     }
 }

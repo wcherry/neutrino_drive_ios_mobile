@@ -140,7 +140,10 @@ final class PhotoSyncService: NSObject, ObservableObject {
     /// user's actual usage pattern and requires neither charging nor idle. This is what makes
     /// photos upload while the app is merely backgrounded rather than only overnight.
     static let refreshTaskIdentifier = "com.neutrino.drive.photosync.refresh"
-    static let maxAssetSizeBytes: Int64 = 512 * 1024 * 1024   // 512 MB — see plan "Known risks"
+    /// The largest asset photo sync uploads: the server's default `MAX_UPLOAD_BYTES` (10 GiB).
+    /// It used to be 512 MB, the most a prepare could hold in memory; since neutrino#318 a video is
+    /// encrypted from disk a chunk at a time, so memory no longer sets the limit.
+    static let maxAssetSizeBytes: Int64 = 10 * 1024 * 1024 * 1024
 
     // MARK: - Published (UI-facing) State
 
@@ -220,27 +223,30 @@ final class PhotoSyncService: NSObject, ObservableObject {
     var earlierUploadCollector: ((String) async -> PhotoUploadSubmission?)?
 
     /// How many photos the foreground drain prepares at once (#38, Phase 3). Background windows
-    /// prepare one at a time, and a video or RAW original always goes alone — see
+    /// prepare one at a time, and a RAW or very large picture always goes alone — see
     /// ``needsPreparingAlone``. Settable for tests.
     var maxConcurrentPrepares = 3
 
     /// Whether the app is frontmost, where several prepares at once are worth their memory.
     var isForegroundProvider: () -> Bool = { UIApplication.shared.applicationState == .active }
 
-    /// Whether an entry must be prepared with nothing else alongside: a video, or a RAW original,
-    /// or anything PhotoKit says is over ``largeAssetBytes``. A Live Photo's clip is a few
-    /// megabytes and doesn't count. Defaults to PhotoKit; tests inject.
+    /// Whether an entry must be prepared with nothing else alongside: a RAW original, or a picture
+    /// PhotoKit says is over ``largeAssetBytes``. Pictures are still exported into memory; videos
+    /// no longer go alone, since one is encrypted from disk a chunk at a time and costs about a
+    /// megabyte however long it is (neutrino#318, wcherry/neutrino_drive_ios_mobile#52). Defaults
+    /// to PhotoKit; tests inject.
     var needsPreparingAlone: (String) -> Bool = { entryID in
         guard !PhotoSyncRules.parseEntryID(entryID).isMotion,
               let resource = PHKitAssetExporter.uploadResource(forEntryID: entryID) else { return false }
         let type = UTType(resource.uniformTypeIdentifier)
-        if type?.conforms(to: .movie) == true || type?.conforms(to: .rawImage) == true { return true }
+        if type?.conforms(to: .movie) == true { return false }
+        if type?.conforms(to: .rawImage) == true { return true }
         if #available(iOS 27, *), let size = resource.dataSize { return Int64(size) > PhotoSyncService.largeAssetBytes }
         return false
     }
 
-    /// Over this, an asset is prepared on its own. A 48 MP HEIC is well under; ProRAW and video
-    /// are over, and are caught by type before their size is known.
+    /// Over this, a picture is prepared on its own. A 48 MP HEIC is well under; ProRAW is over, and
+    /// is caught by type before its size is known. Videos are exempt (see ``needsPreparingAlone``).
     nonisolated static let largeAssetBytes: Int64 = 50 * 1024 * 1024
 
     /// How many prepared uploads may be waiting on the network at once.
@@ -311,8 +317,10 @@ final class PhotoSyncService: NSObject, ObservableObject {
         }
         uploadPreparer = { [weak uploadService] request in
             guard let uploadService else { throw UploadError.notAuthenticated }
+            // The export's temporary file, if it has one, is only needed until the body is written.
+            defer { request.export.discard() }
             let prepared = try await uploadService.prepareUpload(
-                data: request.export.data, fileName: request.export.fileName,
+                source: request.export.body, fileName: request.export.fileName,
                 mimeType: request.export.mimeType, parentFolderID: request.parentFolderID,
                 thumbnailBase64: request.export.thumbnailBase64, uploadID: request.uploadID,
                 importMetadata: request.importMetadata,
@@ -1185,12 +1193,22 @@ final class PhotoSyncService: NSObject, ObservableObject {
             includeVideos: includeVideos,
             networkAccessAllowed: !wifiOnlyBlocksCellular
         )
-        if export.data.count > Int(Self.maxAssetSizeBytes) {
+        if export.byteCount > Self.maxAssetSizeBytes {
+            export.discard()
             throw OversizedAsset()
         }
 
-        let folderID = try await resolveDestinationFolder()
-        guard let uploadPreparer else { throw UploadError.notAuthenticated }
+        let folderID: String
+        do {
+            folderID = try await resolveDestinationFolder()
+        } catch {
+            export.discard()
+            throw error
+        }
+        guard let uploadPreparer else {
+            export.discard()
+            throw UploadError.notAuthenticated
+        }
         return try await uploadPreparer(PhotoUploadRequest(
             export: export,
             parentFolderID: folderID,

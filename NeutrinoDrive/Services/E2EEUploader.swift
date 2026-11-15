@@ -90,6 +90,37 @@ struct DriveImportMetadata: Equatable {
 /// What is left — ``E2EEUploader/submit(_:progress:)`` — is handing the body to the background
 /// session, and that needs no PhotoKit, no plaintext and almost no memory. Splitting there is
 /// what lets photo sync prepare one photo at a time but keep many transfers queued with iOS.
+/// The plaintext an upload is made from: bytes in memory, or a file on disk. A file is encrypted
+/// from disk a chunk at a time and never read whole, which is what lets a video of any size
+/// upload in about a megabyte of memory (neutrino#318).
+enum PlaintextSource {
+    case data(Data)
+    /// A temporary file the caller owns and deletes with ``discard()`` once the upload is prepared.
+    case file(URL)
+
+    var byteCount: Int64 {
+        switch self {
+        case .data(let data): return Int64(data.count)
+        case .file(let url):
+            let size = (try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? NSNumber)
+            return size?.int64Value ?? 0
+        }
+    }
+
+    /// The bytes, reading a file whole. Only for callers that need them in memory.
+    func loadData() throws -> Data {
+        switch self {
+        case .data(let data): return data
+        case .file(let url): return try Data(contentsOf: url)
+        }
+    }
+
+    /// Deletes a `.file`'s temporary file; nothing for `.data`. Safe to call twice.
+    func discard() {
+        if case .file(let url) = self { try? FileManager.default.removeItem(at: url) }
+    }
+}
+
 struct PreparedUpload {
     let uploadID: String
     let transferID: String
@@ -121,20 +152,6 @@ struct E2EEUploader {
     /// Other sessions an earlier upload may have finished on: in an app process iOS relaunched
     /// for the Photos extension, that extension's session. Asked only after `transferService`.
     let deliveredTransfers: () -> [BackgroundTransferService]
-
-    /// Whether file bodies are written as NEB1, the chunked format (neutrino#318). Read per upload,
-    /// from the App Group defaults where the app caches the account's `e2eeChunkedWrites` flag, so
-    /// the share extension and the Photos extension follow it too. Off by default; tests set it.
-    var writesChunked: () -> Bool = { E2EEUploader.chunkedWritesEnabled() }
-
-    /// Where the app caches `e2eeChunkedWrites` from `GET /api/v1/feature-flags`.
-    static let chunkedWritesKey = "featureFlags.e2eeChunkedWrites"
-
-    /// The cached flag. Honoured only because this build can also *read* NEB1 (through
-    /// `DriveFileCrypto`): the spec's rule is that a client never writes a format it can't read.
-    static func chunkedWritesEnabled(_ defaults: UserDefaults = SharedStorage.defaults) -> Bool {
-        defaults.bool(forKey: chunkedWritesKey)
-    }
 
     init(transferService: BackgroundTransferService = .shared,
          pendingKeys: PendingUploadKeyStore = .shared,
@@ -321,8 +338,25 @@ struct E2EEUploader {
                  uploadID: String = UUID().uuidString,
                  importMetadata: DriveImportMetadata? = nil,
                  allowsExpensiveNetworkAccess: Bool = true) async throws -> PreparedUpload {
+        try await prepare(source: .data(data), fileName: fileName, mimeType: plainMimeType,
+                          parentFolderID: parentFolderID, thumbnailBase64: thumbnailBase64,
+                          uploadID: uploadID, importMetadata: importMetadata,
+                          allowsExpensiveNetworkAccess: allowsExpensiveNetworkAccess)
+    }
 
-        logger.debug("prepare: \(data.count) bytes name=\(fileName, privacy: .public) folder=\(parentFolderID ?? "root", privacy: .public)")
+    /// ``prepare(data:fileName:mimeType:parentFolderID:thumbnailBase64:uploadID:importMetadata:allowsExpensiveNetworkAccess:)``
+    /// from either source. A `.file` is encrypted from disk straight into the request body, one
+    /// chunk at a time; it is not deleted here.
+    func prepare(source: PlaintextSource,
+                 fileName: String,
+                 mimeType plainMimeType: String,
+                 parentFolderID: String?,
+                 thumbnailBase64: String? = nil,
+                 uploadID: String = UUID().uuidString,
+                 importMetadata: DriveImportMetadata? = nil,
+                 allowsExpensiveNetworkAccess: Bool = true) async throws -> PreparedUpload {
+
+        logger.debug("prepare: \(source.byteCount) bytes name=\(fileName, privacy: .public) folder=\(parentFolderID ?? "root", privacy: .public)")
 
         guard SharedStorage.hasStoredKeys() else {
             throw UploadError.noEncryptionKey
@@ -352,7 +386,6 @@ struct E2EEUploader {
         }
 
         let resumed = pendingKeys.key(forUploadID: uploadID)
-        let plainData = data
 
         // MARK: Step 1 — Cover thumbnail, from the plaintext
         //
@@ -367,14 +400,12 @@ struct E2EEUploader {
         if let thumbnailBase64 {
             coverThumbnail = thumbnailBase64
         } else {
-            coverThumbnail = await ThumbnailGenerator.coverThumbnailBase64(for: plainData,
-                                                                           mimeType: plainMimeType)
+            coverThumbnail = await Self.coverThumbnail(of: source, mimeType: plainMimeType)
         }
 
-        // MARK: Step 2 — Generate DEK and encrypt file (XChaCha20-Poly1305 secretstream)
+        // MARK: Step 2 — Generate (or reuse) the DEK
         //
-        // Output format matches the web's encryptFile():
-        //   [24-byte header][ciphertext]
+        // The body itself is encrypted at step 5, as NEB1, straight into the request body file.
 
         // A resumed upload must re-encrypt under the DEK it was *already* sealed with. Not a
         // nicety: with a stable transfer id the blob `POST` below may be short-circuited by
@@ -399,24 +430,6 @@ struct E2EEUploader {
         let transferID = lostTheOriginalKey
             ? Self.blobTransferID(uploadID: "\(uploadID)#\(UUID().uuidString)")
             : Self.blobTransferID(uploadID: uploadID)
-
-        // NEB1 when the account's `e2eeChunkedWrites` is on: the body is then encrypted straight
-        // into the request body file at step 5, a chunk at a time, so the ciphertext never exists
-        // whole and peak memory is about the plaintext instead of three times it. v0 otherwise,
-        // exactly as before. Metadata stays v0 either way (spec §2).
-        let chunked = writesChunked()
-        var encryptedData: Data?
-        if !chunked {
-            guard let filePushStream = xcss.initPush(secretKey: dek) else {
-                throw UploadError.encryptionFailed
-            }
-            let fileHeader = filePushStream.header()
-            guard let fileCiphertext = filePushStream.push(message: Array(plainData), tag: .FINAL) else {
-                throw UploadError.encryptionFailed
-            }
-            encryptedData = Data(fileHeader + fileCiphertext)
-            logger.debug("upload: encrypted \(plainData.count) → \(encryptedData?.count ?? 0) bytes")
-        }
 
         // MARK: Step 3 — Encrypt metadata { name, mimeType } with DEK
         //
@@ -507,14 +520,8 @@ struct E2EEUploader {
         let bodyFileURL: URL
         let bodyLength: Int
         do {
-            if let encryptedData {
-                let body = head + encryptedData + tail
-                bodyFileURL = try Self.writeTemporaryBody(body)
-                bodyLength = body.count
-            } else {
-                (bodyFileURL, bodyLength) = try Self.writeNEB1Body(plaintext: plainData, dek: dek,
-                                                                   head: head, tail: tail)
-            }
+            (bodyFileURL, bodyLength) = try Self.writeNEB1Body(source: source, dek: dek,
+                                                               head: head, tail: tail)
         } catch is DriveFileCryptoError {
             throw UploadError.encryptionFailed
         } catch {
@@ -529,7 +536,7 @@ struct E2EEUploader {
         uploadRequest.allowsExpensiveNetworkAccess = allowsExpensiveNetworkAccess
         uploadRequest.allowsConstrainedNetworkAccess = allowsExpensiveNetworkAccess
 
-        logger.debug("prepared \(uploadURL.path, privacy: .public) body (\(bodyLength) bytes, \(chunked ? "NEB1" : "v0", privacy: .public))")
+        logger.debug("prepared \(uploadURL.path, privacy: .public) body (\(bodyLength) bytes, NEB1)")
 
         return PreparedUpload(uploadID: uploadID, transferID: transferID,
                               request: uploadRequest, bodyFileURL: bodyFileURL)
@@ -771,22 +778,32 @@ struct E2EEUploader {
         }
     }
 
-    /// Writes the multipart body to a UUID-named file directly in the temp directory.
-    ///
-    /// Flat rather than inside a per-upload subdirectory: the UUID already guarantees two
-    /// concurrent uploads cannot collide, and a bare file means `BackgroundTransferService`'s
-    /// `removeItem` is *complete* cleanup. With a subdirectory it would delete the file and
-    /// leave the empty directory behind, leaking one per upload.
-    private static func writeTemporaryBody(_ body: Data) throws -> URL {
-        let fileURL = FileManager.default.temporaryDirectory
-            .appendingPathComponent("nd-upload-\(UUID().uuidString).multipart")
-        try body.write(to: fileURL, options: .atomic)
-        return fileURL
+    /// The cover for an upload whose caller made none: from the bytes for a picture, from the file
+    /// for a movie. A large file that is not a movie gets none rather than being read whole.
+    static func coverThumbnail(of source: PlaintextSource, mimeType: String) async -> String? {
+        switch source {
+        case .data(let data):
+            return await ThumbnailGenerator.coverThumbnailBase64(for: data, mimeType: mimeType)
+        case .file(let url):
+            if mimeType.hasPrefix("video/") {
+                return await ThumbnailGenerator.coverThumbnailBase64(forVideoAt: url)
+            }
+            guard source.byteCount <= 64 * 1024 * 1024, let data = try? source.loadData() else { return nil }
+            return await ThumbnailGenerator.coverThumbnailBase64(for: data, mimeType: mimeType)
+        }
     }
 
-    /// Writes a multipart body whose file part is `plaintext` encrypted as NEB1, a chunk at a time
-    /// straight into the file: the ciphertext never exists whole. Returns the file and its length.
-    static func writeNEB1Body(plaintext: Data, dek: Bytes, head: Data, tail: Data) throws -> (URL, Int) {
+    /// Writes a multipart body whose file part is `source` encrypted as NEB1 (neutrino#318), a chunk
+    /// at a time straight into the file: the ciphertext never exists whole, and a `.file` source is
+    /// never read whole either. Returns the file and its length.
+    ///
+    /// Every client reads NEB1 since neutrino#318's round 2a, so every body is written this way;
+    /// the encrypted metadata stays on the single-push format (spec §2).
+    ///
+    /// The file is UUID-named directly in the temp directory, not in a per-upload subdirectory:
+    /// the UUID already keeps concurrent uploads apart, and a bare file means
+    /// `BackgroundTransferService`'s `removeItem` is *complete* cleanup.
+    static func writeNEB1Body(source: PlaintextSource, dek: Bytes, head: Data, tail: Data) throws -> (URL, Int) {
         let fileURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("nd-upload-\(UUID().uuidString).multipart")
         guard FileManager.default.createFile(atPath: fileURL.path, contents: nil) else {
@@ -796,8 +813,13 @@ struct E2EEUploader {
             let handle = try FileHandle(forWritingTo: fileURL)
             defer { try? handle.close() }
             try handle.write(contentsOf: head)
-            let cipherLength = try DriveFileCrypto.encryptNEB1(plaintext, dek: dek) { bytes in
-                try handle.write(contentsOf: Data(bytes))
+            let write: (Bytes) throws -> Void = { bytes in try handle.write(contentsOf: Data(bytes)) }
+            let cipherLength: Int
+            switch source {
+            case .data(let plaintext):
+                cipherLength = try DriveFileCrypto.encryptNEB1(plaintext, dek: dek, writing: write)
+            case .file(let url):
+                cipherLength = try DriveFileCrypto.encryptNEB1(from: url, dek: dek, writing: write)
             }
             try handle.write(contentsOf: tail)
             return (fileURL, head.count + cipherLength + tail.count)

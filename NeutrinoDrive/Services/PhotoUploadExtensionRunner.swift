@@ -165,8 +165,9 @@ final class PhotoUploadExtensionRunner {
     /// Wires the upload seams to `uploader`, which sends on the extension's own session.
     func configure(uploader: E2EEUploader) {
         uploadPreparer = { request in
+            defer { request.export.discard() }
             let prepared = try await uploader.prepare(
-                data: request.export.data, fileName: request.export.fileName,
+                source: request.export.body, fileName: request.export.fileName,
                 mimeType: request.export.mimeType, parentFolderID: request.parentFolderID,
                 thumbnailBase64: request.export.thumbnailBase64, uploadID: request.uploadID,
                 importMetadata: request.importMetadata,
@@ -348,12 +349,16 @@ final class PhotoUploadExtensionRunner {
             return nil
         }
         // A size the provider could not tell in advance, found out the expensive way.
-        if export.data.count > Int(Self.maxAssetBytes) {
+        if export.byteCount > Self.maxAssetBytes {
+            export.discard()
             leaveForApp(entry)
             return nil
         }
 
-        guard let uploadPreparer else { throw UploadError.notAuthenticated }
+        guard let uploadPreparer else {
+            export.discard()
+            throw UploadError.notAuthenticated
+        }
         let wifiOnly = defaults.object(forKey: PhotoSyncKeys.wifiOnly) as? Bool ?? true
         return try await uploadPreparer(PhotoUploadRequest(
             export: export,

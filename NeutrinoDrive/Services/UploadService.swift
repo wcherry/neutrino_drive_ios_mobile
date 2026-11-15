@@ -144,11 +144,11 @@ final class UploadService: ObservableObject {
     /// The first half of ``upload(data:fileName:mimeType:parentFolderID:reportsProgress:thumbnailBase64:uploadID:)``:
     /// encrypts and writes a complete body to disk without sending it. Publishes no UI state —
     /// photo sync is the only caller, and it keeps its own.
-    func prepareUpload(data: Data, fileName: String, mimeType: String, parentFolderID: String?,
+    func prepareUpload(source: PlaintextSource, fileName: String, mimeType: String, parentFolderID: String?,
                        thumbnailBase64: String?, uploadID: String,
                        importMetadata: DriveImportMetadata?,
                        allowsExpensiveNetworkAccess: Bool) async throws -> PreparedUpload {
-        try await uploader.prepare(data: data, fileName: fileName, mimeType: mimeType,
+        try await uploader.prepare(source: source, fileName: fileName, mimeType: mimeType,
                                    parentFolderID: parentFolderID,
                                    thumbnailBase64: thumbnailBase64, uploadID: uploadID,
                                    importMetadata: importMetadata,

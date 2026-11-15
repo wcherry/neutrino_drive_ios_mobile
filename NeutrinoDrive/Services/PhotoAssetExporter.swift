@@ -59,7 +59,10 @@ extension PhotoAssetExporting {
 }
 
 struct PhotoExport {
-    let data: Data
+    /// The plaintext: in memory for a picture, on disk for a movie, which can run to gigabytes
+    /// and is encrypted from the file a chunk at a time (neutrino#318). A `.file` is a temporary
+    /// file this export owns; whoever consumes it calls ``discard()``.
+    let body: PlaintextSource
     let fileName: String
     let mimeType: String
     /// A cover thumbnail the exporter was able to make more cheaply than the uploader could.
@@ -69,9 +72,30 @@ struct PhotoExport {
     /// from a file on disk, and the exporter is the one place in the pipeline that already has
     /// one — deriving it downstream would mean writing a second copy of the whole clip.
     ///
-    /// Declared last with a default so the memberwise initialiser stays source-compatible with
-    /// the fakes in `PhotoSyncServiceTests`.
     var thumbnailBase64: String? = nil
+
+    init(body: PlaintextSource, fileName: String, mimeType: String, thumbnailBase64: String? = nil) {
+        self.body = body
+        self.fileName = fileName
+        self.mimeType = mimeType
+        self.thumbnailBase64 = thumbnailBase64
+    }
+
+    /// An export held in memory — what the image path and the test fakes make.
+    init(data: Data, fileName: String, mimeType: String, thumbnailBase64: String? = nil) {
+        self.init(body: .data(data), fileName: fileName, mimeType: mimeType,
+                  thumbnailBase64: thumbnailBase64)
+    }
+
+    /// The plaintext's size, without reading a file export.
+    var byteCount: Int64 { body.byteCount }
+
+    /// The plaintext in memory, reading a file export whole. Only for callers that need the bytes
+    /// themselves; uploads pass ``body`` on instead.
+    func loadData() throws -> Data { try body.loadData() }
+
+    /// Deletes a file export's temporary file. Harmless for an in-memory one, and to call twice.
+    func discard() { body.discard() }
 }
 
 enum PhotoExportError: LocalizedError {
@@ -103,8 +127,8 @@ enum PhotoExportError: LocalizedError {
 
 /// Production `PhotoAssetExporting`. Images export via `requestImageDataAndOrientation`
 /// (current/edited rendition, original bytes — no transcoding). Videos export via
-/// `PHAssetResourceManager.writeData(for:toFile:)` to a temp file (never held fully in
-/// memory) and are read back as `Data`. A Live Photo's still comes from `exportData`, and its
+/// `PHAssetResourceManager.writeData(for:toFile:)` to a temp file, never held in memory, and are
+/// handed over as that file. A Live Photo's still comes from `exportData`, and its
 /// paired video from ``exportPairedVideo(for:networkAccessAllowed:)`` as a separate upload.
 final class PHKitAssetExporter: PhotoAssetExporting {
 
@@ -245,14 +269,12 @@ final class PHKitAssetExporter: PhotoAssetExporting {
             }
         }
 
-        defer { try? FileManager.default.removeItem(at: tempURL) }
-        // Taken here, while the clip is still on disk and before the `defer` above reclaims it.
-        // `AVFoundation` reads poster frames from files, so the alternative is spilling the whole
-        // video back out to a second temp file downstream — up to half a gigabyte of extra writes
-        // (see `maxAssetSizeBytes`), in a background drain that is racing an expiry.
+        // Taken here, from the file: `AVFoundation` reads poster frames from files, and the
+        // uploader never sees the clip as anything else.
         let thumbnailBase64 = await ThumbnailGenerator.coverThumbnailBase64(forVideoAt: tempURL)
-        let data = try Data(contentsOf: tempURL)
-        return PhotoExport(data: data, fileName: fileName, mimeType: mimeType,
+        // Handed over on disk, never read back into memory: the uploader encrypts it a chunk at a
+        // time straight into the request body (neutrino#318), and discards it after.
+        return PhotoExport(body: .file(tempURL), fileName: fileName, mimeType: mimeType,
                            thumbnailBase64: thumbnailBase64)
     }
 
