@@ -158,7 +158,7 @@ final class PhotoSyncServiceTests: XCTestCase {
         sut.uploadHandler = { export, parentFolderID, _ in
             receivedThumbnail = export.thumbnailBase64
             return UploadResult(id: "file-1", name: export.fileName, folderId: parentFolderID,
-                                sizeBytes: Int64(export.data.count), mimeType: export.mimeType,
+                                sizeBytes: export.byteCount, mimeType: export.mimeType,
                                 updatedAt: Date())
         }
 
@@ -181,7 +181,7 @@ final class PhotoSyncServiceTests: XCTestCase {
         sut.uploadHandler = { export, parentFolderID, _ in
             sawThumbnail = export.thumbnailBase64
             return UploadResult(id: "file-1", name: export.fileName, folderId: parentFolderID,
-                                sizeBytes: Int64(export.data.count), mimeType: export.mimeType,
+                                sizeBytes: export.byteCount, mimeType: export.mimeType,
                                 updatedAt: Date())
         }
 
@@ -202,7 +202,7 @@ final class PhotoSyncServiceTests: XCTestCase {
         sut.folderResolver = { _, _ in "folder-1" }
         sut.uploadHandler = { export, parentFolderID, _ in
             UploadResult(id: "file-1", name: export.fileName, folderId: parentFolderID,
-                        sizeBytes: Int64(export.data.count), mimeType: export.mimeType,
+                        sizeBytes: export.byteCount, mimeType: export.mimeType,
                         updatedAt: Date())
         }
 
@@ -300,7 +300,7 @@ final class PhotoSyncServiceTests: XCTestCase {
                 throw UploadError.serverError(statusCode: 404)
             }
             return UploadResult(id: "file-1", name: export.fileName, folderId: parentFolderID,
-                                sizeBytes: Int64(export.data.count), mimeType: export.mimeType,
+                                sizeBytes: export.byteCount, mimeType: export.mimeType,
                                 updatedAt: Date())
         }
 
@@ -325,7 +325,7 @@ final class PhotoSyncServiceTests: XCTestCase {
         sut.folderResolver = { _, _ in "folder-1" }
         sut.uploadHandler = { export, parentFolderID, _ in
             UploadResult(id: "file-1", name: export.fileName, folderId: parentFolderID,
-                        sizeBytes: Int64(export.data.count), mimeType: export.mimeType,
+                        sizeBytes: export.byteCount, mimeType: export.mimeType,
                         updatedAt: Date())
         }
 
@@ -361,7 +361,7 @@ final class PhotoSyncServiceTests: XCTestCase {
         sut.uploadHandler = { export, parentFolderID, _ in
             events.append("upload")
             return UploadResult(id: "file-1", name: export.fileName, folderId: parentFolderID,
-                                sizeBytes: Int64(export.data.count), mimeType: export.mimeType,
+                                sizeBytes: export.byteCount, mimeType: export.mimeType,
                                 updatedAt: Date())
         }
 
@@ -434,7 +434,7 @@ final class PhotoSyncServiceTests: XCTestCase {
             uploadCallCount += 1
             if uploadCallCount == 1 { throw UploadError.serverError(statusCode: 401) }
             return UploadResult(id: "file-1", name: export.fileName, folderId: parentFolderID,
-                                sizeBytes: Int64(export.data.count), mimeType: export.mimeType,
+                                sizeBytes: export.byteCount, mimeType: export.mimeType,
                                 updatedAt: Date())
         }
 
@@ -470,7 +470,7 @@ final class PhotoSyncServiceTests: XCTestCase {
             return {
                 UploadResult(id: id, name: request.export.fileName,
                              folderId: request.parentFolderID,
-                             sizeBytes: Int64(request.export.data.count),
+                             sizeBytes: request.export.byteCount,
                              mimeType: request.export.mimeType, updatedAt: Date())
             }
         }
@@ -1059,7 +1059,7 @@ final class PhotoSyncServiceTests: XCTestCase {
         sut.folderResolver = { _, _ in "folder-1" }
         sut.uploadHandler = { export, parentFolderID, _ in
             UploadResult(id: "file-77", name: export.fileName, folderId: parentFolderID,
-                         sizeBytes: Int64(export.data.count), mimeType: export.mimeType,
+                         sizeBytes: export.byteCount, mimeType: export.mimeType,
                          updatedAt: Date())
         }
         sut.importMetadataStamper = stamp
